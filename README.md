@@ -23,11 +23,11 @@ file written in calm conditions.
 
 ## Project state
 
-**Milestone 0 shipped. Milestones 1 and 1b built, awaiting validation on the real hosts.**
-`status`, `version`, `serve` and `deploy-listener` are implemented and covered by tests that
-run on Linux — including the mTLS handshake end to end, with generated certificates and real
-sockets. The WMI adapter is written but has never run on a Hyper-V host, so nothing here is
-proven against real infrastructure yet.
+**Milestone 0 shipped. Milestones 1, 1b and 2 built, awaiting validation on the real hosts.**
+`status`, `check`, `version`, `serve` and `deploy-listener` are implemented and covered by
+tests that run on Linux — including the mTLS handshake end to end, with generated certificates
+and real sockets, and a case table per check rule. The WMI adapters are written but have never
+run on a Hyper-V host, so nothing here is proven against real infrastructure yet.
 
 Progress and decisions: [`docs/TRACKING.md`](docs/TRACKING.md).
 Per-milestone detail: [`docs/milestones/`](docs/milestones/).
@@ -110,8 +110,7 @@ suite, so a sample that stops being valid breaks the build.
 
 Startup validation reports **every** error at once rather than failing on the first, and it
 answers one question only: "can this file be read?". Whether reality matches the file — the
-switch exists, the target has the RAM, the certificate is still valid — is `ripcord check`,
-milestone 2.
+switch exists, the target has the RAM, the certificate is still valid — is `ripcord check`.
 
 The machine names, addresses and thumbprints throughout this repository are pseudonymous.
 
@@ -119,6 +118,7 @@ The machine names, addresses and thumbprints throughout this repository are pseu
 
 ```
 ripcord status [--config <path>]              read both sides of the pair
+ripcord check [--config <path>]               would a failover work right now
 ripcord serve [--config <path>]               run the read-only pair listener
 ripcord deploy-listener [--dry-run] [--remove]  install or remove that listener
 ripcord version                               version and commit hash
@@ -134,9 +134,8 @@ The pair channel carries one thing in one direction: this host's published state
 verb, no parameter and no request body, so there is nothing to abuse — and the service that
 answers it never touches Hyper-V, it serves a file the privileged command wrote.
 
-`status` describes; it does not judge — that is `ripcord check`, milestone 2. Output is fixed
-at 75 columns with no colour, because the real reading conditions are a 1024×768 KVM during an
-incident.
+`status` describes; it does not judge — that is `check`. Output is fixed at 75 columns with no
+colour, because the real reading conditions are a 1024×768 KVM during an incident.
 
 ```
 RIPCORD STATUS                                      2026-09-12 14:00:00 UTC
@@ -156,11 +155,73 @@ PEER    HV-PRIMARY-01                                               OFFLINE
 | Exit code | Meaning |
 |---|---|
 | 0 | success — **including an unreachable peer** |
+| 1 | at least one critical rule violated (`check` only) |
 | 2 | invalid invocation, or invalid or missing configuration |
 | 3 | local access failure (WMI, privileges, timeout) |
 
 An unreachable peer is a degraded state, not an error: a scheduled `ripcord status` must not
 alert because the other host is down.
+
+### `ripcord check`
+
+`check` answers one question: if it goes down now, does it hold? Each finding states what was
+observed, what that means **on the day of the failover**, and the command that fixes it —
+never executing it. The middle line is the one that matters: "incorrect vSwitch" helps nobody,
+"this VM will boot with no network on the target" triggers action.
+
+```
+RIPCORD CHECK                                       2026-09-13 14:00:00 UTC
+ripcord 0.1.0+0000000
+
+  Mode:       NORMAL
+  Source:     HV-PRIMARY-01 (holds the primary copies)
+  Target:     HV-REPLICA-01 (a failover would land here)
+  Verdict:    NOT READY - 1 critical, 1 warning, 3 info, 0 not checked
+
+CRITICAL (1)
+---------------------------------------------------------------------------
+  [replica-switch-mismatch] VM-DC-01
+    Observed:   Network Adapter on HV-REPLICA-01 is on 'vSwitch-OLD',
+                expected 'vSwitch-PROD'
+    On the day: this VM boots onto the wrong network on the target; the
+                host-level switch check still passes, so nothing else would
+                report it
+    Fix:        Connect-VMNetworkAdapter -VMName VM-DC-01 -Name 'Network
+                Adapter' -SwitchName 'vSwitch-PROD'
+
+FEASIBILITY - HV-REPLICA-01
+---------------------------------------------------------------------------
+  Usable memory: 8192 MB
+  VM                   PRI    STARTUP       MAX       MIN  BOOTS
+  -------------------------------------------------------------------------
+  VM-DC-01             P1     2048 MB   4096 MB   1024 MB  yes
+  VM-LEGACY-01         P1     2048 MB   4096 MB   1024 MB  yes
+  VM-BACKUP-01         P2     2048 MB   4096 MB   1024 MB  yes
+  Headroom after the VMs that would boot: 2048 MB
+```
+
+Three things are deliberate in that output.
+
+**A rule whose data is missing is listed under `NOT CHECKED`, never treated as satisfied.** A
+reassuring false negative is the worst outcome this tool can produce. `NOT CHECKED` sits above
+the warnings, and its count is in the headline, because the exit code cannot carry it: code 1
+means "a critical rule is violated", and overloading it would make `check` unusable as the
+gate the later milestones depend on.
+
+**Permanent criticals are acknowledged, with a mandatory expiry.** The pass-through disk on
+`VM-BACKUP-01` is an accepted, unfixable property of this infrastructure. Without a way to
+accept it, `check` exits 1 forever and every milestone that gates on it dies with it. An
+acknowledgement names a rule and optionally a VM, carries a reason and a date, and is still
+printed — accepted, not hidden. Once the date passes the finding counts again and says why it
+came back. The rules whose violation means the service would not come back at all —
+`startup-ram-exceeds-target`, `p1-startup-ram-sum-exceeds-target`,
+`vhdx-outside-relationship` — can never be acknowledged.
+
+**The operating mode is derived from observed state.** While the pair runs on the disaster
+recovery side, "replication direction inverted" is true by definition. Reporting it as a
+critical would make `check` red for the whole incident and block the failback meant to end it,
+so `FAILED OVER` suppresses that rule and the header says so instead. A *partial* inversion —
+some VMs primary on one host and some on the other — is still critical.
 
 The PENDING column renders `-` when Hyper-V answers the statistics call asynchronously:
 Ripcord declines to poll a job for one column. See
