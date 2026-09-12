@@ -1,11 +1,14 @@
 using Ripcord.Adapters.Fake;
+using Ripcord.Application.Status;
 using Ripcord.Application;
 using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Replication;
 using Ripcord.Domain;
+using Ripcord.Ports.Configuration;
+using Ripcord.Ports.Replication;
 using Ripcord.Ports;
 
-namespace Ripcord.Tests;
+namespace Ripcord.Tests.Application;
 
 /// The use case decides one thing: which exit code the day's run produced. An unreachable
 /// peer is not a failure; a local WMI failure is.

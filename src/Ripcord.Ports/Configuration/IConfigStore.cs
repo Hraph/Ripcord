@@ -1,6 +1,6 @@
 using Ripcord.Domain.Configuration;
 
-namespace Ripcord.Ports;
+namespace Ripcord.Ports.Configuration;
 
 /// Reads `ripcord.yaml` into a document. It translates; it does not decide — a missing file
 /// or a syntax error is a read error, and everything beyond that is

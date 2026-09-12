@@ -1,4 +1,5 @@
 using Ripcord.Domain.Replication;
+using Ripcord.Ports.Replication;
 using Ripcord.Ports;
 
 namespace Ripcord.Adapters.Fake;

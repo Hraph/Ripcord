@@ -1,6 +1,6 @@
 using Ripcord.Domain.Replication;
 
-namespace Ripcord.Tests;
+namespace Ripcord.Tests.Replication;
 
 /// Lag is the number the operator reads first, and the only derived value in the milestone 1
 /// domain. Every edge case here is one an incident can actually produce.

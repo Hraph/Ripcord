@@ -1,6 +1,6 @@
 using Ripcord.Domain.Replication;
 
-namespace Ripcord.Tests;
+namespace Ripcord.Tests.Replication;
 
 /// The degraded path is the one milestone 1 must get right: it is what the operator sees when
 /// the primary is actually down.

@@ -1,4 +1,5 @@
 using Ripcord.Domain.Configuration;
+using Ripcord.Ports.Configuration;
 using Ripcord.Ports;
 using YamlDotNet.Core;
 using YamlDotNet.Serialization.NamingConventions;

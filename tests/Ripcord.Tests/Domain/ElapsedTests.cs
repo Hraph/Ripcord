@@ -1,7 +1,7 @@
 using Ripcord.Domain.Replication;
 using Ripcord.Domain;
 
-namespace Ripcord.Tests;
+namespace Ripcord.Tests.Domain;
 
 /// The two hosts' clocks drift. Every elapsed time in Ripcord clamps at zero rather than
 /// showing a negative duration, and it does so in one place.

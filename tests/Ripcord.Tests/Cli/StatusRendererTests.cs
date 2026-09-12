@@ -1,8 +1,9 @@
+using Ripcord.Cli.Rendering;
 using Ripcord.Cli;
 using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Replication;
 
-namespace Ripcord.Tests;
+namespace Ripcord.Tests.Cli;
 
 /// The rendering is read off a 1024×768 KVM at 3 a.m. Fixed columns, no dependency on
 /// terminal width, no colour carrying anything on its own.

@@ -1,10 +1,13 @@
 using Ripcord.Adapters.Fake;
 using Ripcord.Cli;
+using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Replication;
 using Ripcord.Domain;
+using Ripcord.Ports.Configuration;
+using Ripcord.Ports.Replication;
 using Ripcord.Ports;
 
-namespace Ripcord.Tests;
+namespace Ripcord.Tests.Cli;
 
 /// The command surface as the operator meets it: what gets printed, where, and what the
 /// process exits with.
@@ -177,14 +180,14 @@ public class RipcordCliTests
         public ConfigurationRead Read(string path)
         {
             this.RequestedPath = path;
-            return ConfigurationRead.Succeeded(new Domain.Configuration.ConfigurationDocument
+            return ConfigurationRead.Succeeded(new ConfigurationDocument
             {
                 SchemaVersion = 1,
-                Node = new Domain.Configuration.NodeDocument
+                Node = new NodeDocument
                 {
                     Hostname = FakeScenarios.LocalHostName,
                 },
-                Peer = new Domain.Configuration.PeerDocument
+                Peer = new PeerDocument
                 {
                     Hostname = FakeScenarios.PeerHostName,
                     Address = "192.0.2.11",
@@ -192,7 +195,7 @@ public class RipcordCliTests
                 },
                 Vms =
                 [
-                    new Domain.Configuration.VmDocument { Name = "VM-DC-01", Priority = "P1" },
+                    new VmDocument { Name = "VM-DC-01", Priority = "P1" },
                 ],
             });
         }

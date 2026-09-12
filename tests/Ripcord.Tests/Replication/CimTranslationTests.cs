@@ -1,6 +1,6 @@
 using Ripcord.Domain.Replication;
 
-namespace Ripcord.Tests;
+namespace Ripcord.Tests.Replication;
 
 /// Everything the WMI adapter would otherwise have to decide. It cannot be run off Windows,
 /// so each of these lives in the Domain where a test can reach it.

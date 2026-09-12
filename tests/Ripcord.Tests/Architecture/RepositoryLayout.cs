@@ -1,4 +1,4 @@
-namespace Ripcord.Tests;
+namespace Ripcord.Tests.Architecture;
 
 /// Locates the repository on disk. The boundary tests read .csproj files rather than
 /// compiled assemblies, so they need real paths (COHERENCE B2/B3).

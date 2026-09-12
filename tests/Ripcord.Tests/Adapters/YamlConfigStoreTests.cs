@@ -1,8 +1,10 @@
 using Ripcord.Adapters.Yaml;
 using Ripcord.Domain.Configuration;
+using Ripcord.Ports.Configuration;
 using Ripcord.Ports;
+using Ripcord.Tests.Architecture;
 
-namespace Ripcord.Tests;
+namespace Ripcord.Tests.Adapters;
 
 /// The store translates, it does not decide: it reports only what stops a file being read at
 /// all. Everything else is ConfigurationValidator's.

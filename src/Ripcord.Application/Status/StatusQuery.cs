@@ -1,9 +1,11 @@
 using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Replication;
 using Ripcord.Domain;
+using Ripcord.Ports.Configuration;
+using Ripcord.Ports.Replication;
 using Ripcord.Ports;
 
-namespace Ripcord.Application;
+namespace Ripcord.Application.Status;
 
 public sealed record StatusRequest(string ConfigurationPath, string MachineName);
 

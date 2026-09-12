@@ -1,8 +1,9 @@
+using Ripcord.Cli;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
-namespace Ripcord.Tests;
+namespace Ripcord.Tests.Architecture;
 
 /// Validates the toolchain itself: the solution filter the CI builds, and the commit hash the
 /// audit log will depend on from milestone 4 (COHERENCE T4).
@@ -43,7 +44,7 @@ public class BuildChainTests
     [Fact]
     public void Build_stamps_a_revision_into_the_informational_version()
     {
-        Assert.Matches(@"^\d+\.\d+\.\d+\+([0-9a-f]{12}|unknown)$", Cli.BuildInfo.VersionWithCommit);
+        Assert.Matches(@"^\d+\.\d+\.\d+\+([0-9a-f]{12}|unknown)$", BuildInfo.VersionWithCommit);
     }
 
     [Fact]
@@ -56,13 +57,13 @@ public class BuildChainTests
             .Single(element => element.Name.LocalName == "VersionPrefix")
             .Value;
 
-        Assert.Equal(versionPrefix, Cli.BuildInfo.Version);
+        Assert.Equal(versionPrefix, BuildInfo.Version);
     }
 
     [Fact]
     public void Commit_hash_is_reported_separately_from_the_version()
     {
-        Assert.DoesNotContain('+', Cli.BuildInfo.Version);
-        Assert.Matches("^([0-9a-f]{12}|unknown)$", Cli.BuildInfo.CommitHash);
+        Assert.DoesNotContain('+', BuildInfo.Version);
+        Assert.Matches("^([0-9a-f]{12}|unknown)$", BuildInfo.CommitHash);
     }
 }

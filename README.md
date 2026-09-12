@@ -149,9 +149,8 @@ PEER    HV-PRIMARY-01                                               OFFLINE
 An unreachable peer is a degraded state, not an error: a scheduled `ripcord status` must not
 alert because the other host is down.
 
-The PENDING column renders `-` on real hardware at this milestone: the pending replication
-volume is not on the class the rest of the row comes from, and reaching it needs a WMI method
-that cannot be exercised off Windows. See the known gap in
+The PENDING column renders `-` when Hyper-V answers the statistics call asynchronously:
+Ripcord declines to poll a job for one column. See
 [milestone 1](docs/milestones/milestone-1.md).
 
 Install is a copy: the `.exe` and one of the samples from `config/`, renamed `ripcord.yaml`,

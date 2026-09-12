@@ -1,6 +1,6 @@
 using System.Xml.Linq;
 
-namespace Ripcord.Tests;
+namespace Ripcord.Tests.Architecture;
 
 /// The hexagonal boundary is a test, not an intention. These assertions encode the project
 /// table in docs/milestones/milestone-0.md; changing the architecture means changing them

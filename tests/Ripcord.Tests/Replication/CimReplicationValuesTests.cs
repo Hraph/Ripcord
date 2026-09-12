@@ -1,6 +1,6 @@
 using Ripcord.Domain.Replication;
 
-namespace Ripcord.Tests;
+namespace Ripcord.Tests.Replication;
 
 /// The numeric CIM lookups live here rather than in the WMI adapter, because the adapter
 /// cannot be run off Windows and anything it decides is a decision nobody can test.

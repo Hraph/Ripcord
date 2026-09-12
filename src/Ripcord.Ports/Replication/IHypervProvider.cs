@@ -1,6 +1,6 @@
 using Ripcord.Domain.Replication;
 
-namespace Ripcord.Ports;
+namespace Ripcord.Ports.Replication;
 
 /// Read-only at this milestone. Mutating operations arrive with the milestone that needs
 /// them, not before.

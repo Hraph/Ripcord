@@ -1,6 +1,6 @@
 using Ripcord.Domain.Configuration;
 
-namespace Ripcord.Tests;
+namespace Ripcord.Tests.Configuration;
 
 /// Validation answers "can this file be read?", never "does reality match this file?" —
 /// that line is milestone 2's. It also reports every error at once: re-running six times to

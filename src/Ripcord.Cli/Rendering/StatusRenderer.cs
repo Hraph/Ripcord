@@ -2,7 +2,7 @@ using Ripcord.Domain.Replication;
 using System.Globalization;
 using System.Text;
 
-namespace Ripcord.Cli;
+namespace Ripcord.Cli.Rendering;
 
 /// Fixed columns, fixed width, ASCII only, no colour. The real reading conditions are a
 /// 1024×768 KVM during an incident: nothing may depend on the terminal being wide, on a
