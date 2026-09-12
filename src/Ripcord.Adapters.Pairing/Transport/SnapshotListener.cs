@@ -103,7 +103,7 @@ public sealed class SnapshotListener(
 /// or failed connection never stops the loop — a probe on the port must not take the listener
 /// down with it.
 public sealed class LoopingPeerListener(
-    Func<X509Certificate2> localCertificate,
+    Func<string, X509Certificate2> localCertificate,
     PeerTrust trust,
     ISnapshotStore snapshotStore,
     IClock clock,
@@ -114,8 +114,14 @@ public sealed class LoopingPeerListener(
     {
         ArgumentNullException.ThrowIfNull(settings);
 
+        if (settings.LocalCertificateThumbprint is not { } thumbprint)
+        {
+            throw new InvalidOperationException(
+                "the listener is enabled without a local certificate thumbprint");
+        }
+
         await using SnapshotListener listener =
-            new(localCertificate, trust, snapshotStore, clock);
+            new(() => localCertificate(thumbprint), trust, snapshotStore, clock);
 
         listener.Start(IPAddress.Any, settings.Port);
 

@@ -14,7 +14,8 @@ namespace Ripcord.Adapters.Pairing.Transport;
 /// the peer's, reads one payload and hangs up. There is no request to write: the protocol has
 /// no verb, so there is nothing to abuse.
 public sealed class MutualTlsPeerChannel(
-    Func<X509Certificate2> localCertificate, PeerTrust trust, IClock clock) : IPeerChannel
+    Func<string, X509Certificate2> localCertificate, PeerTrust trust, IClock clock)
+    : IPeerChannel
 {
     public async Task<PeerFetch> FetchAsync(
         PeerEndpoint endpoint, CancellationToken cancellationToken)
@@ -67,7 +68,7 @@ public sealed class MutualTlsPeerChannel(
                 // The address, not the expected subject: this is the SNI name, and the name
                 // that actually identifies the peer is checked in the Domain.
                 TargetHost = endpoint.Address,
-                ClientCertificates = [localCertificate()],
+                ClientCertificates = [localCertificate(endpoint.LocalCertificateThumbprint)],
                 EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
             },
             cancellationToken).ConfigureAwait(false);

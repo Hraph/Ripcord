@@ -186,7 +186,7 @@ public sealed class MutualTlsChannelTests : IDisposable
 
     private MutualTlsPeerChannel Channel(X509Certificate2? clientCertificate = null) =>
         new(
-            () => clientCertificate ?? this.Issue(this.pairCa, "CN=HV-REPLICA-01"),
+            _ => clientCertificate ?? this.Issue(this.pairCa, "CN=HV-REPLICA-01"),
             new PeerTrust([this.pairCa.RootCertificate]),
             new FixedClock(Now));
 
@@ -196,6 +196,7 @@ public sealed class MutualTlsChannelTests : IDisposable
             "127.0.0.1",
             port,
             this.RulesFor("CN=HV-PRIMARY-01", "127.0.0.1"),
+            "AAAA1111BBBB2222CCCC3333DDDD4444EEEE5555",
             TimeSpan.FromSeconds(5));
 
     private PeerRules RulesFor(string subject, string address) =>
