@@ -62,7 +62,18 @@ internal static class NetworkRules
 
         foreach (VirtualAdapter adapter in target.Adapters)
         {
-            if (adapter.SwitchName is null || adapter.IsConnected == false)
+            // Attached to something the inventory could not name: not a fault, and not a
+            // pass either. Reporting it as bound to nothing would be a critical nobody can
+            // act on, and reporting nothing would be worse.
+            if (adapter.SwitchName is null && adapter.IsConnected == true)
+            {
+                yield return Found.Unevaluable(
+                    CheckRules.ReplicaSwitchMismatch,
+                    name,
+                    $"{adapter.Name} on {subject.Target.HostName} is attached to a switch "
+                    + "that could not be named");
+            }
+            else if (adapter.SwitchName is null || adapter.IsConnected == false)
             {
                 yield return Found.Violated(
                     CheckRules.ReplicaAdapterDisconnected,

@@ -151,7 +151,11 @@ public static class FakeScenarios
                             Adapters =
                             [
                                 .. vm.Facts.Adapters.Select(
-                                    adapter => adapter with { SwitchName = null }),
+                                    adapter => adapter with
+                                    {
+                                        SwitchName = null,
+                                        IsConnected = false,
+                                    }),
                             ],
                         },
                     }

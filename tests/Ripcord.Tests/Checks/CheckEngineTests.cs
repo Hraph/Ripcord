@@ -270,7 +270,11 @@ public class CheckEngineTests
     }
 
     private static PairView Disconnected(PairView view) =>
-        view.WithTargetAdapter("VM-DC-01", adapter => adapter with { SwitchName = null });
+        view.WithTargetAdapter("VM-DC-01", adapter => adapter with
+        {
+            SwitchName = null,
+            IsConnected = false,
+        });
 
     /// Every P1 copy primary on the disaster recovery host: what the pair looks like during
     /// an incident.

@@ -41,8 +41,11 @@ public class NetworkRuleTests
     public void An_adapter_bound_to_no_switch_is_critical()
     {
         Finding finding = Assert.Single(Report(
-            Pairs.Healthy(Now).WithTargetAdapter(
-                "VM-DC-01", adapter => adapter with { SwitchName = null }))
+            Pairs.Healthy(Now).WithTargetAdapter("VM-DC-01", adapter => adapter with
+            {
+                SwitchName = null,
+                IsConnected = false,
+            }))
             .For(CheckRules.ReplicaAdapterDisconnected));
 
         Assert.Equal(Severity.Critical, finding.Rule.Severity);
@@ -68,6 +71,24 @@ public class NetworkRuleTests
             Pairs.Healthy(Now).WithTargetAdapter(
                 "VM-DC-01", adapter => adapter with { IsConnected = null }))
             .For(CheckRules.ReplicaAdapterDisconnected));
+    }
+
+    /// Attached to a switch the inventory could not name: not a fault, and not a pass. A
+    /// critical nobody can act on would be worse than admitting the gap.
+    [Fact]
+    public void An_adapter_attached_to_a_switch_that_could_not_be_named_is_unevaluable()
+    {
+        CheckReport report = Report(
+            Pairs.Healthy(Now).WithTargetAdapter("VM-DC-01", adapter => adapter with
+            {
+                SwitchName = null,
+                IsConnected = true,
+            }));
+
+        Assert.Empty(report.For(CheckRules.ReplicaAdapterDisconnected));
+        Assert.Equal(
+            FindingVerdict.Unevaluable,
+            Assert.Single(report.For(CheckRules.ReplicaSwitchMismatch)).Verdict);
     }
 
     /// A dynamic MAC is the quietest of these faults: the VM boots, the switch is right, and

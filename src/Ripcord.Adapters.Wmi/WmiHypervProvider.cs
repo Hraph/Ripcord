@@ -1,6 +1,7 @@
 using Microsoft.Management.Infrastructure.Options;
 using System.Globalization;
 using Microsoft.Management.Infrastructure;
+using Ripcord.Domain.Inventory;
 using Ripcord.Domain.Replication;
 using Ripcord.Ports.Replication;
 using Ripcord.Ports;
@@ -20,6 +21,12 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
     private const string ComputerSystemQuery =
         "SELECT ElementName, InstallDate, ReplicationMode FROM Msvm_ComputerSystem";
 
+    /// The switches are read once for the whole host: every adapter's binding is an object
+    /// path carrying the switch's GUID, and resolving that per adapter would be one query per
+    /// NIC on a host that has three switches.
+    private const string SwitchQuery =
+        "SELECT Name, ElementName FROM Msvm_VirtualEthernetSwitch";
+
     public Task<HostState> GetLocalStateAsync(CancellationToken cancellationToken) =>
         Task.Run(() => this.ReadLocalState(cancellationToken), cancellationToken);
 
@@ -30,6 +37,8 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
 
         using CimSession session = CimSession.Create(computerName: null);
 
+        Dictionary<string, string> switches = ReadSwitches(session, options);
+
         List<VmReplicationState> vms = [];
 
         foreach (CimInstance instance in session.QueryInstances(
@@ -39,7 +48,7 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
             {
                 if (CimTranslation.IsVirtualMachine(CimValues.Instant(instance, "InstallDate")))
                 {
-                    vms.Add(ReadVm(session, instance, options));
+                    vms.Add(ReadVm(session, instance, switches, options));
                 }
             }
         }
@@ -56,7 +65,10 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
     /// PendingReplicationSize is not on the relationship at all; it comes from
     /// Msvm_ReplicationStatistics, through the service method below.
     private static VmReplicationState ReadVm(
-        CimSession session, CimInstance vm, CimOperationOptions options)
+        CimSession session,
+        CimInstance vm,
+        IReadOnlyDictionary<string, string> switches,
+        CimOperationOptions options)
     {
         using CimInstance? relationship = ReadRelationship(session, vm, options);
 
@@ -66,7 +78,32 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
             CimReplicationValues.State(CimValues.Number(relationship, "ReplicationState")),
             CimReplicationValues.Health(CimValues.Number(relationship, "ReplicationHealth")),
             CimTranslation.Instant(CimValues.Instant(relationship, "LastReplicationTime")),
-            ReadPendingBytes(session, vm, relationship, options));
+            ReadPendingBytes(session, vm, relationship, options),
+            WmiVmInventory.Read(session, vm, relationship, switches, options));
+    }
+
+    /// GUID to friendly name. `Msvm_VirtualEthernetSwitch.Name` is the GUID an adapter's
+    /// binding references; `ElementName` is what the operator called it and what the
+    /// configuration compares against.
+    private static Dictionary<string, string> ReadSwitches(
+        CimSession session, CimOperationOptions options)
+    {
+        Dictionary<string, string> switches = new(StringComparer.OrdinalIgnoreCase);
+
+        foreach (CimInstance instance in session.QueryInstances(
+            Namespace, "WQL", SwitchQuery, options))
+        {
+            using (instance)
+            {
+                if (CimValues.Text(instance, "Name") is { Length: > 0 } id
+                    && CimValues.Text(instance, "ElementName") is { Length: > 0 } name)
+                {
+                    switches[id] = name;
+                }
+            }
+        }
+
+        return switches;
     }
 
     /// Msvm_ReplicationStatistics cannot be queried — InstanceID, Caption, Description and

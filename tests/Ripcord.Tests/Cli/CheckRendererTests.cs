@@ -125,7 +125,7 @@ public class CheckRendererTests
     {
         string rendered = Render(Broken());
 
-        Assert.Contains($"[{CheckRules.ReplicaAdapterDisconnected}] VM-DC-01", rendered);
+        Assert.Contains($"[{CheckRules.ReplicaSwitchMismatch}] VM-DC-01", rendered);
         Assert.Contains("Observed:", rendered);
         Assert.Contains("On the day:", rendered);
         Assert.Contains("Fix:", rendered);
@@ -252,7 +252,7 @@ public class CheckRendererTests
 
     private static PairView Broken() =>
         Pairs.Healthy(Now).WithTargetAdapter(
-            "VM-DC-01", adapter => adapter with { SwitchName = null });
+            "VM-DC-01", adapter => adapter with { SwitchName = "vSwitch-OLD" });
 
     private static CheckReport Report(PairView view) =>
         Pairs.Evaluate(view, Now);
