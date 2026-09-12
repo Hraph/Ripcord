@@ -53,10 +53,11 @@ allowed to fail. Settle every decision against that.
   `Claude-Session:` line, no "Generated with Claude Code" footer.
 - **One-line commit messages.** Subject line only, no body, no bullet list. Keep it terse
   and factual — say what changed, not why at length. Under ~72 characters where possible.
-- Atomic commits: one logical change each. Do not commit unless explicitly asked.
-- **Never push.** Commit locally and stop there. Pushing is the user's call, always, even
-  when a commit was explicitly requested — the request to commit is not a request to push.
-  The same goes for creating pull requests, tags and releases.
+- Atomic commits: one logical change each. Committing does not need to be asked for —
+  commit a unit of work once it stands on its own.
+- **Never push.** Commit locally and stop there. Pushing is the user's call, always — including
+  after a commit made without being asked. The same goes for creating pull requests, tags
+  and releases.
 
 ### Comments
 
