@@ -33,6 +33,9 @@ replication:
   # NIC, so a second one reaches production just as well. That is checked against the host
   # itself before anything starts, not against this name.
   # test_failover_switch: vSwitch-ISOLATED
+  # How long a test VM may exist before it is reported as the residue of an interrupted run.
+  # Hyper-V lists test VMs and never mentions them; this is what mentions them. Default 24.
+  # test_failover_orphan_after_hours: 24
 
 # The read-only pair channel. Remove this block entirely, or set enabled: false, and the node
 # degrades to the local-only view rather than failing.

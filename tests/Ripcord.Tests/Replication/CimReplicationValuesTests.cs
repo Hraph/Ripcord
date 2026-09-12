@@ -65,15 +65,22 @@ public class CimReplicationValuesTests
         Assert.Equal(expected, CimReplicationValues.Role(value));
     }
 
-    /// Test replica (3) and extended replica (4) are real modes this milestone has no
-    /// vocabulary for. Unknown is the honest answer; None would claim there is no replication.
+    /// Extended replica (4) is a real mode nothing models yet. Unknown is the honest
+    /// answer; None would claim there is no replication.
     [Theory]
-    [InlineData(3)]
     [InlineData(4)]
     [InlineData(42)]
-    public void Modes_this_milestone_does_not_model_are_unknown_not_none(ushort value)
+    public void Modes_nothing_models_yet_are_unknown_not_none(ushort value)
     {
         Assert.Equal(ReplicationRole.Unknown, CimReplicationValues.Role(value));
+    }
+
+    /// Milestone 3 creates test replicas, so it also names them. Left as Unknown they would
+    /// show as a phantom row for as long as a test failover ran.
+    [Fact]
+    public void A_test_replica_is_named_rather_than_unknown()
+    {
+        Assert.Equal(ReplicationRole.TestReplica, CimReplicationValues.Role(3));
     }
 
     [Fact]

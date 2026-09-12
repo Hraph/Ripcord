@@ -41,6 +41,8 @@ public sealed class ReplicationDocument
 
     public string? TestFailoverSwitch { get; set; }
 
+    public int? TestFailoverOrphanAfterHours { get; set; }
+
     public int? ExpectedFrequencySec { get; set; }
 
     public int? LagWarningMultiplier { get; set; }

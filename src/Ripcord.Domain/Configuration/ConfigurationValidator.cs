@@ -23,6 +23,10 @@ public static class ConfigurationValidator
 
     private const int MaxLagMultiplier = 1_000;
 
+    /// A year. Past that the rule is switched off, and a rule switched off by a large number
+    /// is harder to notice than one switched off by name.
+    private const int MaxOrphanHours = 8_760;
+
     private const int MaxFreeSpaceWarningGb = 1_000_000;
 
     public static ConfigurationValidation Validate(
@@ -183,6 +187,15 @@ public static class ConfigurationValidator
 
         complete &= TestFailoverSwitch(replication, switchName, errors, out string? testSwitch);
 
+        // Zero would report a test failover as its own orphan on the first check of the run.
+        if (replication.TestFailoverOrphanAfterHours is not (null or (> 0 and <= MaxOrphanHours)))
+        {
+            errors.Add(new ConfigurationError(
+                "replication.test_failover_orphan_after_hours",
+                $"must be between 1 and {MaxOrphanHours} when present"));
+            complete = false;
+        }
+
         return complete
             ? new ReplicationSettings(
                 role,
@@ -192,7 +205,10 @@ public static class ConfigurationValidator
                 replication.HealthWarningAfterSec is { } seconds
                     ? TimeSpan.FromSeconds(seconds)
                     : ReplicationSettings.DefaultHealthWarningAfter,
-                testSwitch)
+                testSwitch,
+                replication.TestFailoverOrphanAfterHours is { } orphanHours
+                    ? TimeSpan.FromHours(orphanHours)
+                    : null)
             : null;
     }
 

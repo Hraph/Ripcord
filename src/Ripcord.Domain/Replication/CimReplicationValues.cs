@@ -18,8 +18,8 @@ public static class CimReplicationValues
             ? (ReplicationHealth)health
             : ReplicationHealth.Unknown;
 
-    /// Test replica (3) and extended replica (4) are real modes this milestone has no
-    /// vocabulary for; None would claim there is no replication at all.
+    /// Extended replica (4) is a real mode nothing models yet; None would claim there is no
+    /// replication at all. Test replica (3) is modelled since milestone 3.
     public static ReplicationRole Role(ushort? value) =>
         value is { } role && Enum.IsDefined((ReplicationRole)role)
             ? (ReplicationRole)role

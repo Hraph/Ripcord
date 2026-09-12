@@ -34,11 +34,19 @@ public sealed record ReplicationSettings(
     TimeSpan ExpectedFrequency,
     int LagWarningMultiplier,
     TimeSpan HealthWarningAfter,
-    string? TestFailoverSwitch = null)
+    string? TestFailoverSwitch = null,
+    TimeSpan? TestFailoverOrphanAfterOverride = null)
 {
     /// Hyper-V health flickers to Warning for a single missed cycle. Five minutes is long
     /// enough that a blip does not wake anyone and short enough to catch a real stall.
     public static readonly TimeSpan DefaultHealthWarningAfter = TimeSpan.FromMinutes(5);
+
+    /// Long enough that a slow test failover is never called an orphan, short enough that a
+    /// run interrupted overnight is reported the next morning rather than a week later.
+    public static readonly TimeSpan DefaultOrphanAfter = TimeSpan.FromHours(24);
+
+    public TimeSpan TestFailoverOrphanAfter =>
+        this.TestFailoverOrphanAfterOverride ?? DefaultOrphanAfter;
 }
 
 public sealed record StorageSettings(

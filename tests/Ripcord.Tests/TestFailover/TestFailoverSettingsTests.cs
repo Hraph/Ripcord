@@ -55,6 +55,42 @@ public class TestFailoverSettingsTests
         Assert.Equal("replication.test_failover_switch", error.Path);
     }
 
+    /// Absent, a test VM is called an orphan after a day. Long enough that a slow test is
+    /// never called one, short enough that a run interrupted overnight is reported the next
+    /// morning rather than a week later.
+    [Fact]
+    public void The_orphan_threshold_defaults_to_a_day()
+    {
+        Assert.Equal(
+            TimeSpan.FromHours(24),
+            Valid(ValidDocument.Create()).Replication.TestFailoverOrphanAfter);
+    }
+
+    [Fact]
+    public void A_declared_orphan_threshold_is_carried_through()
+    {
+        Assert.Equal(TimeSpan.FromHours(6), Valid(WithOrphanHours(6))
+            .Replication.TestFailoverOrphanAfter);
+    }
+
+    /// Zero would report a running test failover as its own orphan on the first check.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void A_non_positive_orphan_threshold_is_refused(int hours)
+    {
+        Assert.Equal(
+            "replication.test_failover_orphan_after_hours",
+            Assert.Single(Errors(WithOrphanHours(hours))).Path);
+    }
+
+    private static ConfigurationDocument WithOrphanHours(int hours)
+    {
+        ConfigurationDocument document = ValidDocument.Create();
+        document.Replication!.TestFailoverOrphanAfterHours = hours;
+        return document;
+    }
+
     private static ConfigurationDocument With(string testFailoverSwitch)
     {
         ConfigurationDocument document = ValidDocument.Create();
