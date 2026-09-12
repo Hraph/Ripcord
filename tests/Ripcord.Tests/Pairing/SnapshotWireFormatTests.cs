@@ -1,4 +1,5 @@
 using Ripcord.Adapters.Pairing.Wire;
+using Ripcord.Domain.Inventory;
 using Ripcord.Domain.Pairing;
 using Ripcord.Domain.Replication;
 
@@ -70,7 +71,70 @@ public class SnapshotWireFormatTests
     [Fact]
     public void The_payload_declares_its_schema_version()
     {
-        Assert.Contains("\"schema_version\":1", SnapshotWireFormat.Write(Populated()));
+        Assert.Contains("\"schema_version\":2", SnapshotWireFormat.Write(Populated()));
+    }
+
+    /// Milestone 2's rules are cross-host, so the facts they compare have to cross the wire —
+    /// the listener never reads Hyper-V itself (decision D18).
+    [Fact]
+    public void The_host_and_vm_facts_survive_the_round_trip()
+    {
+        HostSnapshot original = Populated();
+
+        HostSnapshot? read = SnapshotWireFormat.Read(SnapshotWireFormat.Write(original));
+
+        Assert.Equal(original, read);
+        Assert.Equal(12288, read!.State.Facts!.PhysicalRamMb);
+        Assert.Equal("vSwitch-PROD", read.State.Vms[0].Facts!.Adapters[0].SwitchName);
+    }
+
+    /// A host still on the milestone 1b binary publishes schema 1. Its state is read, its
+    /// facts are absent, and `check` reports the rules that needed them as unevaluable —
+    /// refusing the payload outright would blind the pair view during a rolling update.
+    [Fact]
+    public void A_schema_one_payload_is_read_with_its_facts_absent()
+    {
+        string legacy = "{\"schema_version\":1,"
+            + "\"captured_at\":\"2026-09-13T14:00:00+00:00\","
+            + "\"host_name\":\"HV-PRIMARY-01\","
+            + "\"vms\":[{\"name\":\"VM-DC-01\",\"role\":1,\"state\":3,\"health\":1,"
+            + "\"last_replication_time\":\"2026-09-13T13:59:32+00:00\",\"pending_bytes\":4194304}]}";
+
+        HostSnapshot? read = SnapshotWireFormat.Read(legacy);
+
+        Assert.NotNull(read);
+        Assert.Null(read.State.Facts);
+        Assert.Null(read.State.Vms[0].Facts);
+        Assert.Equal(ReplicationRole.Primary, read.State.Vms[0].Role);
+    }
+
+    /// Null facts are the degraded shape: a host that could not read its own memory settings
+    /// must publish the gap, not a zero that reads as a VM needing no RAM.
+    [Fact]
+    public void Absent_facts_survive_as_absent_rather_than_as_zero()
+    {
+        HostSnapshot snapshot = new(
+            Now,
+            new HostState(
+                "HV-PRIMARY-01",
+                [
+                    new VmReplicationState(
+                        "VM-DC-01",
+                        ReplicationRole.Primary,
+                        ReplicationState.Replicating,
+                        ReplicationHealth.Normal,
+                        Now,
+                        0,
+                        new VmFacts(null, null, null, [], [], null)),
+                ],
+                HostReachability.Reachable(),
+                HostFacts.Unknown()));
+
+        HostSnapshot? read = SnapshotWireFormat.Read(SnapshotWireFormat.Write(snapshot));
+
+        Assert.Equal(snapshot, read);
+        Assert.Null(read!.State.Vms[0].Facts!.StartupRamMb);
+        Assert.False(read.State.Vms[0].Facts!.KnowsWhichDisksReplicate);
     }
 
     /// A peer running a version this one does not understand is refused rather than guessed
@@ -79,7 +143,7 @@ public class SnapshotWireFormatTests
     public void A_payload_of_an_unknown_schema_version_is_refused()
     {
         string json = SnapshotWireFormat.Write(Populated())
-            .Replace("\"schema_version\":1", "\"schema_version\":99", StringComparison.Ordinal);
+            .Replace("\"schema_version\":2", "\"schema_version\":99", StringComparison.Ordinal);
 
         Assert.Null(SnapshotWireFormat.Read(json));
     }
@@ -93,8 +157,8 @@ public class SnapshotWireFormatTests
     [InlineData("{")]
     [InlineData("null")]
     [InlineData("[]")]
-    [InlineData("{\"schema_version\":1}")]
-    [InlineData("{\"schema_version\":1,\"host_name\":null,\"captured_at\":null,\"vms\":null}")]
+    [InlineData("{\"schema_version\":2}")]
+    [InlineData("{\"schema_version\":2,\"host_name\":null,\"captured_at\":null,\"vms\":null}")]
     public void Malformed_input_yields_null_rather_than_an_exception(string payload)
     {
         Assert.Null(SnapshotWireFormat.Read(payload));
@@ -142,14 +206,43 @@ public class SnapshotWireFormatTests
                         ReplicationState.Replicating,
                         ReplicationHealth.Normal,
                         Now.AddSeconds(-28),
-                        4_194_304),
+                        4_194_304,
+                        new VmFacts(
+                            2048,
+                            4096,
+                            1024,
+                            [
+                                new VirtualAdapter(
+                                    "Network Adapter",
+                                    "vSwitch-PROD",
+                                    true,
+                                    "00-15-5D-01-02-03",
+                                    false,
+                                    10),
+                            ],
+                            [new VmDisk(@"D:\VMs\dc-os.vhdx", false)],
+                            [@"D:\VMs\dc-os.vhdx"])),
                     new VmReplicationState(
                         "VM-BACKUP-01",
                         ReplicationRole.None,
                         ReplicationState.Disabled,
                         ReplicationHealth.Unknown,
                         null,
-                        null),
+                        null,
+                        new VmFacts(
+                            2048,
+                            null,
+                            null,
+                            [new VirtualAdapter("Network Adapter", null, false, null, true, null)],
+                            [new VmDisk(@"\\.\PHYSICALDRIVE2", true)],
+                            null)),
                 ],
-                HostReachability.Reachable()));
+                HostReachability.Reachable(),
+                new HostFacts(
+                    12288,
+                    [new HostVolume("D:", 500_000_000_000, 2_000_000_000_000, true, true)],
+                    new CertificateFact(
+                        "AAAA1111BBBB2222CCCC3333DDDD4444EEEE5555",
+                        "CN=HV-PRIMARY-01",
+                        new DateTimeOffset(2029, 9, 1, 0, 0, 0, TimeSpan.Zero)))));
 }
