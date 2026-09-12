@@ -229,6 +229,10 @@ public static class ConfigurationValidator
                 Path,
                 "must differ from replication.expected_switch_name: a test VM on the "
                     + "production switch is the duplicate identity this setting prevents"));
+
+        // Name inequality is not the guarantee — a second external switch reaches production
+        // just as well. The switch's kind is checked against the host before anything starts;
+        // this only catches the copy-paste at the point it is made.
             return false;
         }
 

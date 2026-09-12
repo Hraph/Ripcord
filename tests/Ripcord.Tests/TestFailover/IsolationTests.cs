@@ -15,6 +15,15 @@ public class IsolationTests
     private const string TestSwitch = "vSwitch-ISOLATED";
     private const string ProductionSwitch = "vSwitch-PROD";
 
+    /// The isolated switch is Private unless a test says otherwise: that is what makes it
+    /// isolated. A switch's name carries no guarantee at all.
+    private static readonly IReadOnlyList<HostSwitch> Switches =
+    [
+        new HostSwitch(TestSwitch, SwitchConnectivity.Private),
+        new HostSwitch(ProductionSwitch, SwitchConnectivity.External),
+        new HostSwitch("vSwitch-DMZ", SwitchConnectivity.External),
+    ];
+
     [Fact]
     public void An_adapter_bound_to_no_switch_is_isolated()
     {
@@ -114,7 +123,7 @@ public class IsolationTests
     [Fact]
     public void Adapters_that_could_not_be_read_are_refused()
     {
-        IsolationAssessment assessment = Isolation.Of(null, TestSwitch);
+        IsolationAssessment assessment = Isolation.Of(null, TestSwitch, Switches);
 
         IsolationBreach breach = Assert.Single(assessment.Breaches);
 
@@ -122,11 +131,75 @@ public class IsolationTests
         Assert.Equal(IsolationDoubt.Unreadable, breach.Doubt);
     }
 
+    /// The reason the whole rule cannot be name equality. An operator who points
+    /// `test_failover_switch` at a second External switch — a DMZ, a management network, the
+    /// one a multi-homed host always has — satisfies every name check while putting the test
+    /// VM on a network that reaches production. `vSwitch-PROD` is not the only way out.
+    [Fact]
+    public void A_test_switch_that_is_external_breaches_isolation()
+    {
+        IsolationAssessment assessment = Isolation.Of(
+            [Adapter("vSwitch-DMZ", connected: true)], "vSwitch-DMZ", Switches);
+
+        IsolationBreach breach = Assert.Single(assessment.Breaches);
+
+        Assert.Equal(IsolationDoubt.ReachesProduction, breach.Doubt);
+        Assert.Contains("external", breach.Observed, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// A switch Ripcord could not classify is not a switch known to be safe.
+    [Fact]
+    public void A_test_switch_of_unknown_connectivity_breaches_isolation()
+    {
+        IsolationAssessment assessment = Isolation.Of(
+            [Adapter("vSwitch-NEW", connected: true)],
+            "vSwitch-NEW",
+            [new HostSwitch("vSwitch-NEW", SwitchConnectivity.Unknown)]);
+
+        Assert.Equal(IsolationDoubt.Unreadable, Assert.Single(assessment.Breaches).Doubt);
+    }
+
+    /// The switch inventory itself could not be read, so no switch can be cleared.
+    [Fact]
+    public void A_test_switch_absent_from_the_inventory_breaches_isolation()
+    {
+        IsolationAssessment assessment = Isolation.Of(
+            [Adapter(TestSwitch, connected: true)], TestSwitch, []);
+
+        Assert.Equal(IsolationDoubt.Unreadable, Assert.Single(assessment.Breaches).Doubt);
+    }
+
+    /// Internal reaches the management OS only, Private reaches nothing but VMs on the same
+    /// switch. Both are acceptable; External is the one that bridges to a physical NIC.
+    [Theory]
+    [InlineData(SwitchConnectivity.Private)]
+    [InlineData(SwitchConnectivity.Internal)]
+    public void A_non_external_test_switch_is_isolated(SwitchConnectivity connectivity)
+    {
+        Assert.True(Isolation.Of(
+            [Adapter("vSwitch-LAB", connected: true)],
+            "vSwitch-LAB",
+            [new HostSwitch("vSwitch-LAB", connectivity)]).IsIsolated);
+    }
+
+    /// Being non-External is necessary and not sufficient: the adapter must be on the switch
+    /// the operator declared. A test VM landing on some other harmless switch is still a
+    /// test VM nobody said would be there.
+    [Fact]
+    public void A_non_external_switch_that_was_not_declared_still_breaches_isolation()
+    {
+        Assert.False(Isolation.Of(
+            [Adapter("vSwitch-LAB", connected: true)],
+            TestSwitch,
+            [.. Switches, new HostSwitch("vSwitch-LAB", SwitchConnectivity.Private)])
+            .IsIsolated);
+    }
+
     private static IsolationAssessment Assess(params VirtualAdapter[] adapters) =>
-        Isolation.Of(adapters, TestSwitch);
+        Isolation.Of(adapters, TestSwitch, Switches);
 
     private static IsolationAssessment Assess(VirtualAdapter adapter, string? testSwitch) =>
-        Isolation.Of([adapter], testSwitch);
+        Isolation.Of([adapter], testSwitch, Switches);
 
     private static VirtualAdapter Adapter(
         string? switchName, bool? connected, string name = "Network Adapter") =>

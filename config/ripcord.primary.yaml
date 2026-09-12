@@ -29,6 +29,9 @@ replication:
   # started disconnected, which is the safe default. It must never be expected_switch_name:
   # a test VM is a byte-for-byte copy, so on the production switch it is a duplicate
   # hostname, IP and — for the domain controller — a duplicate directory identity.
+  # It must also not be an external switch: external is the only kind bridged to a physical
+  # NIC, so a second one reaches production just as well. That is checked against the host
+  # itself before anything starts, not against this name.
   # test_failover_switch: vSwitch-ISOLATED
 
 # The read-only pair channel. Remove this block entirely, or set enabled: false, and the node
