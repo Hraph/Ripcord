@@ -23,13 +23,6 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
     public Task<HostState> GetLocalStateAsync(CancellationToken cancellationToken) =>
         Task.Run(() => this.ReadLocalState(cancellationToken), cancellationToken);
 
-    /// Milestone 1 is local-only: there is no channel to the peer, and saying so is the
-    /// behaviour, not a stub. Milestone 1b puts a transport behind this and changes nothing
-    /// above it. The name is left empty because a host that never answered cannot supply one;
-    /// the Application names an unreachable peer from the configuration.
-    public Task<HostState> GetPeerStateAsync(CancellationToken cancellationToken) =>
-        Task.FromResult(HostState.Unreachable(string.Empty, HostReachability.NotConfigured()));
-
     private HostState ReadLocalState(CancellationToken cancellationToken)
     {
         CimOperationOptions options =
