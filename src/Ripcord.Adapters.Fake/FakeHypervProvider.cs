@@ -1,4 +1,6 @@
 using Ripcord.Domain.Replication;
+using Ripcord.Domain.Pairing;
+using Ripcord.Ports.Pairing;
 using Ripcord.Ports.Replication;
 using Ripcord.Ports;
 
@@ -10,14 +12,9 @@ namespace Ripcord.Adapters.Fake;
 public sealed class FakeHypervProvider : IHypervProvider
 {
     private readonly HostState local;
-    private readonly HostState peer;
     private readonly Exception? localFailure;
 
-    public FakeHypervProvider(HostState local, HostState peer)
-    {
-        this.local = local;
-        this.peer = peer;
-    }
+    public FakeHypervProvider(HostState local) => this.local = local;
 
     private FakeHypervProvider(Exception localFailure)
     {
@@ -26,7 +23,6 @@ public sealed class FakeHypervProvider : IHypervProvider
         // failure mode.
         this.local = HostState.Unreachable(
             FakeScenarios.LocalHostName, HostReachability.NotConfigured());
-        this.peer = FakeScenarios.AbsentPeer();
         this.localFailure = localFailure;
     }
 
@@ -39,11 +35,44 @@ public sealed class FakeHypervProvider : IHypervProvider
         this.localFailure is null
             ? Task.FromResult(this.local)
             : Task.FromException<HostState>(this.localFailure);
+}
 
-    /// A host whose own WMI is down knows nothing about the peer either, but it does not fail
-    /// on its account: the local failure is what the command reports.
-    public Task<HostState> GetPeerStateAsync(CancellationToken cancellationToken) =>
-        Task.FromResult(this.peer);
+/// The other host, scripted. Every reachability the rendering must tell apart has a factory
+/// here, because they are what milestone 1b has to get right.
+public sealed class FakePeerChannel(PeerFetch fetch) : IPeerChannel
+{
+    public PeerEndpoint? LastEndpoint { get; private set; }
+
+    public static FakePeerChannel Answering(HostSnapshot snapshot) =>
+        new(PeerFetch.Answered(snapshot));
+
+    public static FakePeerChannel TimingOut(DateTimeOffset since) =>
+        new(PeerFetch.Silent(HostReachability.TimedOut(since)));
+
+    public static FakePeerChannel Refusing(DateTimeOffset since) =>
+        new(PeerFetch.Silent(HostReachability.Refused(since)));
+
+    public static FakePeerChannel Absent() =>
+        new(PeerFetch.Silent(HostReachability.NotConfigured()));
+
+    public Task<PeerFetch> FetchAsync(PeerEndpoint endpoint, CancellationToken cancellationToken)
+    {
+        this.LastEndpoint = endpoint;
+        return Task.FromResult(fetch);
+    }
+}
+
+/// The snapshot file, without a file. Records what was published so a test can assert that
+/// `status` refreshed this host before reading the other one.
+public sealed class InMemorySnapshotStore : ISnapshotStore
+{
+    private readonly Dictionary<string, HostSnapshot> written = [];
+
+    public IReadOnlyDictionary<string, HostSnapshot> Written => this.written;
+
+    public void Write(string path, HostSnapshot snapshot) => this.written[path] = snapshot;
+
+    public HostSnapshot? Read(string path) => this.written.GetValueOrDefault(path);
 }
 
 /// Named host states for the tests to compose. Keeping them here rather than in the test
@@ -88,10 +117,27 @@ public static class FakeScenarios
             ],
             HostReachability.Reachable());
 
-    /// What milestone 1 always shows for the peer, and what milestone 1b must keep showing
-    /// when the other host is actually down.
-    public static HostState AbsentPeer() =>
-        HostState.Unreachable(PeerHostName, HostReachability.NotConfigured());
+    /// What the peer publishes when it is healthy.
+    public static HostSnapshot PeerSnapshot(DateTimeOffset capturedAt) =>
+        new(
+            capturedAt,
+            new HostState(
+                PeerHostName,
+                [
+                    Primary("VM-DC-01", ReplicationHealth.Normal, capturedAt.AddSeconds(-18)),
+                    Primary("VM-LEGACY-01", ReplicationHealth.Normal, capturedAt.AddSeconds(-9)),
+                ],
+                HostReachability.Reachable()));
+
+    private static VmReplicationState Primary(
+        string name, ReplicationHealth health, DateTimeOffset lastReplication) =>
+        new(
+            name,
+            ReplicationRole.Primary,
+            ReplicationState.Replicating,
+            health,
+            lastReplication,
+            0);
 
     private static VmReplicationState Replica(
         string name, ReplicationHealth health, DateTimeOffset lastReplication, long pendingBytes) =>

@@ -5,6 +5,7 @@ using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Replication;
 using Ripcord.Domain;
 using Ripcord.Ports.Configuration;
+using Ripcord.Ports.Pairing;
 using Ripcord.Ports.Replication;
 using Ripcord.Ports;
 
@@ -17,7 +18,12 @@ public sealed record CliEnvironment(string MachineName, string DefaultConfigurat
 /// Argument parsing and console rendering. No decision lives here: the exit code comes from
 /// the use case, the layout from StatusRenderer.
 public sealed class RipcordCli(
-    IConfigStore configStore, IHypervProvider provider, IClock clock, CliEnvironment environment)
+    IConfigStore configStore,
+    IHypervProvider provider,
+    IPeerChannel peerChannel,
+    ISnapshotStore snapshotStore,
+    IClock clock,
+    CliEnvironment environment)
 {
     public async Task<ExitCode> RunAsync(
         string[] args, TextWriter output, TextWriter error, CancellationToken cancellationToken)
@@ -70,7 +76,7 @@ public sealed class RipcordCli(
             return ExitCode.InvalidConfiguration;
         }
 
-        StatusQuery query = new(configStore, provider, clock);
+        StatusQuery query = new(configStore, provider, peerChannel, snapshotStore, clock);
 
         StatusOutcome outcome = await query
             .ExecuteAsync(new StatusRequest(path, environment.MachineName), cancellationToken)

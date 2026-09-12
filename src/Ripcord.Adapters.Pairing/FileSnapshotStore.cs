@@ -1,0 +1,44 @@
+using Ripcord.Adapters.Pairing.Wire;
+using Ripcord.Domain.Pairing;
+using Ripcord.Ports.Pairing;
+
+namespace Ripcord.Adapters.Pairing;
+
+/// The snapshot on disk. The privileged `ripcord` writes it; the unprivileged listener reads
+/// it and serves nothing else (decision D18).
+public sealed class FileSnapshotStore : ISnapshotStore
+{
+    public void Write(string path, HostSnapshot snapshot)
+    {
+        // Serialise first: an unpublishable snapshot must not truncate the previous good one.
+        string payload = SnapshotWireFormat.Write(snapshot);
+
+        // A fresh host has no D:\Ripcord yet, and failing here would fail `ripcord status` on
+        // a host that is otherwise perfectly healthy.
+        if (System.IO.Path.GetDirectoryName(path) is { Length: > 0 } directory)
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        // Written aside and moved into place: the listener reads this file while we rewrite
+        // it, and must never see a half-written one.
+        string temporary = path + ".tmp";
+        File.WriteAllText(temporary, payload);
+        File.Move(temporary, path, overwrite: true);
+    }
+
+    /// Runs inside the network-facing service, so it never throws: no snapshot, an unreadable
+    /// one and an unparseable one are all "nothing to serve".
+    public HostSnapshot? Read(string path)
+    {
+        try
+        {
+            return SnapshotWireFormat.Read(File.ReadAllText(path));
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            return null;
+        }
+    }
+}

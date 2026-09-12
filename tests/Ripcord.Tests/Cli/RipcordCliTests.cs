@@ -145,8 +145,9 @@ public class RipcordCliTests
 
         RipcordCli cli = new(
             configStore ?? new RecordingConfigStore(),
-            provider ?? new FakeHypervProvider(
-                FakeScenarios.Healthy(Now), FakeScenarios.AbsentPeer()),
+            provider ?? new FakeHypervProvider(FakeScenarios.Healthy(Now)),
+            FakePeerChannel.Absent(),
+            new InMemorySnapshotStore(),
             new FixedClock(Now),
             new CliEnvironment(machineName, DefaultConfigPath));
 
@@ -163,8 +164,6 @@ public class RipcordCliTests
             Task.FromCanceled<HostState>(
                 cancellationToken.IsCancellationRequested ? cancellationToken : new(true));
 
-        public Task<HostState> GetPeerStateAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(FakeScenarios.AbsentPeer());
     }
 
     private sealed class FixedClock(DateTimeOffset now) : IClock
