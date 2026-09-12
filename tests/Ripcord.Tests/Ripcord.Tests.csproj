@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\src\Ripcord.Application\Ripcord.Application.csproj" />
     <ProjectReference Include="..\..\src\Ripcord.Cli\Ripcord.Cli.csproj" />
     <ProjectReference Include="..\..\src\Ripcord.Adapters.Fake\Ripcord.Adapters.Fake.csproj" />
+    <ProjectReference Include="..\..\src\Ripcord.Adapters.Yaml\Ripcord.Adapters.Yaml.csproj" />
   </ItemGroup>
 
 </Project>

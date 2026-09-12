@@ -1,0 +1,6 @@
+# Keep line endings stable so the golden rendering test compares like for like.
+*.cs text eol=lf
+*.md text eol=lf
+*.yaml text eol=lf
+*.csproj text eol=lf
+*.sln text eol=crlf

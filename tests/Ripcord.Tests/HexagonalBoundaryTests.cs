@@ -23,12 +23,13 @@ public class HexagonalBoundaryTests
         ["Ripcord.Application"] = ["Ripcord.Domain", "Ripcord.Ports"],
         ["Ripcord.Cli"] = ["Ripcord.Domain", "Ripcord.Ports", "Ripcord.Application"],
         ["Ripcord.Adapters.Fake"] = ["Ripcord.Domain", "Ripcord.Ports"],
+        ["Ripcord.Adapters.Yaml"] = ["Ripcord.Domain", "Ripcord.Ports"],
         ["Ripcord.Adapters.Wmi"] = ["Ripcord.Domain", "Ripcord.Ports"],
-        ["Ripcord.Host.Windows"] = ["Ripcord.Cli", "Ripcord.Adapters.Wmi"],
+        ["Ripcord.Host.Windows"] = ["Ripcord.Cli", "Ripcord.Adapters.Wmi", "Ripcord.Adapters.Yaml"],
         ["Ripcord.Tests"] =
         [
             "Ripcord.Domain", "Ripcord.Ports", "Ripcord.Application",
-            "Ripcord.Cli", "Ripcord.Adapters.Fake",
+            "Ripcord.Cli", "Ripcord.Adapters.Fake", "Ripcord.Adapters.Yaml",
         ],
     };
 
@@ -37,6 +38,7 @@ public class HexagonalBoundaryTests
     private static readonly Dictionary<string, string[]> AllowedPackages = new()
     {
         ["Ripcord.Adapters.Wmi"] = ["Microsoft.Management.Infrastructure"],
+        ["Ripcord.Adapters.Yaml"] = ["YamlDotNet"],
         ["Ripcord.Tests"] =
             ["coverlet.collector", "Microsoft.NET.Test.Sdk", "xunit", "xunit.runner.visualstudio"],
     };

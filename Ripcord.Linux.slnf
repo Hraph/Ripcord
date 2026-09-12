@@ -3,6 +3,7 @@
     "path": "Ripcord.sln",
     "projects": [
       "src\\Ripcord.Adapters.Fake\\Ripcord.Adapters.Fake.csproj",
+      "src\\Ripcord.Adapters.Yaml\\Ripcord.Adapters.Yaml.csproj",
       "src\\Ripcord.Application\\Ripcord.Application.csproj",
       "src\\Ripcord.Cli\\Ripcord.Cli.csproj",
       "src\\Ripcord.Domain\\Ripcord.Domain.csproj",
