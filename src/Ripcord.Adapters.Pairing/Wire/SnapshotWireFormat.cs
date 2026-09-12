@@ -18,11 +18,12 @@ public static class SnapshotWireFormat
     /// bound on what a caller can make the service hold.
     public const int MaxPayloadBytes = 1024 * 1024;
 
-    /// Schema 2 adds the host and VM facts milestone 2's cross-host rules compare. Schema 1
-    /// is still read — a host mid-update publishes it, and its facts simply arrive absent.
-    internal const int CurrentSchemaVersion = 2;
+    /// The *wire* format's version, which is not `ripcord.yaml`'s `schema_version` and moves
+    /// independently of it. Version 2 adds the host and VM facts the cross-host rules compare;
+    /// version 1 is still read — a host mid-update publishes it, and its facts arrive absent.
+    internal const int WireFormatVersion = 2;
 
-    internal static readonly int[] ReadableSchemaVersions = [1, 2];
+    internal static readonly int[] ReadableWireFormatVersions = [1, 2];
 
     private static readonly JsonSerializerOptions Options = new()
     {
@@ -67,6 +68,9 @@ public static class SnapshotWireFormat
 /// contract with the other host and must not move when the model does.
 internal sealed record SnapshotPayload
 {
+    /// Serialises as `schema_version`, which is what a deployed milestone 1b peer already
+    /// sends — the key cannot be renamed without breaking that pair. It carries the *wire*
+    /// format's version, unrelated to `ripcord.yaml`'s own `schema_version`.
     public int SchemaVersion { get; init; }
 
     public DateTimeOffset? CapturedAt { get; init; }
@@ -79,7 +83,7 @@ internal sealed record SnapshotPayload
 
     public static SnapshotPayload From(HostSnapshot snapshot) => new()
     {
-        SchemaVersion = SnapshotWireFormat.CurrentSchemaVersion,
+        SchemaVersion = SnapshotWireFormat.WireFormatVersion,
         CapturedAt = snapshot.CapturedAt,
         HostName = snapshot.State.HostName,
         Vms = [.. snapshot.State.Vms.Select(VmPayload.From)],
@@ -90,7 +94,7 @@ internal sealed record SnapshotPayload
     /// snapshot: a peer view assembled from half a payload is worse than no peer view.
     public HostSnapshot? ToSnapshot()
     {
-        if (!SnapshotWireFormat.ReadableSchemaVersions.Contains(this.SchemaVersion)
+        if (!SnapshotWireFormat.ReadableWireFormatVersions.Contains(this.SchemaVersion)
             || this.CapturedAt is not { } capturedAt
             || string.IsNullOrWhiteSpace(this.HostName)
             || this.Vms is null)
