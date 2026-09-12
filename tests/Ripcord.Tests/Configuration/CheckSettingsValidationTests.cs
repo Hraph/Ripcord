@@ -17,6 +17,7 @@ public class CheckSettingsValidationTests
             Validate(ValidDocument.Create()).Configuration);
 
         Assert.Equal(4, configuration.Node.HostMemoryReserveGb);
+        Assert.Equal(ExpectedRole.Replica, configuration.Replication.ExpectedRole);
         Assert.Equal("vSwitch-PROD", configuration.Replication.ExpectedSwitchName);
         Assert.Equal(TimeSpan.FromSeconds(30), configuration.Replication.ExpectedFrequency);
         Assert.Equal(3, configuration.Replication.LagWarningMultiplier);
@@ -62,6 +63,7 @@ public class CheckSettingsValidationTests
         ConfigurationDocument document = ValidDocument.Create();
         document.Replication = new ReplicationDocument
         {
+            ExpectedRole = "replica",
             ExpectedSwitchName = switchName,
             ExpectedFrequencySec = frequency,
             LagWarningMultiplier = multiplier,
@@ -86,6 +88,31 @@ public class CheckSettingsValidationTests
         Assert.Equal(
             TimeSpan.FromMinutes(15),
             Validate(document).Configuration!.Replication.HealthWarningAfter);
+    }
+
+    /// Read by name rather than by ordinal: "0" must never become Primary.
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("0")]
+    [InlineData("source")]
+    public void The_expected_role_is_required_and_named(string? role)
+    {
+        ConfigurationDocument document = ValidDocument.Create();
+        document.Replication!.ExpectedRole = role;
+
+        AssertError(Validate(document), "replication.expected_role");
+    }
+
+    [Theory]
+    [InlineData("primary", ExpectedRole.Primary)]
+    [InlineData("REPLICA", ExpectedRole.Replica)]
+    public void The_expected_role_is_read_in_either_case(string role, ExpectedRole expected)
+    {
+        ConfigurationDocument document = ValidDocument.Create();
+        document.Replication!.ExpectedRole = role;
+
+        Assert.Equal(expected, Validate(document).Configuration!.Replication.ExpectedRole);
     }
 
     [Fact]

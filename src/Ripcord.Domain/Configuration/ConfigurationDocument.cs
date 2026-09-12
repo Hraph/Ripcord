@@ -35,6 +35,8 @@ public sealed class NodeDocument
 /// configuration rather than to any rule, so they stay unread (decision D23).
 public sealed class ReplicationDocument
 {
+    public string? ExpectedRole { get; set; }
+
     public string? ExpectedSwitchName { get; set; }
 
     public int? ExpectedFrequencySec { get; set; }

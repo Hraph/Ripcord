@@ -24,6 +24,7 @@ internal static class ValidDocument
         },
         Replication = new ReplicationDocument
         {
+            ExpectedRole = "replica",
             ExpectedSwitchName = "vSwitch-PROD",
             ExpectedFrequencySec = 30,
             LagWarningMultiplier = 3,

@@ -14,9 +14,22 @@ public sealed record RipcordConfiguration(
 
 public sealed record NodeSettings(string Hostname, int HostMemoryReserveGb);
 
+/// Which side this host normally is. Without it neither "which host is the failover target"
+/// nor "the direction is inverted" is answerable: the two configuration files are mirror
+/// images and nothing observable says which way round the pair is meant to be.
+///
+/// The operating mode is still derived from observed state (decision D20) — this is only the
+/// baseline the observation is compared against.
+public enum ExpectedRole
+{
+    Primary,
+    Replica,
+}
+
 /// What the pair is expected to look like. Every field here is compared against something
 /// observed; nothing in it is acted upon.
 public sealed record ReplicationSettings(
+    ExpectedRole ExpectedRole,
     string ExpectedSwitchName,
     TimeSpan ExpectedFrequency,
     int LagWarningMultiplier,

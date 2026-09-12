@@ -136,7 +136,22 @@ public static class ConfigurationValidator
             return null;
         }
 
-        bool complete = Required(
+        bool complete = true;
+        ExpectedRole role = default;
+
+        // Matched by name, never by ordinal: the same trap as vms[].priority, and an ordinal
+        // read as the wrong role would invert the whole report.
+        if (!Enum.GetNames<ExpectedRole>().Contains(
+                replication.ExpectedRole?.Trim() ?? "", StringComparer.OrdinalIgnoreCase)
+            || !Enum.TryParse(replication.ExpectedRole, ignoreCase: true, out role))
+        {
+            errors.Add(new ConfigurationError(
+                "replication.expected_role",
+                "required, one of " + string.Join(", ", Enum.GetNames<ExpectedRole>())));
+            complete = false;
+        }
+
+        complete &= Required(
             replication.ExpectedSwitchName,
             "replication.expected_switch_name",
             errors,
@@ -168,6 +183,7 @@ public static class ConfigurationValidator
 
         return complete
             ? new ReplicationSettings(
+                role,
                 switchName,
                 TimeSpan.FromSeconds(replication.ExpectedFrequencySec!.Value),
                 replication.LagWarningMultiplier!.Value,

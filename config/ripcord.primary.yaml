@@ -18,6 +18,10 @@ replication:
   auth: certificate
   local_certificate_subject: "CN=HV-PRIMARY-01"
   peer_certificate_subject: "CN=HV-REPLICA-01"
+  # Which side this host normally is. The pair's two files are mirror images, so nothing else
+  # says which way round the replication is meant to run — and "the direction is inverted"
+  # cannot be answered without it.
+  expected_role: primary
   expected_switch_name: vSwitch-PROD
   expected_frequency_sec: 30
   lag_warning_multiplier: 3
