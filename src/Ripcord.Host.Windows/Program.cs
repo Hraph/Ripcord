@@ -1,4 +1,3 @@
-using System.Security.Cryptography.X509Certificates;
 using Ripcord.Adapters.Pairing;
 using Ripcord.Adapters.Pairing.Transport;
 using Ripcord.Adapters.Wmi;
@@ -36,15 +35,19 @@ internal static class Program
 
         SystemClock clock = new();
         FileSnapshotStore snapshotStore = new();
+        MachineCertificateStore certificates = new();
 
         RipcordCli cli = new(
             new YamlConfigStore(),
             new WmiHypervProvider(Environment.MachineName, WmiTimeout),
-            new MutualTlsPeerChannel(WindowsCertificates.WithThumbprint, PeerTrust.MachineStore, clock),
+            new WmiHostSystemProvider(WmiTimeout),
+            certificates,
+            new MutualTlsPeerChannel(
+                MachineCertificateStore.WithPrivateKey, PeerTrust.MachineStore, clock),
             snapshotStore,
             new WindowsDeploymentExecutor(),
             new LoopingPeerListener(
-                WindowsCertificates.WithThumbprint,
+                MachineCertificateStore.WithPrivateKey,
                 PeerTrust.MachineStore,
                 snapshotStore,
                 clock,
@@ -64,33 +67,5 @@ internal static class Program
             args, Console.Out, Console.Error, cancellation.Token).ConfigureAwait(false);
 
         return (int)code;
-    }
-}
-
-/// Finds a certificate in the Windows store by thumbprint. The thumbprint identifies
-/// (decision D6): a subject lookup can return several certificates, including an expired one,
-/// and pick the wrong one.
-///
-/// Resolved on every use rather than cached, so a certificate renewed under a running service
-/// is picked up without a restart.
-internal static class WindowsCertificates
-{
-    public static X509Certificate2 WithThumbprint(string thumbprint)
-    {
-        // LocalMachine\My: the service account has no user store of its own.
-        using X509Store store = new(StoreName.My, StoreLocation.LocalMachine);
-        store.Open(OpenFlags.ReadOnly);
-
-        foreach (X509Certificate2 candidate in store.Certificates)
-        {
-            if (string.Equals(candidate.Thumbprint, thumbprint, StringComparison.OrdinalIgnoreCase)
-                && candidate.HasPrivateKey)
-            {
-                return candidate;
-            }
-        }
-
-        throw new InvalidOperationException(
-            $"no certificate with thumbprint {thumbprint} and a private key in LocalMachine\\My");
     }
 }

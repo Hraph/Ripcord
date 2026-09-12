@@ -9,6 +9,7 @@ using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Replication;
 using Ripcord.Domain;
 using Ripcord.Ports.Configuration;
+using Ripcord.Ports.Hosts;
 using Ripcord.Ports.Pairing;
 using Ripcord.Ports.Replication;
 using Ripcord.Ports;
@@ -28,6 +29,8 @@ public sealed record CliEnvironment(
 public sealed class RipcordCli(
     IConfigStore configStore,
     IHypervProvider provider,
+    IHostSystemProvider hostSystemProvider,
+    ICertificateProvider certificateProvider,
     IPeerChannel peerChannel,
     ISnapshotStore snapshotStore,
     IDeploymentExecutor deploymentExecutor,
@@ -97,11 +100,19 @@ public sealed class RipcordCli(
             return ExitCode.InvalidConfiguration;
         }
 
-        StatusQuery query = new(configStore, provider, peerChannel, snapshotStore, clock);
+        StatusQuery query = new(
+            configStore, this.LocalState(), peerChannel, snapshotStore, clock);
 
         StatusOutcome outcome = await query
             .ExecuteAsync(new StatusRequest(path, environment.MachineName), cancellationToken)
             .ConfigureAwait(false);
+
+        // Degradations are never silent: a host whose free space could not be read renders
+        // its VMs all the same, and the operator has to know which part is missing.
+        foreach (string note in outcome.Notes)
+        {
+            error.WriteLine($"ripcord: {note}");
+        }
 
         if (outcome.Rendered is { } rendered)
         {
@@ -135,7 +146,7 @@ public sealed class RipcordCli(
         if (validation.Configuration is not { } configuration)
         {
             WriteFailure(error, new StatusOutcome(
-                ExitCode.InvalidConfiguration, null, validation.Errors, null));
+                ExitCode.InvalidConfiguration, null, validation.Errors, null, []));
             return ExitCode.InvalidConfiguration;
         }
 
@@ -202,6 +213,9 @@ public sealed class RipcordCli(
 
         return result.Succeeded ? ExitCode.Success : ExitCode.LocalAccessFailure;
     }
+
+    private LocalStateReader LocalState() =>
+        new(provider, hostSystemProvider, certificateProvider);
 
     private bool Confirmed(TextWriter output, TextWriter error)
     {

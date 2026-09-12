@@ -20,7 +20,7 @@ internal static class CertificateFacts
     /// The CN only, not the whole distinguished name: a CA-issued certificate normally carries
     /// more relative names (O, OU, C), and comparing the full DN against the `CN=<host>` the
     /// configuration implies would refuse every real certificate.
-    private static string CommonName(X509Certificate2 certificate)
+    internal static string CommonName(X509Certificate2 certificate)
     {
         foreach (X500RelativeDistinguishedName name in
             certificate.SubjectName.EnumerateRelativeDistinguishedNames())

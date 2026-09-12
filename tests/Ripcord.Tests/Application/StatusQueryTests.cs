@@ -144,7 +144,7 @@ public class StatusQueryTests
     {
         StatusQuery query = new(
             new StubConfigStore(ConfigurationRead.Failed("ripcord.yaml", "file not found")),
-            new FakeHypervProvider(FakeScenarios.Healthy(Now)),
+            LocalState(new FakeHypervProvider(FakeScenarios.Healthy(Now))),
             FakePeerChannel.Absent(),
             new InMemorySnapshotStore(),
             new FixedClock(Now));
@@ -154,6 +154,35 @@ public class StatusQueryTests
 
         Assert.Equal(ExitCode.InvalidConfiguration, outcome.Code);
         Assert.Contains("file not found", Assert.Single(outcome.Errors).Message);
+    }
+
+    /// The peer's `check` reasons about this host as the *target* of a failover, and the
+    /// listener never reads Hyper-V (decision D18). So whatever the rules compare has to be
+    /// in the snapshot `status` publishes, not fetched live.
+    [Fact]
+    public async Task The_published_snapshot_carries_the_host_and_vm_facts()
+    {
+        InMemorySnapshotStore store = new();
+
+        await Run(snapshotStore: store);
+
+        HostState published = Assert.Single(store.Written).Value.State;
+
+        Assert.Equal(12_288, published.Facts!.PhysicalRamMb);
+        Assert.NotNull(published.Facts.Volume("D:"));
+        Assert.Equal(
+            FakeScenarios.SwitchName, published.Vms[0].Facts!.Adapters[0].SwitchName);
+    }
+
+    /// A degradation reaches the caller rather than being swallowed: `status` still renders,
+    /// and the operator is told which facts are missing.
+    [Fact]
+    public async Task A_host_system_failure_is_reported_as_a_note_and_still_exits_zero()
+    {
+        StatusOutcome outcome = await Run(hostSystem: FakeHostSystemProvider.Failing("cimv2 down"));
+
+        Assert.Equal(ExitCode.Success, outcome.Code);
+        Assert.Contains(outcome.Notes, note => note.Contains("cimv2 down"));
     }
 
     /// The rendering needs the offline threshold to say "offline" rather than "silent", so
@@ -171,11 +200,13 @@ public class StatusQueryTests
         IHypervProvider? provider = null,
         string machineName = FakeScenarios.LocalHostName,
         IPeerChannel? peerChannel = null,
-        ISnapshotStore? snapshotStore = null)
+        ISnapshotStore? snapshotStore = null,
+        FakeHostSystemProvider? hostSystem = null)
     {
         StatusQuery query = new(
             new StubConfigStore(ConfigurationRead.Succeeded(ValidDocument())),
-            provider ?? new FakeHypervProvider(FakeScenarios.Healthy(Now)),
+            LocalState(
+                provider ?? new FakeHypervProvider(FakeScenarios.Healthy(Now)), hostSystem),
             peerChannel ?? FakePeerChannel.Absent(),
             snapshotStore ?? new InMemorySnapshotStore(),
             new FixedClock(Now));
@@ -192,6 +223,16 @@ public class StatusQueryTests
         document.Listener!.SnapshotPath = "state.json";
         return document;
     }
+
+    /// The host system and certificate store are fixed here: this suite is about the pair,
+    /// and `LocalStateReaderTests` is where their failure modes are settled.
+    private static LocalStateReader LocalState(
+        IHypervProvider provider, FakeHostSystemProvider? hostSystem = null) =>
+        new(
+            provider,
+            hostSystem ?? FakeHostSystemProvider.Target(),
+            FakeCertificateProvider.Valid(
+                Tests.Configuration.ValidDocument.LocalThumbprint, "CN=HV-REPLICA-01"));
 
     private sealed class StubConfigStore(ConfigurationRead read) : IConfigStore
     {

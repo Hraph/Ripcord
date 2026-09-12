@@ -1,3 +1,4 @@
+using Ripcord.Domain.Inventory;
 using Ripcord.Domain.Replication;
 using Ripcord.Domain.Pairing;
 using Ripcord.Ports.Pairing;
@@ -81,6 +82,17 @@ public static class FakeScenarios
 {
     public const string LocalHostName = "HV-REPLICA-01";
     public const string PeerHostName = "HV-PRIMARY-01";
+    public const string SwitchName = "vSwitch-PROD";
+    public const int VlanId = 10;
+
+    /// The same address on both sides, which is what a correct relationship looks like: a
+    /// replica that boots with a different MAC boots with an unconfigured NIC.
+    private static readonly Dictionary<string, string> Macs = new()
+    {
+        ["VM-DC-01"] = "00-15-5D-01-02-01",
+        ["VM-LEGACY-01"] = "00-15-5D-01-02-02",
+        ["VM-BACKUP-01"] = "00-15-5D-01-02-03",
+    };
 
     /// Three replicas, replicating normally, well inside the frequency.
     public static HostState Healthy(DateTimeOffset now) =>
@@ -91,7 +103,8 @@ public static class FakeScenarios
                 Replica("VM-LEGACY-01", ReplicationHealth.Normal, now.AddSeconds(-12), 1_048_576),
                 Replica("VM-BACKUP-01", ReplicationHealth.Normal, now.AddSeconds(-31), 0),
             ],
-            HostReachability.Reachable());
+            HostReachability.Reachable(),
+            TargetHost());
 
     /// One VM critical and resynchronising, one lagging far behind, one never replicated at
     /// all — every column of the rendering exercised at once.
@@ -105,7 +118,8 @@ public static class FakeScenarios
                     ReplicationState.Resynchronizing,
                     ReplicationHealth.Critical,
                     now.AddHours(-6),
-                    17_179_869_184),
+                    17_179_869_184,
+                    Facts("VM-DC-01")),
                 Replica("VM-LEGACY-01", ReplicationHealth.Warning, now.AddMinutes(-9), 268_435_456),
                 new VmReplicationState(
                     "VM-BACKUP-01",
@@ -113,9 +127,11 @@ public static class FakeScenarios
                     ReplicationState.Disabled,
                     ReplicationHealth.Unknown,
                     null,
-                    null),
+                    null,
+                    Facts("VM-BACKUP-01")),
             ],
-            HostReachability.Reachable());
+            HostReachability.Reachable(),
+            TargetHost());
 
     /// What the peer publishes when it is healthy.
     public static HostSnapshot PeerSnapshot(DateTimeOffset capturedAt) =>
@@ -127,7 +143,8 @@ public static class FakeScenarios
                     Primary("VM-DC-01", ReplicationHealth.Normal, capturedAt.AddSeconds(-18)),
                     Primary("VM-LEGACY-01", ReplicationHealth.Normal, capturedAt.AddSeconds(-9)),
                 ],
-                HostReachability.Reachable()));
+                HostReachability.Reachable(),
+                PrimaryHost()));
 
     private static VmReplicationState Primary(
         string name, ReplicationHealth health, DateTimeOffset lastReplication) =>
@@ -137,7 +154,8 @@ public static class FakeScenarios
             ReplicationState.Replicating,
             health,
             lastReplication,
-            0);
+            0,
+            Facts(name));
 
     private static VmReplicationState Replica(
         string name, ReplicationHealth health, DateTimeOffset lastReplication, long pendingBytes) =>
@@ -147,5 +165,48 @@ public static class FakeScenarios
             ReplicationState.Replicating,
             health,
             lastReplication,
-            pendingBytes);
+            pendingBytes,
+            Facts(name));
+
+    /// The hardware `ripcord check` compares across the pair. `VM-BACKUP-01` carries the
+    /// pass-through disk that is a permanent property of this infrastructure (decision D19).
+    private static VmFacts Facts(string name)
+    {
+        List<VmDisk> disks = [new VmDisk($@"D:\VMs\{name}\os.vhdx", false)];
+
+        if (name == "VM-BACKUP-01")
+        {
+            disks.Add(new VmDisk(@"\\.\PHYSICALDRIVE2", true));
+        }
+
+        return new VmFacts(
+            2048,
+            4096,
+            1024,
+            [
+                new VirtualAdapter(
+                    "Network Adapter", SwitchName, true, Macs[name], false, VlanId),
+            ],
+            disks,
+            [$@"D:\VMs\{name}\os.vhdx"]);
+    }
+
+    /// Roughly 12 GB usable and a `D:` that unlocks itself — the DR host of the real pair.
+    public static HostFacts TargetHost() =>
+        new(
+            12_288,
+            [
+                new HostVolume("C:", 80_000_000_000, 240_000_000_000, false, null),
+                new HostVolume("D:", 500_000_000_000, 2_000_000_000_000, true, true),
+            ],
+            null);
+
+    public static HostFacts PrimaryHost() =>
+        new(
+            49_152,
+            [
+                new HostVolume("C:", 120_000_000_000, 240_000_000_000, false, null),
+                new HostVolume("D:", 1_200_000_000_000, 4_000_000_000_000, false, null),
+            ],
+            null);
 }

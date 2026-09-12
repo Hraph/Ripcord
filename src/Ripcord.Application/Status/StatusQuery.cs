@@ -4,7 +4,6 @@ using Ripcord.Domain;
 using Ripcord.Domain.Pairing;
 using Ripcord.Ports.Configuration;
 using Ripcord.Ports.Pairing;
-using Ripcord.Ports.Replication;
 using Ripcord.Ports;
 
 namespace Ripcord.Application.Status;
@@ -21,7 +20,8 @@ public sealed record StatusOutcome(
     ExitCode Code,
     RenderedStatus? Rendered,
     IReadOnlyList<ConfigurationError> Errors,
-    string? FailureMessage)
+    string? FailureMessage,
+    IReadOnlyList<string> Notes)
 {
     public PairView? View => this.Rendered?.View;
 
@@ -32,7 +32,7 @@ public sealed record StatusOutcome(
 /// host stops before it has read anything from Hyper-V.
 public sealed class StatusQuery(
     IConfigStore configStore,
-    IHypervProvider provider,
+    LocalStateReader localState,
     IPeerChannel peerChannel,
     ISnapshotStore snapshotStore,
     IClock clock)
@@ -55,16 +55,18 @@ public sealed class StatusQuery(
             return Invalid(validation.Errors);
         }
 
-        HostState local;
+        LocalRead localRead = await localState
+            .ReadAsync(configuration, cancellationToken)
+            .ConfigureAwait(false);
 
-        try
-        {
-            local = await provider.GetLocalStateAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        if (localRead.State is not { } local)
         {
             return new StatusOutcome(
-                ExitCode.LocalAccessFailure, null, [], exception.Message);
+                ExitCode.LocalAccessFailure,
+                null,
+                [],
+                localRead.FailureMessage,
+                localRead.Notes);
         }
 
         // Published before the peer is read, so the peer's own `status` sees a fresh snapshot
@@ -84,7 +86,8 @@ public sealed class StatusQuery(
             new RenderedStatus(
                 new PairView(local, peer, fetch.Snapshot?.CapturedAt), configuration),
             [],
-            null);
+            null,
+            localRead.Notes);
     }
 
     /// A snapshot this host cannot publish is not a reason to fail the command: `status` is a
@@ -130,5 +133,5 @@ public sealed class StatusQuery(
     }
 
     private static StatusOutcome Invalid(IReadOnlyList<ConfigurationError> errors) =>
-        new(ExitCode.InvalidConfiguration, null, errors, null);
+        new(ExitCode.InvalidConfiguration, null, errors, null, []);
 }

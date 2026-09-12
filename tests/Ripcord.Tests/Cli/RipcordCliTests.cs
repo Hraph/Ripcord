@@ -288,6 +288,9 @@ public class RipcordCliTests
         RipcordCli cli = new(
             configStore ?? new RecordingConfigStore(),
             provider ?? new FakeHypervProvider(FakeScenarios.Healthy(Now)),
+            FakeHostSystemProvider.Target(),
+            FakeCertificateProvider.Valid(
+                Tests.Configuration.ValidDocument.LocalThumbprint, "CN=HV-REPLICA-01"),
             FakePeerChannel.Absent(),
             new InMemorySnapshotStore(),
             deploymentExecutor ?? new FakeDeploymentExecutor(),

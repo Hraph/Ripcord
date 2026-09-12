@@ -37,7 +37,7 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
         {
             using (instance)
             {
-                if (CimTranslation.IsVirtualMachine(Instant(instance, "InstallDate")))
+                if (CimTranslation.IsVirtualMachine(CimValues.Instant(instance, "InstallDate")))
                 {
                     vms.Add(ReadVm(session, instance, options));
                 }
@@ -61,11 +61,11 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
         using CimInstance? relationship = ReadRelationship(session, vm, options);
 
         return new VmReplicationState(
-            CimTranslation.VmName(Text(vm, "ElementName")),
-            CimReplicationValues.Role(Number(vm, "ReplicationMode")),
-            CimReplicationValues.State(Number(relationship, "ReplicationState")),
-            CimReplicationValues.Health(Number(relationship, "ReplicationHealth")),
-            CimTranslation.Instant(Instant(relationship, "LastReplicationTime")),
+            CimTranslation.VmName(CimValues.Text(vm, "ElementName")),
+            CimReplicationValues.Role(CimValues.Number(vm, "ReplicationMode")),
+            CimReplicationValues.State(CimValues.Number(relationship, "ReplicationState")),
+            CimReplicationValues.Health(CimValues.Number(relationship, "ReplicationHealth")),
+            CimTranslation.Instant(CimValues.Instant(relationship, "LastReplicationTime")),
             ReadPendingBytes(session, vm, relationship, options));
     }
 
@@ -120,22 +120,13 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
         }
 
         using CimInstance first = statistics[0];
-        return Size(first, "PendingReplicationSize");
+        return CimValues.Size(first, "PendingReplicationSize");
     }
 
     private static CimInstance ReplicationService(
         CimSession session, CimOperationOptions options) =>
         session.QueryInstances(
             Namespace, "WQL", "SELECT * FROM Msvm_ReplicationService", options).First();
-
-    private static long? Size(CimInstance? instance, string propertyName) =>
-        Value(instance, propertyName) switch
-        {
-            ulong size and <= long.MaxValue => (long)size,
-            uint size => size,
-            long size => size,
-            _ => null,
-        };
 
     /// The association is named rather than left null: a VM's Msvm_ComputerSystem sits at the
     /// end of many associations, and an unnamed traversal returns a heterogeneous set to
@@ -160,7 +151,7 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
             // Every instance is disposed, not only the one kept: these are native handles, and
             // extended replication enumerates one we do not want.
             if (primary is null
-                && CimTranslation.IsPrimaryRelationship(Text(relationship, "InstanceID")))
+                && CimTranslation.IsPrimaryRelationship(CimValues.Text(relationship, "InstanceID")))
             {
                 primary = relationship;
             }
@@ -172,20 +163,4 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
 
         return primary;
     }
-
-    /// Properties are read by name and tolerated absent: the exact set differs between
-    /// Windows Server builds, and a missing property must degrade to "unknown" rather than
-    /// throw halfway through an inventory.
-    private static object? Value(CimInstance? instance, string propertyName) =>
-        instance?.CimInstanceProperties[propertyName]?.Value;
-
-    private static string? Text(CimInstance? instance, string propertyName) =>
-        Value(instance, propertyName) as string;
-
-    private static ushort? Number(CimInstance? instance, string propertyName) =>
-        Value(instance, propertyName) is ushort number ? number : null;
-
-    private static DateTime? Instant(CimInstance? instance, string propertyName) =>
-        Value(instance, propertyName) is DateTime value ? value : null;
-
 }
