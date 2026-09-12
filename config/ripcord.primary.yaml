@@ -1,0 +1,46 @@
+# Ripcord configuration for the primary host. The DR host's file is the mirror image of this
+# one: the node and peer blocks are swapped. Copying this file across without swapping them is
+# refused at startup, by name.
+schema_version: 1
+
+node:
+  hostname: HV-PRIMARY-01
+  host_memory_reserve_gb: 4
+
+peer:
+  hostname: HV-REPLICA-01
+  address: 192.0.2.12
+  # How long the peer must stay silent before Ripcord calls it offline. Not a socket timeout.
+  offline_after_sec: 120
+
+replication:
+  port: 443
+  auth: certificate
+  local_certificate_subject: "CN=HV-PRIMARY-01"
+  peer_certificate_subject: "CN=HV-REPLICA-01"
+  expected_switch_name: vSwitch-PROD
+  expected_frequency_sec: 30
+  lag_warning_multiplier: 3
+
+vms:
+  - name: VM-DC-01
+    priority: P1
+    is_domain_controller: true    # USN rollback guard
+    expected_startup_ram_mb: 2048
+  - name: VM-LEGACY-01
+    priority: P1
+    expected_startup_ram_mb: 2048
+  - name: VM-BACKUP-01
+    priority: P2
+    has_passthrough_disk: true    # not replicated by Hyper-V Replica
+    expected_startup_ram_mb: 2048
+
+storage:
+  data_volume: "D:"
+  free_space_warning_gb: 200
+  check_bitlocker_autounlock: true
+
+alerts:
+  smtp: { enabled: false }
+  webhook: { enabled: false }
+  quiet_hours: "23:00-07:00"
