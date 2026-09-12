@@ -6,7 +6,7 @@ guided failover.**
 On the day of an incident, the operator has to retype into graphical wizards parameters that
 are already known and written down: target server, port, certificate thumbprint, frequency,
 replication direction. Under pressure, that is where mistakes happen.
-
+'sw'
 Worse, some steps are invisible in the Microsoft interfaces. After an unplanned failover,
 reversing replication requires marking the original primary as a replica first:
 
@@ -23,11 +23,11 @@ file written in calm conditions.
 
 ## Project state
 
-**Milestone 0 shipped. Milestone 1 built, awaiting validation on the real hosts.**
-`ripcord status` and `ripcord version` are implemented and covered by tests that run on Linux
-against a fake provider. The peer section always reports "not configured": the pair view is
-[milestone 1b](docs/milestones/milestone-1b.md). The WMI adapter is written but has never run
-on a Hyper-V host, so nothing here is proven against real infrastructure yet.
+**Milestone 0 shipped. Milestones 1 and 1b built, awaiting validation on the real hosts.**
+`status`, `version`, `serve` and `deploy-listener` are implemented and covered by tests that
+run on Linux — including the mTLS handshake end to end, with generated certificates and real
+sockets. The WMI adapter is written but has never run on a Hyper-V host, so nothing here is
+proven against real infrastructure yet.
 
 Progress and decisions: [`docs/TRACKING.md`](docs/TRACKING.md).
 Per-milestone detail: [`docs/milestones/`](docs/milestones/).
@@ -44,6 +44,7 @@ src/Ripcord.Application/      use cases
 src/Ripcord.Cli/              argument parsing, console rendering (a library, not the exe)
 src/Ripcord.Adapters.Fake/    in-memory provider, used by every test
 src/Ripcord.Adapters.Yaml/    ripcord.yaml loading (translation only; validation is Domain)
+src/Ripcord.Adapters.Pairing/ snapshot wire format, mTLS listener and client — runs on Linux
 src/Ripcord.Adapters.Wmi/     net10.0-windows only — CIM to domain translation, no decisions
 src/Ripcord.Host.Windows/     composition root; the only project that produces ripcord.exe
 tests/Ripcord.Tests/          net10.0 — runs on Linux and macOS, no Windows required
@@ -117,9 +118,21 @@ The machine names, addresses and thumbprints throughout this repository are pseu
 ## Commands
 
 ```
-ripcord status [--config <path>]   read both sides of the pair
-ripcord version                    version and commit hash
+ripcord status [--config <path>]              read both sides of the pair
+ripcord serve [--config <path>]               run the read-only pair listener
+ripcord deploy-listener [--dry-run] [--remove]  install or remove that listener
+ripcord version                               version and commit hash
 ```
+
+`deploy-listener` reconciles rather than installs: it compares the host with the configuration
+and applies only the difference, so re-running it on a correct host does nothing, a moved
+binary or a changed port becomes an update, and `--remove` is the same list read backwards.
+Nothing mutating happens without `--dry-run` first showing the plan and the operator then
+typing the node name.
+
+The pair channel carries one thing in one direction: this host's published state. It has no
+verb, no parameter and no request body, so there is nothing to abuse — and the service that
+answers it never touches Hyper-V, it serves a file the privileged command wrote.
 
 `status` describes; it does not judge — that is `ripcord check`, milestone 2. Output is fixed
 at 75 columns with no colour, because the real reading conditions are a 1024×768 KVM during an
