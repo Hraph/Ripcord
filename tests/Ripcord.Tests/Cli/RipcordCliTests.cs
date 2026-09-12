@@ -241,6 +241,26 @@ public class RipcordCliTests
         Assert.Empty(executor.Applied);
     }
 
+    /// The documented off switch: a node with the listener disabled must degrade to the
+    /// milestone 1 local-only view, not fail.
+    [Fact]
+    public async Task Serve_on_a_node_with_the_listener_disabled_exits_zero()
+    {
+        CliRun run = await Run(
+            ["serve"], configStore: new RecordingConfigStore(listenerEnabled: false));
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Contains("disabled", run.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Serve_refuses_an_unknown_option_rather_than_ignoring_it()
+    {
+        CliRun run = await Run(["serve", "--wat"]);
+
+        Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
+    }
+
     private static ObservedDeployment Deployed() => new(
         ServiceInstalled: true,
         ServiceBinaryPath: BinaryPath,
@@ -319,7 +339,7 @@ public class RipcordCliTests
     }
 
     /// Returns a document the validator accepts, and remembers which path was asked for.
-    private sealed class RecordingConfigStore : IConfigStore
+    private sealed class RecordingConfigStore(bool listenerEnabled = true) : IConfigStore
     {
         public string? RequestedPath { get; private set; }
 
@@ -341,7 +361,7 @@ public class RipcordCliTests
                 },
                 Listener = new ListenerDocument
                 {
-                    Enabled = true,
+                    Enabled = listenerEnabled,
                     Port = 7443,
                     LocalCertificateThumbprint = "AAAA1111BBBB2222CCCC3333DDDD4444EEEE5555",
                     PeerCertificateThumbprint = "1111AAAA2222BBBB3333CCCC4444DDDD5555EEEE",

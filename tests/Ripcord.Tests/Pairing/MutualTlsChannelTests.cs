@@ -102,6 +102,41 @@ public sealed class MutualTlsChannelTests : IDisposable
         Assert.False(served.Served);
     }
 
+    /// The exit criterion is symmetric, so the tests are too: a listener presenting a
+    /// certificate that is not the one the client expects must be refused by the client.
+    [Fact]
+    public async Task The_client_refuses_a_listener_presenting_the_wrong_certificate()
+    {
+        PeerFetch fetch = await this.ExchangeAsync(
+            FakeScenarios.PeerSnapshot(Now),
+            serverCertificate: this.Issue(this.pairCa, "CN=HV-IMPOSTOR-01"));
+
+        Assert.Null(fetch.Snapshot);
+    }
+
+    [Fact]
+    public async Task The_client_refuses_a_listener_signed_by_an_untrusted_authority()
+    {
+        PeerFetch fetch = await this.ExchangeAsync(
+            FakeScenarios.PeerSnapshot(Now),
+            serverCertificate: this.Issue(this.strangerCa, "CN=HV-PRIMARY-01"));
+
+        Assert.Null(fetch.Snapshot);
+    }
+
+    /// Nothing is served unless the verdict says so — asserted independently of whether the
+    /// TLS stack happened to fail the handshake on this platform.
+    [Fact]
+    public async Task Nothing_is_ever_served_on_a_verdict_other_than_accepted()
+    {
+        ServedConnection served = await this.ServeAsync(
+            FakeScenarios.PeerSnapshot(Now),
+            clientCertificate: this.Issue(this.pairCa, "CN=HV-IMPOSTOR-01"));
+
+        Assert.NotEqual(PeerVerdict.Accepted, served.Verdict);
+        Assert.False(served.Served);
+    }
+
     /// Connection refused must stay distinct from a timeout in the rendering: refused means
     /// the host is up and the listener is not, which is a different thing to go and fix.
     [Fact]
@@ -133,12 +168,14 @@ public sealed class MutualTlsChannelTests : IDisposable
     }
 
     private async Task<PeerFetch> ExchangeAsync(
-        HostSnapshot publish, X509Certificate2? clientCertificate = null)
+        HostSnapshot publish,
+        X509Certificate2? clientCertificate = null,
+        X509Certificate2? serverCertificate = null)
     {
         InMemorySnapshotStore store = new();
         store.Write("state.json", publish);
 
-        await using SnapshotListener listener = this.Listener(store);
+        await using SnapshotListener listener = this.Listener(store, serverCertificate);
         listener.Start(IPAddress.Loopback, 0);
 
         Task<ServedConnection> serving = listener.ServeOneAsync(
@@ -177,9 +214,10 @@ public sealed class MutualTlsChannelTests : IDisposable
         return await serving;
     }
 
-    private SnapshotListener Listener(InMemorySnapshotStore store) =>
+    private SnapshotListener Listener(
+        InMemorySnapshotStore store, X509Certificate2? serverCertificate = null) =>
         new(
-            () => this.Issue(this.pairCa, "CN=HV-PRIMARY-01"),
+            () => serverCertificate ?? this.Issue(this.pairCa, "CN=HV-PRIMARY-01"),
             new PeerTrust([this.pairCa.RootCertificate]),
             store,
             new FixedClock(Now));
