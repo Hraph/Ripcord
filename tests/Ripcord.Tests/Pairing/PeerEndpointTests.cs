@@ -1,5 +1,6 @@
 using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Pairing;
+using Ripcord.Tests.Configuration;
 
 namespace Ripcord.Tests.Pairing;
 
@@ -7,8 +8,8 @@ namespace Ripcord.Tests.Pairing;
 /// tested without a socket.
 public class PeerEndpointTests
 {
-    private const string Local = "AAAA1111BBBB2222CCCC3333DDDD4444EEEE5555";
-    private const string Peer = "1111AAAA2222BBBB3333CCCC4444DDDD5555EEEE";
+    private const string Local = ValidDocument.LocalThumbprint;
+    private const string Peer = ValidDocument.PeerThumbprint;
 
     [Fact]
     public void An_enabled_listener_yields_an_endpoint_naming_both_ends()
@@ -43,11 +44,5 @@ public class PeerEndpointTests
     }
 
     private static RipcordConfiguration Configuration(bool enabled = true) =>
-        new(
-            new NodeSettings("HV-REPLICA-01"),
-            new PeerSettings("HV-PRIMARY-01", "192.0.2.11", TimeSpan.FromSeconds(120)),
-            enabled
-                ? new ListenerSettings(true, 7443, Local, Peer, "state.json")
-                : ListenerSettings.Disabled(),
-            [new VmSettings("VM-DC-01", VmPriority.P1, false, false, null)]);
+        Configurations.Create(document => document.Listener!.Enabled = enabled);
 }

@@ -1,4 +1,5 @@
 using Ripcord.Adapters.Yaml;
+using Ripcord.Domain.Checks;
 using Ripcord.Domain.Configuration;
 using Ripcord.Ports.Configuration;
 using Ripcord.Ports;
@@ -133,7 +134,23 @@ public sealed class YamlConfigStoreTests : IDisposable
             ConfigurationValidator.Validate(read.Document, machineName);
 
         Assert.Empty(validation.Errors);
-        Assert.Equal(machineName, validation.Configuration!.Node.Hostname);
+
+        RipcordConfiguration configuration = validation.Configuration!;
+
+        Assert.Equal(machineName, configuration.Node.Hostname);
+        Assert.Equal(4, configuration.Node.HostMemoryReserveGb);
+        Assert.Equal("vSwitch-PROD", configuration.Replication.ExpectedSwitchName);
+        Assert.Equal("D:", configuration.Storage.DataVolume);
+
+        // The sample carries the permanent critical of decision D20 and the one guest whose
+        // support ends: both keys are optional, and a sample that stopped exercising them
+        // would let them rot unnoticed.
+        Assert.Equal(
+            CheckRules.PassthroughDiskOnReplicatedVm,
+            Assert.Single(configuration.Acknowledgements).RuleId);
+
+        Assert.NotNull(
+            configuration.Vms.Single(vm => vm.Name == "VM-LEGACY-01").GuestOsSupportEnds);
     }
 
     private ConfigurationRead Read(string yaml)

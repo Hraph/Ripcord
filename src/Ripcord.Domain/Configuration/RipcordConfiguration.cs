@@ -1,14 +1,50 @@
 namespace Ripcord.Domain.Configuration;
 
+
 /// A configuration that has been validated. Nothing here is nullable except what the schema
 /// declares optional, so no consumer re-checks what the validator already settled.
 public sealed record RipcordConfiguration(
     NodeSettings Node,
     PeerSettings Peer,
     ListenerSettings Listener,
-    IReadOnlyList<VmSettings> Vms);
+    ReplicationSettings Replication,
+    StorageSettings Storage,
+    IReadOnlyList<VmSettings> Vms,
+    IReadOnlyList<Acknowledgement> Acknowledgements);
 
-public sealed record NodeSettings(string Hostname);
+public sealed record NodeSettings(string Hostname, int HostMemoryReserveGb);
+
+/// What the pair is expected to look like. Every field here is compared against something
+/// observed; nothing in it is acted upon.
+public sealed record ReplicationSettings(
+    string ExpectedSwitchName,
+    TimeSpan ExpectedFrequency,
+    int LagWarningMultiplier,
+    TimeSpan HealthWarningAfter)
+{
+    /// Hyper-V health flickers to Warning for a single missed cycle. Five minutes is long
+    /// enough that a blip does not wake anyone and short enough to catch a real stall.
+    public static readonly TimeSpan DefaultHealthWarningAfter = TimeSpan.FromMinutes(5);
+}
+
+public sealed record StorageSettings(
+    string DataVolume, int FreeSpaceWarningGb, bool CheckBitLockerAutoUnlock);
+
+/// A finding the operator has seen, accepted and dated. The expiry is mandatory (decision
+/// D20): without it an acknowledgement is a rule deleted by the back door, and the permanent
+/// critical it was written for outlives the reason it was accepted.
+public sealed record Acknowledgement(
+    string RuleId, string? VmName, string Reason, DateTimeOffset Expires)
+{
+    public bool IsActiveAt(DateTimeOffset now) => now < this.Expires;
+
+    /// A host-scoped acknowledgement — no VM named — covers the host-level findings of its
+    /// rule, and never spreads to a per-VM one: silencing one VM's missing switch must not
+    /// silence the other two.
+    public bool Covers(string ruleId, string? vmName) =>
+        this.RuleId == ruleId
+        && string.Equals(this.VmName, vmName, StringComparison.OrdinalIgnoreCase);
+}
 
 public sealed record PeerSettings(string Hostname, string Address, TimeSpan OfflineAfter);
 
@@ -42,4 +78,5 @@ public sealed record VmSettings(
     VmPriority Priority,
     bool IsDomainController,
     bool HasPassthroughDisk,
-    int? ExpectedStartupRamMb);
+    int? ExpectedStartupRamMb,
+    DateTimeOffset? GuestOsSupportEnds = null);

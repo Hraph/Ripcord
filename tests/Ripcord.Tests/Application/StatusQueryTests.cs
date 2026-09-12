@@ -184,26 +184,14 @@ public class StatusQueryTests
             new StatusRequest("ripcord.yaml", machineName), CancellationToken.None);
     }
 
-    private static ConfigurationDocument ValidDocument() => new()
+    /// The shared well-formed document, with the snapshot written beside the test rather
+    /// than to `D:` — the only thing this suite cares about is that it was written at all.
+    private static ConfigurationDocument ValidDocument()
     {
-        SchemaVersion = 1,
-        Node = new NodeDocument { Hostname = FakeScenarios.LocalHostName },
-        Peer = new PeerDocument
-        {
-            Hostname = FakeScenarios.PeerHostName,
-            Address = "192.0.2.11",
-            OfflineAfterSec = 120,
-        },
-        Listener = new ListenerDocument
-        {
-            Enabled = true,
-            Port = 7443,
-            LocalCertificateThumbprint = "AAAA1111BBBB2222CCCC3333DDDD4444EEEE5555",
-            PeerCertificateThumbprint = "1111AAAA2222BBBB3333CCCC4444DDDD5555EEEE",
-            SnapshotPath = "state.json",
-        },
-        Vms = [new VmDocument { Name = "VM-DC-01", Priority = "P1" }],
-    };
+        ConfigurationDocument document = Tests.Configuration.ValidDocument.Create();
+        document.Listener!.SnapshotPath = "state.json";
+        return document;
+    }
 
     private sealed class StubConfigStore(ConfigurationRead read) : IConfigStore
     {

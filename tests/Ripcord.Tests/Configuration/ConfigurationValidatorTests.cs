@@ -7,7 +7,7 @@ namespace Ripcord.Tests.Configuration;
 /// discover six typos is not what anyone wants at 3 a.m.
 public class ConfigurationValidatorTests
 {
-    private const string MachineName = "HV-REPLICA-01";
+    private const string MachineName = ValidDocument.MachineName;
 
     [Fact]
     public void A_well_formed_document_validates_and_yields_a_configuration()
@@ -176,8 +176,9 @@ public class ConfigurationValidatorTests
 
         Assert.Equal(
             [
-                "schema_version", "node.hostname", "peer.hostname", "peer.address",
-                "peer.offline_after_sec", "vms[0].name", "vms[0].priority",
+                "schema_version", "node.hostname", "node.host_memory_reserve_gb",
+                "peer.hostname", "peer.address", "peer.offline_after_sec",
+                "replication", "storage", "vms[0].name", "vms[0].priority",
             ],
             paths);
     }
@@ -202,21 +203,5 @@ public class ConfigurationValidatorTests
         Assert.Contains(path, result.Errors.Select(error => error.Path));
     }
 
-    private static ConfigurationDocument Valid() => new()
-    {
-        SchemaVersion = 1,
-        Node = new NodeDocument { Hostname = "HV-REPLICA-01" },
-        Peer = new PeerDocument
-        {
-            Hostname = "HV-PRIMARY-01",
-            Address = "192.0.2.11",
-            OfflineAfterSec = 120,
-        },
-        Vms =
-        [
-            new VmDocument { Name = "VM-DC-01", Priority = "P1", IsDomainController = true },
-            new VmDocument { Name = "VM-LEGACY-01", Priority = "P1" },
-            new VmDocument { Name = "VM-BACKUP-01", Priority = "P2", HasPassthroughDisk = true },
-        ],
-    };
+    private static ConfigurationDocument Valid() => ValidDocument.Create();
 }

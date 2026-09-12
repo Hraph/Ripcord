@@ -346,32 +346,11 @@ public class RipcordCliTests
         public ConfigurationRead Read(string path)
         {
             this.RequestedPath = path;
-            return ConfigurationRead.Succeeded(new ConfigurationDocument
-            {
-                SchemaVersion = 1,
-                Node = new NodeDocument
-                {
-                    Hostname = FakeScenarios.LocalHostName,
-                },
-                Peer = new PeerDocument
-                {
-                    Hostname = FakeScenarios.PeerHostName,
-                    Address = "192.0.2.11",
-                    OfflineAfterSec = 120,
-                },
-                Listener = new ListenerDocument
-                {
-                    Enabled = listenerEnabled,
-                    Port = 7443,
-                    LocalCertificateThumbprint = "AAAA1111BBBB2222CCCC3333DDDD4444EEEE5555",
-                    PeerCertificateThumbprint = "1111AAAA2222BBBB3333CCCC4444DDDD5555EEEE",
-                    SnapshotPath = "state.json",
-                },
-                Vms =
-                [
-                    new VmDocument { Name = "VM-DC-01", Priority = "P1" },
-                ],
-            });
+            ConfigurationDocument document = Tests.Configuration.ValidDocument.Create();
+            document.Listener!.Enabled = listenerEnabled;
+            document.Listener.SnapshotPath = "state.json";
+
+            return ConfigurationRead.Succeeded(document);
         }
     }
 }

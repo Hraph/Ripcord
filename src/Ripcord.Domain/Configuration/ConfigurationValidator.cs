@@ -1,3 +1,5 @@
+using Ripcord.Domain.Checks;
+
 namespace Ripcord.Domain.Configuration;
 
 /// Turns a document that was read into a configuration that can be trusted, or into the full
@@ -13,6 +15,16 @@ public static class ConfigurationValidator
 
     private const int MaxOfflineAfterSec = 86_400;
 
+    /// Bounds that are not opinions: a reserve larger than any host this tool targets, a
+    /// frequency longer than a day, a multiplier past which the rule can never fire.
+    private const int MaxHostReserveGb = 512;
+
+    private const int MaxFrequencySec = 86_400;
+
+    private const int MaxLagMultiplier = 1_000;
+
+    private const int MaxFreeSpaceWarningGb = 1_000_000;
+
     public static ConfigurationValidation Validate(
         ConfigurationDocument? document, string machineName)
     {
@@ -25,15 +37,25 @@ public static class ConfigurationValidator
         List<ConfigurationError> errors = [];
 
         ValidateSchemaVersion(document.SchemaVersion, errors);
-        string? nodeHostname = ValidateNode(document.Node, machineName, errors);
-        PeerSettings? peer = ValidatePeer(document.Peer, nodeHostname, errors);
+        NodeSettings? node = ValidateNode(document.Node, machineName, errors);
+        PeerSettings? peer = ValidatePeer(document.Peer, node?.Hostname, errors);
         ListenerSettings? listener = ValidateListener(document.Listener, errors);
+        ReplicationSettings? replication = ValidateReplication(document.Replication, errors);
+        StorageSettings? storage = ValidateStorage(document.Storage, errors);
         IReadOnlyList<VmSettings> vms = ValidateVms(document.Vms, errors);
 
-        return errors.Count > 0 || nodeHostname is null || peer is null || listener is null
+        IReadOnlyList<Acknowledgement> acknowledgements =
+            ValidateAcknowledgements(document.Checks, vms, errors);
+
+        return errors.Count > 0
+            || node is null
+            || peer is null
+            || listener is null
+            || replication is null
+            || storage is null
             ? ConfigurationValidation.Invalid(errors)
-            : ConfigurationValidation.Valid(
-                new RipcordConfiguration(new NodeSettings(nodeHostname), peer, listener, vms));
+            : ConfigurationValidation.Valid(new RipcordConfiguration(
+                node, peer, listener, replication, storage, vms, acknowledgements));
     }
 
     private static void ValidateSchemaVersion(int? version, List<ConfigurationError> errors)
@@ -53,7 +75,7 @@ public static class ConfigurationValidator
 
     /// Decision D9: a config copied from one host to the other without swapping the blocks
     /// yields a tool that believes it is on the other side. Blocking, never a warning.
-    private static string? ValidateNode(
+    private static NodeSettings? ValidateNode(
         NodeDocument? node, string machineName, List<ConfigurationError> errors)
     {
         if (node is null)
@@ -62,7 +84,30 @@ public static class ConfigurationValidator
             return null;
         }
 
-        if (!Required(node.Hostname, "node.hostname", errors, out string hostname))
+        string? hostname = ValidateHostname(node.Hostname, machineName, errors);
+
+        // Required rather than defaulted: a reserve nobody declared would read as zero, and a
+        // zero reserve overstates the target's usable memory — which is how a feasibility
+        // calculation approves a failover that cannot boot.
+        if (node.HostMemoryReserveGb is not (> 0 and <= MaxHostReserveGb))
+        {
+            errors.Add(new ConfigurationError(
+                "node.host_memory_reserve_gb",
+                $"required, between 1 and {MaxHostReserveGb}"));
+            return null;
+        }
+
+        return hostname is null
+            ? null
+            : new NodeSettings(hostname, node.HostMemoryReserveGb.Value);
+    }
+
+    /// Decision D9, kept apart from the reserve so a wrong host name and a missing reserve are
+    /// both reported in one pass.
+    private static string? ValidateHostname(
+        string? declared, string machineName, List<ConfigurationError> errors)
+    {
+        if (!Required(declared, "node.hostname", errors, out string hostname))
         {
             return null;
         }
@@ -78,6 +123,189 @@ public static class ConfigurationValidator
 
         return hostname;
     }
+
+    /// Everything `check` compares reality against. A missing field here disables a critical
+    /// rule, so none of them is optional — except the health threshold, which has a stated
+    /// default rather than a silent one.
+    private static ReplicationSettings? ValidateReplication(
+        ReplicationDocument? replication, List<ConfigurationError> errors)
+    {
+        if (replication is null)
+        {
+            errors.Add(new ConfigurationError("replication", "required section"));
+            return null;
+        }
+
+        bool complete = Required(
+            replication.ExpectedSwitchName,
+            "replication.expected_switch_name",
+            errors,
+            out string switchName);
+
+        if (replication.ExpectedFrequencySec is not (> 0 and <= MaxFrequencySec))
+        {
+            errors.Add(new ConfigurationError(
+                "replication.expected_frequency_sec",
+                $"required, between 1 and {MaxFrequencySec}"));
+            complete = false;
+        }
+
+        if (replication.LagWarningMultiplier is not (> 0 and <= MaxLagMultiplier))
+        {
+            errors.Add(new ConfigurationError(
+                "replication.lag_warning_multiplier",
+                $"required, between 1 and {MaxLagMultiplier}"));
+            complete = false;
+        }
+
+        if (replication.HealthWarningAfterSec is not (null or (> 0 and <= MaxFrequencySec)))
+        {
+            errors.Add(new ConfigurationError(
+                "replication.health_warning_after_sec",
+                $"must be between 1 and {MaxFrequencySec} when present"));
+            complete = false;
+        }
+
+        return complete
+            ? new ReplicationSettings(
+                switchName,
+                TimeSpan.FromSeconds(replication.ExpectedFrequencySec!.Value),
+                replication.LagWarningMultiplier!.Value,
+                replication.HealthWarningAfterSec is { } seconds
+                    ? TimeSpan.FromSeconds(seconds)
+                    : ReplicationSettings.DefaultHealthWarningAfter)
+            : null;
+    }
+
+    private static StorageSettings? ValidateStorage(
+        StorageDocument? storage, List<ConfigurationError> errors)
+    {
+        if (storage is null)
+        {
+            errors.Add(new ConfigurationError("storage", "required section"));
+            return null;
+        }
+
+        bool complete = true;
+        string? volume = NormalisedDrive(storage.DataVolume);
+
+        // Matched against what Windows reports and printed in the remedy command, so it has
+        // to be a drive rather than any string a path could be mistaken for.
+        if (volume is null)
+        {
+            errors.Add(new ConfigurationError(
+                "storage.data_volume", "required, a drive such as 'D:'"));
+            complete = false;
+        }
+
+        if (storage.FreeSpaceWarningGb is not (> 0 and <= MaxFreeSpaceWarningGb))
+        {
+            errors.Add(new ConfigurationError(
+                "storage.free_space_warning_gb",
+                $"required, between 1 and {MaxFreeSpaceWarningGb}"));
+            complete = false;
+        }
+
+        return complete
+            ? new StorageSettings(
+                volume!, storage.FreeSpaceWarningGb!.Value, storage.CheckBitlockerAutounlock)
+            : null;
+    }
+
+    /// "D:", "d:" and "D:\" all name the same volume; anything else is not a drive.
+    private static string? NormalisedDrive(string? value)
+    {
+        string trimmed = (value ?? "").Trim().TrimEnd('\\', '/');
+
+        return trimmed.Length == 2 && char.IsAsciiLetter(trimmed[0]) && trimmed[1] == ':'
+            ? trimmed.ToUpperInvariant()
+            : null;
+    }
+
+    /// An acknowledgement that names nothing real suppresses nothing while telling the
+    /// operator it does — the one failure mode worse than the finding it was meant to hide.
+    private static List<Acknowledgement> ValidateAcknowledgements(
+        ChecksDocument? checks,
+        IReadOnlyList<VmSettings> vms,
+        List<ConfigurationError> errors)
+    {
+        if (checks?.Acknowledgements is not { } entries)
+        {
+            return [];
+        }
+
+        List<Acknowledgement> acknowledgements = [];
+
+        for (int index = 0; index < entries.Count; index++)
+        {
+            AcknowledgementDocument entry = entries[index];
+            string path = $"checks.acknowledgements[{index}]";
+            bool complete = true;
+
+            if (CheckRules.ById(entry.Rule?.Trim()) is not { } rule)
+            {
+                errors.Add(new ConfigurationError(
+                    $"{path}.rule", $"'{entry.Rule}' is not a rule this binary knows"));
+                complete = false;
+            }
+            else if (!rule.Acknowledgeable)
+            {
+                errors.Add(new ConfigurationError(
+                    $"{path}.rule",
+                    $"'{rule.Id}' can never be acknowledged: it means the service would not "
+                    + "come back at all"));
+                complete = false;
+            }
+
+            string? vmName = entry.Vm?.Trim() is { Length: > 0 } named ? named : null;
+
+            if (vmName is not null
+                && !vms.Any(vm => SameHost(vm.Name, vmName)))
+            {
+                errors.Add(new ConfigurationError(
+                    $"{path}.vm", $"'{vmName}' is not one of the declared VMs"));
+                complete = false;
+            }
+
+            complete &= Required(entry.Reason, $"{path}.reason", errors, out string reason);
+
+            // Mandatory (decision D20). A permanent acknowledgement outlives the reason it
+            // was accepted, and nobody ever revisits it.
+            if (entry.Expires is not { } expires)
+            {
+                errors.Add(new ConfigurationError(
+                    $"{path}.expires", "required, the date this acknowledgement lapses"));
+                complete = false;
+            }
+
+            if (!complete)
+            {
+                continue;
+            }
+
+            Acknowledgement acknowledgement = new(
+                entry.Rule!.Trim(), vmName, reason, AsUtcDate(entry.Expires!.Value));
+
+            // Two entries for the same rule and scope means one of them is dead text, and
+            // nobody finds out which was meant to win.
+            if (acknowledgements.Any(existing =>
+                existing.Covers(acknowledgement.RuleId, acknowledgement.VmName)))
+            {
+                errors.Add(new ConfigurationError(
+                    $"{path}.rule", $"'{acknowledgement.RuleId}' is acknowledged twice"));
+                continue;
+            }
+
+            acknowledgements.Add(acknowledgement);
+        }
+
+        return acknowledgements;
+    }
+
+    /// A YAML date carries no time zone. Read as midnight UTC so both hosts agree on the day
+    /// an acknowledgement lapses whatever their local offset.
+    private static DateTimeOffset AsUtcDate(DateTime value) =>
+        new(DateTime.SpecifyKind(value, DateTimeKind.Utc));
 
     private static PeerSettings? ValidatePeer(
         PeerDocument? peer, string? nodeHostname, List<ConfigurationError> errors)
@@ -270,7 +498,8 @@ public static class ConfigurationValidator
                     priority,
                     vm.IsDomainController,
                     vm.HasPassthroughDisk,
-                    vm.ExpectedStartupRamMb));
+                    vm.ExpectedStartupRamMb,
+                    vm.GuestOsSupportEnds is { } supportEnds ? AsUtcDate(supportEnds) : null));
             }
         }
 

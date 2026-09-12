@@ -41,10 +41,22 @@ vms:
   - name: VM-LEGACY-01
     priority: P1
     expected_startup_ram_mb: 2048
+    # Nothing in WMI knows when Microsoft stops shipping patches; this date is the only source.
+    guest_os_support_ends: 2026-10-13
   - name: VM-BACKUP-01
     priority: P2
     has_passthrough_disk: true    # not replicated by Hyper-V Replica
     expected_startup_ram_mb: 2048
+
+# Findings the operator has seen and accepted. Every entry needs a reason and an expiry date:
+# without one, an acknowledgement is a rule deleted by the back door. Rules whose violation
+# means the service would not come back at all can never be acknowledged.
+checks:
+  acknowledgements:
+    - rule: passthrough-disk-on-replicated-vm
+      vm: VM-BACKUP-01
+      reason: "the backup repository is a pass-through disk by design; it is not replicated"
+      expires: 2027-09-01
 
 storage:
   data_volume: "D:"

@@ -12,14 +12,64 @@ public sealed class ConfigurationDocument
 
     public PeerDocument? Peer { get; set; }
 
+    public ReplicationDocument? Replication { get; set; }
+
     public ListenerDocument? Listener { get; set; }
 
+    public StorageDocument? Storage { get; set; }
+
     public List<VmDocument>? Vms { get; set; }
+
+    public ChecksDocument? Checks { get; set; }
 }
 
 public sealed class NodeDocument
 {
     public string? Hostname { get; set; }
+
+    public int? HostMemoryReserveGb { get; set; }
+}
+
+/// The replication expectations `ripcord check` compares reality against. The port, the auth
+/// mode and the certificate subjects are in the shipped sample and belong to the Hyper-V
+/// configuration rather than to any rule, so they stay unread (decision D23).
+public sealed class ReplicationDocument
+{
+    public string? ExpectedSwitchName { get; set; }
+
+    public int? ExpectedFrequencySec { get; set; }
+
+    public int? LagWarningMultiplier { get; set; }
+
+    public int? HealthWarningAfterSec { get; set; }
+}
+
+public sealed class StorageDocument
+{
+    public string? DataVolume { get; set; }
+
+    public int? FreeSpaceWarningGb { get; set; }
+
+    public bool CheckBitlockerAutounlock { get; set; }
+}
+
+/// Absent on a host that has acknowledged nothing, which is the normal case.
+public sealed class ChecksDocument
+{
+    public List<AcknowledgementDocument>? Acknowledgements { get; set; }
+}
+
+/// A date with no time and no offset in YAML; read as midnight UTC so the two hosts agree on
+/// when an acknowledgement lapses whatever their local time zone.
+public sealed class AcknowledgementDocument
+{
+    public string? Rule { get; set; }
+
+    public string? Vm { get; set; }
+
+    public string? Reason { get; set; }
+
+    public DateTime? Expires { get; set; }
 }
 
 public sealed class PeerDocument
@@ -56,4 +106,6 @@ public sealed class VmDocument
     public bool HasPassthroughDisk { get; set; }
 
     public int? ExpectedStartupRamMb { get; set; }
+
+    public DateTime? GuestOsSupportEnds { get; set; }
 }

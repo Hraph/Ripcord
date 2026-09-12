@@ -7,10 +7,10 @@ namespace Ripcord.Tests.Configuration;
 /// wrong today, reserve what nothing reads yet.
 public class ListenerSettingsValidationTests
 {
-    private const string MachineName = "HV-REPLICA-01";
+    private const string MachineName = ValidDocument.MachineName;
 
-    private const string LocalThumbprint = "AAAA1111BBBB2222CCCC3333DDDD4444EEEE5555";
-    private const string PeerThumbprint = "1111AAAA2222BBBB3333CCCC4444DDDD5555EEEE";
+    private const string LocalThumbprint = ValidDocument.LocalThumbprint;
+    private const string PeerThumbprint = ValidDocument.PeerThumbprint;
 
     /// A node with no listener block degrades to the milestone 1 local-only view. That is the
     /// documented off switch, so it must not be an error.
@@ -149,24 +149,5 @@ public class ListenerSettingsValidationTests
         Assert.Contains(path, result.Errors.Select(error => error.Path));
     }
 
-    private static ConfigurationDocument Valid() => new()
-    {
-        SchemaVersion = 1,
-        Node = new NodeDocument { Hostname = MachineName },
-        Peer = new PeerDocument
-        {
-            Hostname = "HV-PRIMARY-01",
-            Address = "192.0.2.11",
-            OfflineAfterSec = 120,
-        },
-        Listener = new ListenerDocument
-        {
-            Enabled = true,
-            Port = 7443,
-            LocalCertificateThumbprint = LocalThumbprint,
-            PeerCertificateThumbprint = PeerThumbprint,
-            SnapshotPath = @"D:\Ripcord\state.json",
-        },
-        Vms = [new VmDocument { Name = "VM-DC-01", Priority = "P1" }],
-    };
+    private static ConfigurationDocument Valid() => ValidDocument.Create();
 }
