@@ -122,6 +122,36 @@ public class CapacityRuleTests
             .For(CheckRules.DynamicMaximumExceedsTarget));
     }
 
+    /// An unread maximum is not a maximum inside the target: this rule was silent on missing
+    /// data until the milestone 2 review pass caught it.
+    [Fact]
+    public void An_unreadable_dynamic_maximum_is_unevaluable_rather_than_silent()
+    {
+        CheckReport report = Report(
+            Pairs.Healthy(Now).WithTarget(
+                "VM-DC-01", facts => facts with { DynamicMaximumMb = null }));
+
+        Assert.Equal(
+            FindingVerdict.Unevaluable,
+            Assert.Single(
+                report.For(CheckRules.DynamicMaximumExceedsTarget),
+                finding => finding.Subject == "VM-DC-01").Verdict);
+    }
+
+    /// A maximum at or below the startup figure is a VM that cannot grow, dynamic memory on
+    /// or off. Warning anyway would fire on every VM with static memory.
+    [Fact]
+    public void A_vm_that_cannot_grow_is_not_warned_about()
+    {
+        Assert.Empty(Report(
+            Pairs.Healthy(Now).WithTarget("VM-DC-01", facts => facts with
+            {
+                StartupRamMb = 9216,
+                DynamicMaximumMb = 9216,
+            }))
+            .For(CheckRules.DynamicMaximumExceedsTarget));
+    }
+
     /// The configured figure was written in calm conditions; the observed one is the truth on
     /// the day (decision D5).
     [Fact]

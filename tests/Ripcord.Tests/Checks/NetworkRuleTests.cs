@@ -61,16 +61,43 @@ public class NetworkRuleTests
             .For(CheckRules.ReplicaAdapterDisconnected));
     }
 
-    /// V6 leaves it unsettled which CIM class reports the binding. An unread binding beside a
-    /// switch name is taken as attached: the switch name is the stronger signal, and treating
-    /// it as disconnected would fire on every host where that property is absent.
+    /// V6 leaves it unsettled which CIM class reports the binding. A named switch with an
+    /// unread connection flag is not a fault — and not a pass either: "the switch is right"
+    /// is a different answer from "it is plugged into it".
     [Fact]
-    public void An_unread_connection_flag_beside_a_switch_name_is_not_a_fault()
+    public void An_unread_connection_flag_beside_a_switch_name_is_unevaluable()
     {
-        Assert.Empty(Report(
+        CheckReport report = Report(
             Pairs.Healthy(Now).WithTargetAdapter(
-                "VM-DC-01", adapter => adapter with { IsConnected = null }))
-            .For(CheckRules.ReplicaAdapterDisconnected));
+                "VM-DC-01", adapter => adapter with { IsConnected = null }));
+
+        Assert.Equal(
+            FindingVerdict.Unevaluable,
+            Assert.Single(report.For(CheckRules.ReplicaAdapterDisconnected)).Verdict);
+
+        // The switch name is still judged: one unread flag does not cost the other answer.
+        Assert.Empty(report.For(CheckRules.ReplicaSwitchMismatch));
+    }
+
+    /// An unread connection flag beside a *wrong* switch name still reports the wrong switch:
+    /// the two answers are independent.
+    [Fact]
+    public void An_unread_connection_flag_does_not_hide_a_wrong_switch()
+    {
+        CheckReport report = Report(
+            Pairs.Healthy(Now).WithTargetAdapter("VM-DC-01", adapter => adapter with
+            {
+                IsConnected = null,
+                SwitchName = "vSwitch-OLD",
+            }));
+
+        Assert.Equal(
+            FindingVerdict.Violated,
+            Assert.Single(report.For(CheckRules.ReplicaSwitchMismatch)).Verdict);
+
+        Assert.Equal(
+            FindingVerdict.Unevaluable,
+            Assert.Single(report.For(CheckRules.ReplicaAdapterDisconnected)).Verdict);
     }
 
     /// Attached to a switch the inventory could not name: not a fault, and not a pass. A

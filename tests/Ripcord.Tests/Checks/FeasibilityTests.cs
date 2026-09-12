@@ -96,7 +96,37 @@ public class FeasibilityTests
 
         Assert.Null(feasibility.P1StartupRamMb);
         Assert.Null(feasibility.P1FitsOnTheTarget);
-        Assert.Equal([null, null, true], feasibility.Vms.Select(vm => vm.WouldBoot));
+    }
+
+    /// An unreadable VM consumes an unknown amount of the target, so nothing behind it in
+    /// failover order can be answered either. Counting it as zero would let a VM that would
+    /// actually be refused report "it would boot" — the reassuring false negative this whole
+    /// milestone exists to prevent.
+    [Fact]
+    public void Nothing_behind_an_unreadable_vm_can_be_answered()
+    {
+        Feasibility feasibility = Calculate(
+            perVmStartup: new Dictionary<string, int>
+            {
+                ["VM-LEGACY-01"] = 6000,
+                ["VM-BACKUP-01"] = 1024,
+            });
+
+        // VM-DC-01 is first in failover order and unreadable; 6000 MB alone fits inside the
+        // 8192 MB usable, and would wrongly read as bootable.
+        Assert.Equal([null, null, null], feasibility.Vms.Select(vm => vm.WouldBoot));
+        Assert.Null(feasibility.HeadroomMb);
+    }
+
+    /// The one before it is still answerable: the gap is behind the missing figure, not in
+    /// front of it.
+    [Fact]
+    public void A_vm_ahead_of_an_unreadable_one_is_still_answered()
+    {
+        Feasibility feasibility = Calculate(
+            perVmStartup: new Dictionary<string, int> { ["VM-DC-01"] = 2048 });
+
+        Assert.Equal([true, null, null], feasibility.Vms.Select(vm => vm.WouldBoot));
     }
 
     /// A configured VM the target has never heard of cannot be sized. Reporting it as fitting

@@ -112,7 +112,7 @@ public static class ConfigurationValidator
             return null;
         }
 
-        if (!SameHost(hostname, machineName))
+        if (!SameName(hostname, machineName))
         {
             errors.Add(new ConfigurationError(
                 "node.hostname",
@@ -276,7 +276,7 @@ public static class ConfigurationValidator
             string? vmName = entry.Vm?.Trim() is { Length: > 0 } named ? named : null;
 
             if (vmName is not null
-                && !vms.Any(vm => SameHost(vm.Name, vmName)))
+                && !vms.Any(vm => SameName(vm.Name, vmName)))
             {
                 errors.Add(new ConfigurationError(
                     $"{path}.vm", $"'{vmName}' is not one of the declared VMs"));
@@ -334,7 +334,7 @@ public static class ConfigurationValidator
 
         bool complete = Required(peer.Hostname, "peer.hostname", errors, out string hostname);
 
-        if (complete && nodeHostname is not null && SameHost(hostname, nodeHostname))
+        if (complete && nodeHostname is not null && SameName(hostname, nodeHostname))
         {
             errors.Add(new ConfigurationError(
                 "peer.hostname", "must name the other host, not this one"));
@@ -540,7 +540,8 @@ public static class ConfigurationValidator
         return false;
     }
 
-    /// Windows host names are case-insensitive; a config differing only in case is correct.
-    private static bool SameHost(string left, string right) =>
+    /// Windows host names and VM names are both case-insensitive, so a configuration
+    /// differing only in case is correct rather than a mismatch.
+    private static bool SameName(string left, string right) =>
         string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
 }

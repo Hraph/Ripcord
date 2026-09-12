@@ -88,6 +88,20 @@ internal static class CapacityRules
     {
         if (usable is not { } capacity || vm.DynamicMaximumMb is not { } maximum)
         {
+            yield return Found.Unevaluable(
+                CheckRules.DynamicMaximumExceedsTarget,
+                vm.Name,
+                $"the dynamic maximum of {vm.Name} or the memory of "
+                + $"{subject.Target.HostName} could not be read");
+
+            yield break;
+        }
+
+        // A maximum at or below the startup figure is a VM that cannot grow, whether or not
+        // dynamic memory is switched on. Nothing to warn about, and warning anyway would
+        // fire on every VM with static memory.
+        if (vm.StartupRamMb is { } startup && maximum <= startup)
+        {
             yield break;
         }
 

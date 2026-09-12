@@ -32,6 +32,11 @@ public sealed record Feasibility(
         int? usable = target.Facts?.UsableRamMb(hostReserveGb);
         int allocated = 0;
 
+        // Once one VM's startup figure is missing, nothing after it in failover order can be
+        // answered either: that VM will consume an unknown amount of the target, so a later
+        // "it would boot" would be arithmetic over a number nobody read.
+        bool capacityKnown = true;
+
         // Allocation order is failover order: P1 before P2, then by name so the answer is the
         // same on both hosts and from one run to the next.
         List<VmFeasibility> vms = [];
@@ -47,7 +52,11 @@ public sealed record Feasibility(
 
             bool? wouldBoot = null;
 
-            if (usable is { } capacity && facts?.StartupRamMb is { } startup)
+            if (facts?.StartupRamMb is not { } startup)
+            {
+                capacityKnown = false;
+            }
+            else if (usable is { } capacity && capacityKnown)
             {
                 wouldBoot = allocated + startup <= capacity;
 
@@ -68,7 +77,11 @@ public sealed record Feasibility(
                 wouldBoot));
         }
 
-        return new Feasibility(usable, P1Startup(vms), Headroom(usable, allocated), vms);
+        return new Feasibility(
+            usable,
+            P1Startup(vms),
+            capacityKnown ? Headroom(usable, allocated) : null,
+            vms);
     }
 
     /// Null as soon as one P1 figure is missing. A sum over the VMs that *could* be read would

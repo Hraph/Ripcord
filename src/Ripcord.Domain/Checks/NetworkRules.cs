@@ -72,8 +72,11 @@ internal static class NetworkRules
                     name,
                     $"{adapter.Name} on {subject.Target.HostName} is attached to a switch "
                     + "that could not be named");
+
+                continue;
             }
-            else if (adapter.SwitchName is null || adapter.IsConnected == false)
+
+            if (adapter.SwitchName is null || adapter.IsConnected == false)
             {
                 yield return Found.Violated(
                     CheckRules.ReplicaAdapterDisconnected,
@@ -83,8 +86,24 @@ internal static class NetworkRules
                     + "domain, no monitoring",
                     $"Connect-VMNetworkAdapter -VMName {name} -Name '{adapter.Name}' "
                     + $"-SwitchName '{expected}'");
+
+                continue;
             }
-            else if (!string.Equals(adapter.SwitchName, expected, StringComparison.OrdinalIgnoreCase))
+
+            // A named switch and an unread connection flag. This inventory reads both from
+            // one allocation instance, so it cannot produce the combination — but a peer's
+            // snapshot can, and "the switch is right" is not the same answer as "it is
+            // plugged in" (V6).
+            if (adapter.IsConnected is null)
+            {
+                yield return Found.Unevaluable(
+                    CheckRules.ReplicaAdapterDisconnected,
+                    name,
+                    $"{adapter.Name} on {subject.Target.HostName} names a switch, and "
+                    + "whether it is connected to it could not be read");
+            }
+
+            if (!string.Equals(adapter.SwitchName, expected, StringComparison.OrdinalIgnoreCase))
             {
                 yield return Found.Violated(
                     CheckRules.ReplicaSwitchMismatch,
