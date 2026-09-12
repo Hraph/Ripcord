@@ -104,7 +104,7 @@ internal static class NetworkRules
                     name,
                     $"{adapter.Name} on {subject.Target.HostName} uses a dynamic MAC address",
                     "the guest sees a brand-new adapter after failover, so its static IP, "
-                    + "DNS and gateway are gone — it boots with an unconfigured NIC",
+                    + "DNS and gateway are gone - it boots with an unconfigured NIC",
                     $"Set-VMNetworkAdapter -VMName {name} -Name '{adapter.Name}' "
                     + "-StaticMacAddress <the primary's address>");
 
@@ -137,7 +137,7 @@ internal static class NetworkRules
                     $"{adapter.Name} is {adapter.MacAddress} on {subject.Target.HostName} "
                     + $"and {peer.MacAddress} on {subject.Source.HostName}",
                     "the guest sees a brand-new adapter after failover, so its static IP, "
-                    + "DNS and gateway are gone — it boots with an unconfigured NIC",
+                    + "DNS and gateway are gone - it boots with an unconfigured NIC",
                     $"Set-VMNetworkAdapter -VMName {name} -Name '{adapter.Name}' "
                     + $"-StaticMacAddress {peer.MacAddress}");
             }

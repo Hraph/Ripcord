@@ -133,6 +133,33 @@ public static class FakeScenarios
             HostReachability.Reachable(),
             TargetHost());
 
+    /// A replica whose adapter is bound to no switch: the VM would start on the target with
+    /// no network at all, which is the critical `ripcord check` exists to catch.
+    public static HostState UnreadyForFailover(DateTimeOffset now)
+    {
+        HostState healthy = Healthy(now);
+
+        return healthy with
+        {
+            Vms =
+            [
+                .. healthy.Vms.Select(vm => vm.Name == "VM-DC-01"
+                    ? vm with
+                    {
+                        Facts = vm.Facts! with
+                        {
+                            Adapters =
+                            [
+                                .. vm.Facts.Adapters.Select(
+                                    adapter => adapter with { SwitchName = null }),
+                            ],
+                        },
+                    }
+                    : vm),
+            ],
+        };
+    }
+
     /// What the peer publishes when it is healthy.
     public static HostSnapshot PeerSnapshot(DateTimeOffset capturedAt) =>
         new(

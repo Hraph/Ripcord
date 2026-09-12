@@ -15,6 +15,7 @@ public sealed record CheckRequest(
 /// Everything it decided. The exit code is here rather than in the CLI, because "is this
 /// infrastructure ready" is a decision and decisions live in the Domain.
 public sealed record CheckReport(
+    DateTimeOffset EvaluatedAt,
     OperatingMode Mode,
     string SourceHostName,
     string TargetHostName,
@@ -66,6 +67,7 @@ public static class CheckEngine
         ];
 
         return new CheckReport(
+            request.Now,
             subject.Mode,
             subject.Source.HostName,
             subject.Target.HostName,

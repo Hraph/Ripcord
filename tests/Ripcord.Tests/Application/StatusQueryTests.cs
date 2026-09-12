@@ -144,10 +144,7 @@ public class StatusQueryTests
     {
         StatusQuery query = new(
             new StubConfigStore(ConfigurationRead.Failed("ripcord.yaml", "file not found")),
-            LocalState(new FakeHypervProvider(FakeScenarios.Healthy(Now))),
-            FakePeerChannel.Absent(),
-            new InMemorySnapshotStore(),
-            new FixedClock(Now));
+            Pair(new FakeHypervProvider(FakeScenarios.Healthy(Now))));
 
         StatusOutcome outcome = await query.ExecuteAsync(
             new StatusRequest("ripcord.yaml", FakeScenarios.LocalHostName), CancellationToken.None);
@@ -205,11 +202,11 @@ public class StatusQueryTests
     {
         StatusQuery query = new(
             new StubConfigStore(ConfigurationRead.Succeeded(ValidDocument())),
-            LocalState(
-                provider ?? new FakeHypervProvider(FakeScenarios.Healthy(Now)), hostSystem),
-            peerChannel ?? FakePeerChannel.Absent(),
-            snapshotStore ?? new InMemorySnapshotStore(),
-            new FixedClock(Now));
+            Pair(
+                provider ?? new FakeHypervProvider(FakeScenarios.Healthy(Now)),
+                hostSystem,
+                peerChannel,
+                snapshotStore));
 
         return query.ExecuteAsync(
             new StatusRequest("ripcord.yaml", machineName), CancellationToken.None);
@@ -226,13 +223,20 @@ public class StatusQueryTests
 
     /// The host system and certificate store are fixed here: this suite is about the pair,
     /// and `LocalStateReaderTests` is where their failure modes are settled.
-    private static LocalStateReader LocalState(
-        IHypervProvider provider, FakeHostSystemProvider? hostSystem = null) =>
+    private static PairReader Pair(
+        IHypervProvider provider,
+        FakeHostSystemProvider? hostSystem = null,
+        IPeerChannel? peerChannel = null,
+        ISnapshotStore? snapshotStore = null) =>
         new(
-            provider,
-            hostSystem ?? FakeHostSystemProvider.Target(),
-            FakeCertificateProvider.Valid(
-                Tests.Configuration.ValidDocument.LocalThumbprint, "CN=HV-REPLICA-01"));
+            new LocalStateReader(
+                provider,
+                hostSystem ?? FakeHostSystemProvider.Target(),
+                FakeCertificateProvider.Valid(
+                    Tests.Configuration.ValidDocument.LocalThumbprint, "CN=HV-REPLICA-01")),
+            peerChannel ?? FakePeerChannel.Absent(),
+            snapshotStore ?? new InMemorySnapshotStore(),
+            new FixedClock(Now));
 
     private sealed class StubConfigStore(ConfigurationRead read) : IConfigStore
     {

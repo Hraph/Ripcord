@@ -40,6 +40,68 @@ public class RipcordCliTests
         Assert.Empty(run.Error);
     }
 
+    [Fact]
+    public async Task Check_renders_the_report_and_exits_zero_on_a_clean_pair()
+    {
+        CliRun run = await Run(["check"]);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Contains("RIPCORD CHECK", run.Output, StringComparison.Ordinal);
+        Assert.Contains("FEASIBILITY", run.Output, StringComparison.Ordinal);
+        Assert.Empty(run.Error);
+    }
+
+    /// The one command whose exit code reports on the infrastructure rather than on the tool.
+    [Fact]
+    public async Task Check_exits_one_when_a_critical_rule_is_violated()
+    {
+        CliRun run = await Run(
+            ["check"],
+            provider: new FakeHypervProvider(FakeScenarios.UnreadyForFailover(Now)));
+
+        Assert.Equal(ExitCode.CriticalFinding, run.Code);
+        Assert.Contains("NOT READY", run.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Check_refuses_an_unexpected_argument_rather_than_guessing()
+    {
+        CliRun run = await Run(["check", "--all"]);
+
+        Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
+        Assert.Contains("unexpected argument", run.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Check_reads_the_configuration_path_it_was_given()
+    {
+        RecordingConfigStore store = new();
+
+        await Run(["check", "--config", @"C:\elsewhere\ripcord.yaml"], configStore: store);
+
+        Assert.Equal(@"C:\elsewhere\ripcord.yaml", store.RequestedPath);
+    }
+
+    [Fact]
+    public async Task Check_on_a_local_access_failure_exits_three_with_the_reason()
+    {
+        CliRun run = await Run(
+            ["check"],
+            provider: FakeHypervProvider.FailingLocally("the WMI service is not running"));
+
+        Assert.Equal(ExitCode.LocalAccessFailure, run.Code);
+        Assert.Contains("the WMI service is not running", run.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_usage_names_check_and_its_exit_code()
+    {
+        CliRun run = await Run([]);
+
+        Assert.Contains("ripcord check", run.Output, StringComparison.Ordinal);
+        Assert.Contains("1 a critical rule is violated", run.Output, StringComparison.Ordinal);
+    }
+
     /// Configuration errors go to stderr as a list, so a scheduled task's mail contains the
     /// whole list rather than the first line of it.
     [Fact]

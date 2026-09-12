@@ -11,9 +11,9 @@ namespace Ripcord.Cli.Rendering;
 /// code page, or on the operator distinguishing two shades of red.
 public static class StatusRenderer
 {
-    public const int Width = 75;
+    public const int Width = Layout.Width;
 
-    private const int Indent = 2;
+    private const int Indent = Layout.Indent;
     private const int LabelColumn = 8;
     private const int NameColumn = 20;
     private const int RoleColumn = 8;
@@ -76,7 +76,7 @@ public static class StatusRenderer
             output.AppendLine(
                 $"{new string(' ', Indent)}State as of {TimestampOf(captured)} "
                 + $"({Duration(snapshot.AgeAt(now))} old)"
-                + (snapshot.IsFreshAt(now, offlineAfter) ? "" : " — STALE"));
+                + (snapshot.IsFreshAt(now, offlineAfter) ? "" : " - STALE"));
         }
 
         if (host.Vms.Count == 0)
@@ -194,13 +194,11 @@ public static class StatusRenderer
     private static string Sentence(string reason) =>
         char.ToUpperInvariant(reason[0]) + reason[1..] + ".";
 
-    private static string TimestampOf(DateTimeOffset instant) =>
-        instant.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture);
+    private static string TimestampOf(DateTimeOffset instant) => Layout.Timestamp(instant);
 
-    private static string Truncate(string value, int width) =>
-        value.Length <= width ? value : value[..(width - 3)] + "...";
+    private static string Truncate(string value, int width) => Layout.Truncate(value, width);
 
-    private static string Pad(string value, int width) => value.PadRight(width);
+    private static string Pad(string value, int width) => Layout.Pad(value, width);
 
-    private static string PadLeft(string value, int width) => value.PadLeft(width);
+    private static string PadLeft(string value, int width) => Layout.PadLeft(value, width);
 }

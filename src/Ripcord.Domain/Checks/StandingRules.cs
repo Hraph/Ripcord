@@ -23,7 +23,7 @@ internal static class StandingRules
                     + "carry",
                     "with no recovery history the replica is a 30-second mirror, so that "
                     + "disk is the whole of the point-in-time protection in this "
-                    + "infrastructure — and it is the one disk that does not cross",
+                    + "infrastructure - and it is the one disk that does not cross",
                     null);
             }
 

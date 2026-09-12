@@ -1,3 +1,4 @@
+using Ripcord.Application.Checks;
 using Ripcord.Application.Deployment;
 using Ripcord.Application.Status;
 using Ripcord.Application;
@@ -73,6 +74,10 @@ public sealed class RipcordCli(
                 return await this.StatusAsync(args[1..], output, error, cancellationToken)
                     .ConfigureAwait(false);
 
+            case "check":
+                return await this.CheckAsync(args[1..], output, error, cancellationToken)
+                    .ConfigureAwait(false);
+
             case "serve":
                 return await this.ServeAsync(args[1..], error, cancellationToken)
                     .ConfigureAwait(false);
@@ -100,8 +105,7 @@ public sealed class RipcordCli(
             return ExitCode.InvalidConfiguration;
         }
 
-        StatusQuery query = new(
-            configStore, this.LocalState(), peerChannel, snapshotStore, clock);
+        StatusQuery query = new(configStore, this.Pair());
 
         StatusOutcome outcome = await query
             .ExecuteAsync(new StatusRequest(path, environment.MachineName), cancellationToken)
@@ -125,6 +129,36 @@ public sealed class RipcordCli(
         return outcome.Code;
     }
 
+    /// Read-only, and the one command whose exit code reports on the infrastructure rather
+    /// than on the tool: 1 means at least one critical rule is violated (decision D7).
+    private async Task<ExitCode> CheckAsync(
+        string[] args, TextWriter output, TextWriter error, CancellationToken cancellationToken)
+    {
+        if (!TryReadConfigurationPath(args, out string path, out string? optionError))
+        {
+            error.WriteLine($"ripcord: {optionError}");
+            return ExitCode.InvalidConfiguration;
+        }
+
+        CheckQuery query = new(configStore, this.Pair(), clock);
+
+        CheckOutcome outcome = await query
+            .ExecuteAsync(
+                new CheckRequestOptions(path, environment.MachineName), cancellationToken)
+            .ConfigureAwait(false);
+
+        if (outcome.Report is { } report)
+        {
+            output.Write(CheckRenderer.Render(report));
+            return outcome.Code;
+        }
+
+        WriteFailure(error, new StatusOutcome(
+            outcome.Code, null, outcome.Errors, outcome.FailureMessage, []));
+
+        return outcome.Code;
+    }
+
     /// The service entry point. It serves the published snapshot and nothing else — it never
     /// reads Hyper-V, which is the whole point of the privilege split in decision D18.
     private async Task<ExitCode> ServeAsync(
@@ -136,12 +170,10 @@ public sealed class RipcordCli(
             return ExitCode.InvalidConfiguration;
         }
 
-        ConfigurationRead read = configStore.Read(
-            options.ConfigurationPath ?? environment.DefaultConfigurationPath);
-
-        ConfigurationValidation validation = read.Errors.Count > 0
-            ? ConfigurationValidation.Invalid(read.Errors)
-            : ConfigurationValidator.Validate(read.Document, environment.MachineName);
+        ConfigurationValidation validation = ConfigurationGate.Open(
+            configStore,
+            options.ConfigurationPath ?? environment.DefaultConfigurationPath,
+            environment.MachineName);
 
         if (validation.Configuration is not { } configuration)
         {
@@ -214,8 +246,12 @@ public sealed class RipcordCli(
         return result.Succeeded ? ExitCode.Success : ExitCode.LocalAccessFailure;
     }
 
-    private LocalStateReader LocalState() =>
-        new(provider, hostSystemProvider, certificateProvider);
+    private PairReader Pair() =>
+        new(
+            new LocalStateReader(provider, hostSystemProvider, certificateProvider),
+            peerChannel,
+            snapshotStore,
+            clock);
 
     private bool Confirmed(TextWriter output, TextWriter error)
     {
@@ -360,15 +396,17 @@ public sealed class RipcordCli(
 
     private static void WriteUsage(TextWriter writer)
     {
-        writer.WriteLine("ripcord — disaster recovery for a Hyper-V Replica pair");
+        writer.WriteLine("ripcord - disaster recovery for a Hyper-V Replica pair");
         writer.WriteLine();
         writer.WriteLine("  ripcord status [--config <path>]   read both sides of the pair");
+        writer.WriteLine("  ripcord check [--config <path>]    would a failover work right now");
         writer.WriteLine("  ripcord deploy-listener [--dry-run] [--remove]");
         writer.WriteLine("                                     install or remove the pair listener");
         writer.WriteLine("  ripcord serve [--config <path>]    run the read-only pair listener");
         writer.WriteLine("  ripcord version                    version and commit hash");
         writer.WriteLine();
         writer.WriteLine("Exit codes: 0 success (an unreachable peer included), "
-            + "2 bad configuration, 3 local access failure.");
+            + "1 a critical rule is violated,");
+        writer.WriteLine("            2 bad configuration, 3 local access failure.");
     }
 }
