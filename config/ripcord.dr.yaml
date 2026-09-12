@@ -25,6 +25,11 @@ replication:
   expected_switch_name: vSwitch-PROD
   expected_frequency_sec: 30
   lag_warning_multiplier: 3
+  # Where a test failover attaches the test VM. Left out, every adapter of the test VM is
+  # started disconnected, which is the safe default. It must never be expected_switch_name:
+  # a test VM is a byte-for-byte copy, so on the production switch it is a duplicate
+  # hostname, IP and — for the domain controller — a duplicate directory identity.
+  # test_failover_switch: vSwitch-ISOLATED
 
 # The read-only pair channel. Remove this block entirely, or set enabled: false, and the node
 # degrades to the local-only view rather than failing.

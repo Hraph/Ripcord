@@ -153,6 +153,23 @@ public sealed class YamlConfigStoreTests : IDisposable
             configuration.Vms.Single(vm => vm.Name == "VM-LEGACY-01").GuestOsSupportEnds);
     }
 
+    /// The naming convention maps this key automatically, which is exactly why it needs a
+    /// test: renaming the property would keep compiling and silently stop reading the file.
+    [Fact]
+    public void The_test_failover_switch_is_read_under_its_documented_name()
+    {
+        ConfigurationRead read = this.Read("""
+            replication:
+              expected_role: replica
+              expected_switch_name: vSwitch-PROD
+              expected_frequency_sec: 30
+              lag_warning_multiplier: 3
+              test_failover_switch: vSwitch-ISOLATED
+            """);
+
+        Assert.Equal("vSwitch-ISOLATED", read.Document!.Replication!.TestFailoverSwitch);
+    }
+
     private ConfigurationRead Read(string yaml)
     {
         string path = Path.Combine(this.directory, "ripcord.yaml");

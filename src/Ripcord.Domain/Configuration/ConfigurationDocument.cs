@@ -39,6 +39,8 @@ public sealed class ReplicationDocument
 
     public string? ExpectedSwitchName { get; set; }
 
+    public string? TestFailoverSwitch { get; set; }
+
     public int? ExpectedFrequencySec { get; set; }
 
     public int? LagWarningMultiplier { get; set; }

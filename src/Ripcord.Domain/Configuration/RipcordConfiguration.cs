@@ -33,7 +33,8 @@ public sealed record ReplicationSettings(
     string ExpectedSwitchName,
     TimeSpan ExpectedFrequency,
     int LagWarningMultiplier,
-    TimeSpan HealthWarningAfter)
+    TimeSpan HealthWarningAfter,
+    string? TestFailoverSwitch = null)
 {
     /// Hyper-V health flickers to Warning for a single missed cycle. Five minutes is long
     /// enough that a blip does not wake anyone and short enough to catch a real stall.

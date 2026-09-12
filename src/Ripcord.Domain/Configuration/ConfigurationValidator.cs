@@ -181,6 +181,8 @@ public static class ConfigurationValidator
             complete = false;
         }
 
+        complete &= TestFailoverSwitch(replication, switchName, errors, out string? testSwitch);
+
         return complete
             ? new ReplicationSettings(
                 role,
@@ -189,8 +191,49 @@ public static class ConfigurationValidator
                 replication.LagWarningMultiplier!.Value,
                 replication.HealthWarningAfterSec is { } seconds
                     ? TimeSpan.FromSeconds(seconds)
-                    : ReplicationSettings.DefaultHealthWarningAfter)
+                    : ReplicationSettings.DefaultHealthWarningAfter,
+                testSwitch)
             : null;
+    }
+
+    /// Optional (decision D12): absent means a test VM is started with every adapter
+    /// disconnected, which is the safe default. Present and useless is refused instead —
+    /// blank reads as absent while the operator believes they configured something, and the
+    /// production switch would satisfy the isolation rule by doing what it forbids.
+    private static bool TestFailoverSwitch(
+        ReplicationDocument replication,
+        string expectedSwitchName,
+        List<ConfigurationError> errors,
+        out string? testSwitch)
+    {
+        const string Path = "replication.test_failover_switch";
+
+        testSwitch = null;
+
+        if (replication.TestFailoverSwitch is not { } declared)
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(declared))
+        {
+            errors.Add(new ConfigurationError(
+                Path, "must name a switch when present; remove the key to disconnect instead"));
+            return false;
+        }
+
+        if (string.Equals(
+                declared.Trim(), expectedSwitchName, StringComparison.OrdinalIgnoreCase))
+        {
+            errors.Add(new ConfigurationError(
+                Path,
+                "must differ from replication.expected_switch_name: a test VM on the "
+                    + "production switch is the duplicate identity this setting prevents"));
+            return false;
+        }
+
+        testSwitch = declared.Trim();
+        return true;
     }
 
     private static StorageSettings? ValidateStorage(
