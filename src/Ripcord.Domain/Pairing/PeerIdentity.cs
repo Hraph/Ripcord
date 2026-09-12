@@ -79,7 +79,7 @@ public static class PeerIdentity
         PeerVerdict.Accepted => "the peer's certificate and address both match",
         PeerVerdict.NoCertificate => "the caller presented no client certificate",
         PeerVerdict.UntrustedChain => "the certificate chain is not trusted",
-        PeerVerdict.Expired => "the certificate has expired",
+        PeerVerdict.Expired => "the certificate is outside its validity dates",
         PeerVerdict.WrongCertificate => "the certificate is not the peer's",
         PeerVerdict.WrongSubject => "the certificate subject is not the peer's",
         _ => "the certificate did not come from the peer's address",

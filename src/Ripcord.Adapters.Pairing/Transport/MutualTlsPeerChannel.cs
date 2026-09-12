@@ -56,6 +56,9 @@ public sealed class MutualTlsPeerChannel(
         await client.ConnectAsync(endpoint.Address, endpoint.Port, cancellationToken)
             .ConfigureAwait(false);
 
+        using X509Certificate2 certificate =
+            localCertificate(endpoint.LocalCertificateThumbprint);
+
         using SslStream stream = new(
             client.GetStream(),
             leaveInnerStreamOpen: false,
@@ -68,12 +71,18 @@ public sealed class MutualTlsPeerChannel(
                 // The address, not the expected subject: this is the SNI name, and the name
                 // that actually identifies the peer is checked in the Domain.
                 TargetHost = endpoint.Address,
-                ClientCertificates = [localCertificate(endpoint.LocalCertificateThumbprint)],
+                    ClientCertificates = [certificate],
                 EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
             },
             cancellationToken).ConfigureAwait(false);
 
-        string payload = await ReadCappedAsync(stream, cancellationToken).ConfigureAwait(false);
+        string? payload = await ReadCappedAsync(stream, cancellationToken).ConfigureAwait(false);
+
+        if (payload is null)
+        {
+            return PeerFetch.Silent(HostReachability.Failed(
+                "the peer sent more than the payload cap allows", clock.UtcNow));
+        }
 
         return SnapshotWireFormat.Read(payload) is { } snapshot
             ? PeerFetch.Answered(snapshot)
@@ -82,8 +91,9 @@ public sealed class MutualTlsPeerChannel(
     }
 
     /// The peer is trusted to be the peer, not to be well behaved: a compromised one could
-    /// stream forever. Reading stops at the cap.
-    private static async Task<string> ReadCappedAsync(
+    /// stream forever. Over the cap is refused outright rather than truncated — a truncated
+    /// payload would be reported as "unreadable", which hides what actually happened.
+    private static async Task<string?> ReadCappedAsync(
         Stream stream, CancellationToken cancellationToken)
     {
         byte[] buffer = new byte[SnapshotWireFormat.MaxPayloadBytes + 1];
@@ -103,6 +113,8 @@ public sealed class MutualTlsPeerChannel(
             total += read;
         }
 
-        return System.Text.Encoding.UTF8.GetString(buffer, 0, Math.Min(total, SnapshotWireFormat.MaxPayloadBytes));
+        return total > SnapshotWireFormat.MaxPayloadBytes
+            ? null
+            : System.Text.Encoding.UTF8.GetString(buffer, 0, total);
     }
 }

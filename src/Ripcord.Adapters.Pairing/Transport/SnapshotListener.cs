@@ -51,9 +51,11 @@ public sealed class SnapshotListener(
             .AcceptTcpClientAsync(cancellationToken).ConfigureAwait(false);
 
         string remote = (client.Client.RemoteEndPoint as IPEndPoint)?.Address.ToString() ?? "";
-        PeerVerdict verdict = PeerVerdict.NoCertificate;
 
-        PeerVerdict observed = verdict;
+        // Fail closed: if the validation callback never runs, nothing is served.
+        PeerVerdict observed = PeerVerdict.NoCertificate;
+
+        using X509Certificate2 certificate = localCertificate();
 
         using SslStream stream = new(
             client.GetStream(),
@@ -66,14 +68,25 @@ public sealed class SnapshotListener(
             await stream.AuthenticateAsServerAsync(
                 new SslServerAuthenticationOptions
                 {
-                    ServerCertificate = localCertificate(),
+                    ServerCertificate = certificate,
                     ClientCertificateRequired = true,
                     EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
                 },
                 cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (
-            exception is AuthenticationException or IOException or SocketException)
+            exception is AuthenticationException or IOException or SocketException
+                or ObjectDisposedException)
+        {
+            return new ServedConnection(observed, remote, Served: false);
+        }
+
+        // Checked again rather than inferred from the handshake not throwing. Under TLS 1.3
+        // the server finishes its half before the client's certificate is processed, and
+        // Schannel surfaces a rejected client certificate on the first read rather than out of
+        // AuthenticateAsServerAsync — so "it did not throw" is a platform behaviour, not a
+        // guarantee. The decision is PeerIdentity's, and this is where it is enforced.
+        if (observed != PeerVerdict.Accepted)
         {
             return new ServedConnection(observed, remote, Served: false);
         }
@@ -86,8 +99,19 @@ public sealed class SnapshotListener(
         }
 
         byte[] payload = Encoding.UTF8.GetBytes(SnapshotWireFormat.Write(snapshot));
-        await stream.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
-        await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            await stream.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
+            await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (
+            exception is IOException or SocketException or ObjectDisposedException)
+        {
+            // The caller hung up mid-write — a client that refused *our* certificate does
+            // exactly this. It is not a reason to throw at whoever is running the listener.
+            return new ServedConnection(observed, remote, Served: false);
+        }
 
         return new ServedConnection(observed, remote, Served: true);
     }
@@ -109,6 +133,11 @@ public sealed class LoopingPeerListener(
     IClock clock,
     Action<ServedConnection>? observe = null) : IPeerListener
 {
+    /// One connection may not hold the listener for longer than this. The design serves one
+    /// at a time, so a caller that connects and then stalls would otherwise deny the pair view
+    /// permanently.
+    private static readonly TimeSpan ConnectionDeadline = TimeSpan.FromSeconds(15);
+
     public async Task RunAsync(
         ListenerSettings settings, PeerRules rules, CancellationToken cancellationToken)
     {
@@ -127,20 +156,26 @@ public sealed class LoopingPeerListener(
 
         while (!cancellationToken.IsCancellationRequested)
         {
+            using CancellationTokenSource connection =
+                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            connection.CancelAfter(ConnectionDeadline);
+
             try
             {
                 observe?.Invoke(await listener
-                    .ServeOneAsync(settings.SnapshotPath, rules, cancellationToken)
+                    .ServeOneAsync(settings.SnapshotPath, rules, connection.Token)
                     .ConfigureAwait(false));
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 return;
             }
             catch (Exception exception) when (
-                exception is IOException or SocketException or AuthenticationException)
+                exception is OperationCanceledException or IOException or SocketException
+                    or AuthenticationException)
             {
-                // A bad connection is not a reason to stop serving the good ones.
+                // A slow or bad connection is not a reason to stop serving the good ones.
+                // Only the service's own token ends the loop.
             }
         }
     }

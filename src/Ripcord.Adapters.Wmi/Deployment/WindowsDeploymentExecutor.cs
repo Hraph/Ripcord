@@ -19,17 +19,20 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
     {
         ArgumentNullException.ThrowIfNull(desired);
 
-        (int serviceCode, string serviceOutput) = Run("sc.exe", $"qc {DeploymentPlan.ServiceName}");
+        // The service comes from the registry, not from `sc qc`: that command's labels are
+        // localised, and on a French Windows every run would report a different binary path
+        // and reconfigure the service pointlessly.
+        string? imagePath = ServiceImagePath();
+
         (int ruleCode, string ruleOutput) = Run(
             "netsh",
             $"advfirewall firewall show rule name=\"{DeploymentPlan.FirewallRuleName}\" verbose");
 
-        bool serviceInstalled = serviceCode == 0;
         bool ruleInstalled = ruleCode == 0;
 
         return new ObservedDeployment(
-            serviceInstalled,
-            serviceInstalled ? ValueAfter(serviceOutput, "BINARY_PATH_NAME") : null,
+            imagePath is not null,
+            BinaryIn(imagePath),
             ruleInstalled,
             ruleInstalled ? PortIn(ruleOutput) : null,
             ruleInstalled ? ValueAfter(ruleOutput, "RemoteIP") : null,
@@ -123,6 +126,36 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         && Run("icacls", $"\"{snapshotPath}\"").Output
             .Contains(DeploymentPlan.ServiceAccount, StringComparison.OrdinalIgnoreCase);
 
+    /// `netsh`'s field labels are localised too, so an unparseable rule is reported as not
+    /// matching rather than as matching. That costs one redundant rule rewrite per run on a
+    /// non-English host; reporting it as correct could leave a rule open to the wrong address.
+    /// See V23.
+    private static string? ServiceImagePath()
+    {
+        using Microsoft.Win32.RegistryKey? key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+            $@"SYSTEM\CurrentControlSet\Services\{DeploymentPlan.ServiceName}");
+
+        return key?.GetValue("ImagePath") as string;
+    }
+
+    /// The registry holds `"<path>" serve`; the plan compares binaries.
+    private static string? BinaryIn(string? imagePath)
+    {
+        if (string.IsNullOrWhiteSpace(imagePath))
+        {
+            return null;
+        }
+
+        string trimmed = imagePath.Trim();
+
+        return trimmed.StartsWith('"') && trimmed.IndexOf('"', 1) is int end and > 0
+            ? trimmed[1..end]
+            : trimmed.Split(' ')[0];
+    }
+
+    /// Both streams are drained concurrently against the deadline. Reading one to the end
+    /// before waiting would let a wedged child hang here forever — and a child that fills the
+    /// other pipe meanwhile would deadlock both sides.
     private static (int Code, string Output) Run(string file, string arguments)
     {
         using Process process = new()
@@ -137,17 +170,23 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         };
 
         process.Start();
-        string output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
 
-        // Explicit timeout, like every other outward call: a wedged sc.exe must not wedge the
-        // operator's console during an incident.
-        if (!process.WaitForExit(CommandTimeout))
+        using CancellationTokenSource deadline = new(CommandTimeout);
+
+        try
+        {
+            Task<string> standardOutput = process.StandardOutput.ReadToEndAsync(deadline.Token);
+            Task<string> standardError = process.StandardError.ReadToEndAsync(deadline.Token);
+
+            process.WaitForExitAsync(deadline.Token).GetAwaiter().GetResult();
+
+            return (process.ExitCode, standardOutput.Result + standardError.Result);
+        }
+        catch (OperationCanceledException)
         {
             process.Kill(entireProcessTree: true);
             throw new TimeoutException($"'{file} {arguments}' did not finish in {CommandTimeout}");
         }
-
-        return (process.ExitCode, output);
     }
 
     private static string? ValueAfter(string output, string label)

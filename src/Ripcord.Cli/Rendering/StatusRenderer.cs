@@ -1,4 +1,5 @@
 using Ripcord.Domain;
+using Ripcord.Domain.Pairing;
 using Ripcord.Domain.Replication;
 using System.Globalization;
 using System.Text;
@@ -70,11 +71,12 @@ public static class StatusRenderer
         // beats the illusion of live data: four minutes old is information, not a defect.
         if (capturedAt is { } captured)
         {
-            TimeSpan age = Elapsed.Between(captured, now) ?? TimeSpan.Zero;
+            HostSnapshot snapshot = new(captured, host);
 
             output.AppendLine(
                 $"{new string(' ', Indent)}State as of {TimestampOf(captured)} "
-                + $"({Duration(age)} old){(age >= offlineAfter ? " — STALE" : "")}");
+                + $"({Duration(snapshot.AgeAt(now))} old)"
+                + (snapshot.IsFreshAt(now, offlineAfter) ? "" : " — STALE"));
         }
 
         if (host.Vms.Count == 0)

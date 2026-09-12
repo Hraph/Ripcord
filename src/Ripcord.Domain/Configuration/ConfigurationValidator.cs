@@ -99,6 +99,16 @@ public static class ConfigurationValidator
 
         complete &= Required(peer.Address, "peer.address", errors, out string address);
 
+        // Not merely non-empty: it is compared against the address a connection came from, and
+        // it lands in a firewall rule. A host name would refuse every connection, and the word
+        // "any" would open the port to everyone.
+        if (complete && !System.Net.IPAddress.TryParse(address, out _))
+        {
+            errors.Add(new ConfigurationError(
+                "peer.address", $"'{address}' is not an IP address"));
+            complete = false;
+        }
+
         if (peer.OfflineAfterSec is not (> 0 and <= MaxOfflineAfterSec))
         {
             errors.Add(new ConfigurationError(
@@ -158,6 +168,15 @@ public static class ConfigurationValidator
         string snapshotPath = string.IsNullOrWhiteSpace(listener.SnapshotPath)
             ? ListenerSettings.DefaultSnapshotPath
             : listener.SnapshotPath.Trim();
+
+        // It is interpolated into a quoted icacls argument; a quote inside it would break out
+        // of that quoting.
+        if (snapshotPath.Contains('"', StringComparison.Ordinal))
+        {
+            errors.Add(new ConfigurationError(
+                "listener.snapshot_path", "must not contain a quote character"));
+            complete = false;
+        }
 
         return complete
             ? new ListenerSettings(listener.Enabled, port, local, peer, snapshotPath)

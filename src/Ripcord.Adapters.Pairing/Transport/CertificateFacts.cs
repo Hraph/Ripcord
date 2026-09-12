@@ -13,7 +13,25 @@ internal static class CertificateFacts
             ? null
             : new PresentedCertificate(
                 certificate.Thumbprint,
-                certificate.Subject,
+                CommonName(certificate),
                 chainTrusted,
                 now < certificate.NotBefore || now > certificate.NotAfter);
+
+    /// The CN only, not the whole distinguished name: a CA-issued certificate normally carries
+    /// more relative names (O, OU, C), and comparing the full DN against the `CN=<host>` the
+    /// configuration implies would refuse every real certificate.
+    private static string CommonName(X509Certificate2 certificate)
+    {
+        foreach (X500RelativeDistinguishedName name in
+            certificate.SubjectName.EnumerateRelativeDistinguishedNames())
+        {
+            if (name.GetSingleElementType().FriendlyName == "CN"
+                && name.GetSingleElementValue() is { } value)
+            {
+                return $"CN={value}";
+            }
+        }
+
+        return certificate.Subject;
+    }
 }
