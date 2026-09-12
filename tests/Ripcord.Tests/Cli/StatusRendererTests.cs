@@ -38,6 +38,45 @@ public class StatusRendererTests
             Render(DegradedPair()));
     }
 
+    /// The peer answers with a snapshot, never live. Saying how old it is beats the illusion
+    /// of live data — a known age is information, not a defect.
+    [Fact]
+    public void The_peer_section_states_how_old_its_snapshot_is()
+    {
+        string rendered = Render(PairWithPeerSnapshot(Now.AddSeconds(-90)));
+
+        Assert.Contains("State as of", rendered, StringComparison.Ordinal);
+        Assert.Contains("1m30s old", rendered, StringComparison.Ordinal);
+        Assert.DoesNotContain("STALE", rendered, StringComparison.Ordinal);
+    }
+
+    /// Past `peer.offline_after_sec` the operator is told in a word, rather than left to
+    /// subtract two timestamps at 3 a.m.
+    [Fact]
+    public void A_snapshot_older_than_the_threshold_is_marked_stale()
+    {
+        Assert.Contains(
+            "STALE", Render(PairWithPeerSnapshot(Now.AddMinutes(-30))), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_local_section_never_claims_a_snapshot_age()
+    {
+        string local = Render(PairWithPeerSnapshot(Now.AddMinutes(-4)))
+            .Split("PEER", StringSplitOptions.None)[0];
+
+        Assert.DoesNotContain("State as of", local, StringComparison.Ordinal);
+    }
+
+    private static PairView PairWithPeerSnapshot(DateTimeOffset capturedAt) =>
+        new(
+            new HostState("HV-REPLICA-01", [], HostReachability.Reachable()),
+            new HostState(
+                "HV-PRIMARY-01",
+                [Vm("VM-DC-01", ReplicationHealth.Normal, capturedAt.AddSeconds(-10))],
+                HostReachability.Reachable()),
+            capturedAt);
+
     /// No line may exceed the fixed width, whatever the data — that is what makes the output
     /// readable without a terminal wide enough to be generous.
     [Theory]

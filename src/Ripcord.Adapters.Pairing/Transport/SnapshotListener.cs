@@ -5,6 +5,7 @@ using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Ripcord.Adapters.Pairing.Wire;
+using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Pairing;
 using Ripcord.Ports;
 using Ripcord.Ports.Pairing;
@@ -95,5 +96,46 @@ public sealed class SnapshotListener(
     {
         this.listener?.Dispose();
         return ValueTask.CompletedTask;
+    }
+}
+
+/// The service loop: accept, serve, hang up, repeat. One connection at a time, and a refused
+/// or failed connection never stops the loop — a probe on the port must not take the listener
+/// down with it.
+public sealed class LoopingPeerListener(
+    Func<X509Certificate2> localCertificate,
+    PeerTrust trust,
+    ISnapshotStore snapshotStore,
+    IClock clock,
+    Action<ServedConnection>? observe = null) : IPeerListener
+{
+    public async Task RunAsync(
+        ListenerSettings settings, PeerRules rules, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        await using SnapshotListener listener =
+            new(localCertificate, trust, snapshotStore, clock);
+
+        listener.Start(IPAddress.Any, settings.Port);
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                observe?.Invoke(await listener
+                    .ServeOneAsync(settings.SnapshotPath, rules, cancellationToken)
+                    .ConfigureAwait(false));
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (Exception exception) when (
+                exception is IOException or SocketException or AuthenticationException)
+            {
+                // A bad connection is not a reason to stop serving the good ones.
+            }
+        }
     }
 }

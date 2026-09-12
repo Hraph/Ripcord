@@ -5,7 +5,11 @@ using Ripcord.Domain.Replication;
 using Ripcord.Domain;
 using Ripcord.Ports.Configuration;
 using Ripcord.Ports.Replication;
+using Ripcord.Domain.Deployment;
 using Ripcord.Ports;
+using Ripcord.Domain.Pairing;
+using Ripcord.Ports.Deployment;
+using Ripcord.Ports.Pairing;
 
 namespace Ripcord.Tests.Cli;
 
@@ -131,13 +135,131 @@ public class RipcordCliTests
         Assert.Contains("--config", run.Error, StringComparison.Ordinal);
     }
 
+    /// `--dry-run` is the output that gets read on the day, so it has to say exactly what
+    /// would change, and change nothing.
+    [Fact]
+    public async Task Deploy_listener_dry_run_lists_the_steps_and_changes_nothing()
+    {
+        FakeDeploymentExecutor executor = new();
+
+        CliRun run = await Run(["deploy-listener", "--dry-run"], deploymentExecutor: executor);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Contains("service", run.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("7443", run.Output, StringComparison.Ordinal);
+        Assert.Contains("Nothing was changed", run.Output, StringComparison.Ordinal);
+        Assert.Empty(executor.Applied);
+    }
+
+    /// Rule 3: no mutating operation without explicit typed confirmation. A wrong answer
+    /// leaves the host untouched.
+    [Fact]
+    public async Task Deploy_listener_changes_nothing_until_the_node_name_is_typed()
+    {
+        FakeDeploymentExecutor executor = new();
+
+        CliRun run = await Run(
+            ["deploy-listener"], deploymentExecutor: executor, typed: "yes");
+
+        Assert.NotEqual(ExitCode.Success, run.Code);
+        Assert.Empty(executor.Applied);
+        Assert.Contains("nothing was changed", run.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Deploy_listener_applies_every_step_once_confirmed()
+    {
+        FakeDeploymentExecutor executor = new();
+
+        CliRun run = await Run(
+            ["deploy-listener"],
+            deploymentExecutor: executor,
+            typed: FakeScenarios.LocalHostName);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Equal(
+            [DeploymentAction.CreateService, DeploymentAction.CreateFirewallRule,
+             DeploymentAction.GrantSnapshotAccess],
+            executor.Applied);
+    }
+
+    /// The confirmation is case-insensitive: host names are, and forcing the operator to match
+    /// case at 3 a.m. buys nothing.
+    [Fact]
+    public async Task The_confirmation_accepts_the_node_name_in_any_case()
+    {
+        FakeDeploymentExecutor executor = new();
+
+        await Run(
+            ["deploy-listener"],
+            deploymentExecutor: executor,
+            typed: FakeScenarios.LocalHostName.ToLowerInvariant());
+
+        Assert.NotEmpty(executor.Applied);
+    }
+
+    [Fact]
+    public async Task Deploy_listener_remove_undoes_the_deployment_in_reverse()
+    {
+        FakeDeploymentExecutor executor = new(Deployed());
+
+        CliRun run = await Run(
+            ["deploy-listener", "--remove"],
+            deploymentExecutor: executor,
+            typed: FakeScenarios.LocalHostName);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Equal(
+            [DeploymentAction.RevokeSnapshotAccess, DeploymentAction.RemoveFirewallRule,
+             DeploymentAction.RemoveService],
+            executor.Applied);
+    }
+
+    /// Re-running a correct deployment must be safe and obviously uneventful.
+    [Fact]
+    public async Task Deploy_listener_on_an_already_correct_host_does_nothing()
+    {
+        FakeDeploymentExecutor executor = new(Deployed());
+
+        CliRun run = await Run(["deploy-listener"], deploymentExecutor: executor);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Contains("already matches", run.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(executor.Applied);
+    }
+
+    /// A misspelt `--dry-run` that silently became a real run is the worst possible outcome
+    /// on a mutating command.
+    [Fact]
+    public async Task An_unknown_option_on_a_mutating_command_is_refused()
+    {
+        FakeDeploymentExecutor executor = new();
+
+        CliRun run = await Run(["deploy-listener", "--dryrun"], deploymentExecutor: executor);
+
+        Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
+        Assert.Empty(executor.Applied);
+    }
+
+    private static ObservedDeployment Deployed() => new(
+        ServiceInstalled: true,
+        ServiceBinaryPath: BinaryPath,
+        FirewallRuleInstalled: true,
+        FirewallPort: 7443,
+        FirewallRemoteAddress: "192.0.2.11",
+        SnapshotReadableByService: true);
+
     private const string DefaultConfigPath = "/opt/ripcord/ripcord.yaml";
+
+    private const string BinaryPath = "/opt/ripcord/ripcord";
 
     private static async Task<CliRun> Run(
         string[] args,
         string machineName = FakeScenarios.LocalHostName,
         IHypervProvider? provider = null,
         IConfigStore? configStore = null,
+        IDeploymentExecutor? deploymentExecutor = null,
+        string? typed = null,
         CancellationToken cancellationToken = default)
     {
         StringWriter output = new();
@@ -148,8 +270,11 @@ public class RipcordCliTests
             provider ?? new FakeHypervProvider(FakeScenarios.Healthy(Now)),
             FakePeerChannel.Absent(),
             new InMemorySnapshotStore(),
+            deploymentExecutor ?? new FakeDeploymentExecutor(),
+            new NoOpPeerListener(),
             new FixedClock(Now),
-            new CliEnvironment(machineName, DefaultConfigPath));
+            new CliEnvironment(
+                machineName, DefaultConfigPath, BinaryPath, new StringReader(typed ?? "")));
 
         ExitCode code = await cli.RunAsync(args, output, error, cancellationToken);
 
@@ -164,6 +289,28 @@ public class RipcordCliTests
             Task.FromCanceled<HostState>(
                 cancellationToken.IsCancellationRequested ? cancellationToken : new(true));
 
+    }
+
+    /// Reports a bare host, and records what it was asked to change.
+    private sealed class FakeDeploymentExecutor(ObservedDeployment? observed = null)
+        : IDeploymentExecutor
+    {
+        private readonly List<DeploymentAction> applied = [];
+
+        public IReadOnlyList<DeploymentAction> Applied => this.applied;
+
+        public ObservedDeployment Observe(DesiredDeployment desired) =>
+            observed ?? ObservedDeployment.Nothing;
+
+        public void Apply(DeploymentStep change, DesiredDeployment desired) =>
+            this.applied.Add(change.Action);
+    }
+
+    private sealed class NoOpPeerListener : IPeerListener
+    {
+        public Task RunAsync(
+            ListenerSettings settings, PeerRules rules, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
     }
 
     private sealed class FixedClock(DateTimeOffset now) : IClock
@@ -191,6 +338,14 @@ public class RipcordCliTests
                     Hostname = FakeScenarios.PeerHostName,
                     Address = "192.0.2.11",
                     OfflineAfterSec = 120,
+                },
+                Listener = new ListenerDocument
+                {
+                    Enabled = true,
+                    Port = 7443,
+                    LocalCertificateThumbprint = "AAAA1111BBBB2222CCCC3333DDDD4444EEEE5555",
+                    PeerCertificateThumbprint = "1111AAAA2222BBBB3333CCCC4444DDDD5555EEEE",
+                    SnapshotPath = "state.json",
                 },
                 Vms =
                 [

@@ -1,3 +1,4 @@
+using Ripcord.Domain;
 using Ripcord.Domain.Replication;
 using System.Globalization;
 using System.Text;
@@ -22,6 +23,8 @@ public static class StatusRenderer
 
     public static string Render(PairView view, TimeSpan offlineAfter, DateTimeOffset now)
     {
+        ArgumentNullException.ThrowIfNull(view);
+
         StringBuilder output = new();
 
         output.AppendLine(Banner(now));
@@ -29,7 +32,7 @@ public static class StatusRenderer
         output.AppendLine();
         AppendHost(output, "LOCAL", view.Local, offlineAfter, now);
         output.AppendLine();
-        AppendHost(output, "PEER", view.Peer, offlineAfter, now);
+        AppendHost(output, "PEER", view.Peer, offlineAfter, now, view.PeerCapturedAt);
 
         return output.ToString();
     }
@@ -46,7 +49,8 @@ public static class StatusRenderer
         string label,
         HostState host,
         TimeSpan offlineAfter,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        DateTimeOffset? capturedAt = null)
     {
         string presence = PresenceOf(host, offlineAfter, now);
 
@@ -60,6 +64,17 @@ public static class StatusRenderer
         {
             AppendUnreachable(output, host, now);
             return;
+        }
+
+        // The peer answers with a snapshot, never live (decision D18). Saying how old it is
+        // beats the illusion of live data: four minutes old is information, not a defect.
+        if (capturedAt is { } captured)
+        {
+            TimeSpan age = Elapsed.Between(captured, now) ?? TimeSpan.Zero;
+
+            output.AppendLine(
+                $"{new string(' ', Indent)}State as of {TimestampOf(captured)} "
+                + $"({Duration(age)} old){(age >= offlineAfter ? " — STALE" : "")}");
         }
 
         if (host.Vms.Count == 0)
