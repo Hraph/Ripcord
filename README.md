@@ -23,8 +23,11 @@ file written in calm conditions.
 
 ## Project state
 
-**Milestone 0 — skeleton and test CI.** No functionality yet. The hexagonal boundary is in
-place and enforced by a test; `ripcord status` arrives with milestone 1.
+**Milestone 0 shipped. Milestone 1 built, awaiting validation on the real hosts.**
+`ripcord status` and `ripcord version` are implemented and covered by tests that run on Linux
+against a fake provider. The peer section always reports "not configured": the pair view is
+[milestone 1b](docs/milestones/milestone-1b.md). The WMI adapter is written but has never run
+on a Hyper-V host, so nothing here is proven against real infrastructure yet.
 
 Progress and decisions: [`docs/TRACKING.md`](docs/TRACKING.md).
 Per-milestone detail: [`docs/milestones/`](docs/milestones/).
@@ -34,18 +37,23 @@ Specification review before coding: [`docs/COHERENCE.md`](docs/COHERENCE.md).
 
 ```
 src/Ripcord.Domain/           state, rules, decision sequences — zero external dependencies
-src/Ripcord.Ports/            the interfaces the Domain is driven through (empty until milestone 1)
+  Replication/                the replication model, and the CIM lookups the adapter must not own
+  Configuration/              the config document, the validated model, and the validator
+src/Ripcord.Ports/            IHypervProvider, IConfigStore, IClock
 src/Ripcord.Application/      use cases
 src/Ripcord.Cli/              argument parsing, console rendering (a library, not the exe)
 src/Ripcord.Adapters.Fake/    in-memory provider, used by every test
+src/Ripcord.Adapters.Yaml/    ripcord.yaml loading (translation only; validation is Domain)
 src/Ripcord.Adapters.Wmi/     net10.0-windows only — CIM to domain translation, no decisions
 src/Ripcord.Host.Windows/     composition root; the only project that produces ripcord.exe
 tests/Ripcord.Tests/          net10.0 — runs on Linux and macOS, no Windows required
 ```
 
-`Ripcord.Domain` references nothing at all. That is asserted by
-`HexagonalBoundaryTests`, which parses the `.csproj` files rather than reflecting over
-compiled assemblies — an unused `PackageReference` is invisible to reflection.
+`Ripcord.Domain` references nothing at all. That is asserted by `HexagonalBoundaryTests`,
+which parses the `.csproj` files rather than reflecting over compiled assemblies — an unused
+`PackageReference` is invisible to reflection. Project references are asserted exactly;
+packages as a subset of a per-project allow-list, so a new dependency has to be declared there
+on purpose.
 
 ## Building and testing
 
@@ -95,7 +103,59 @@ configuration stays. It is **not** symmetric: `node` and `peer` are swapped betw
 hosts, and Ripcord validates `node.hostname` against the machine's real name so a
 copied-and-not-edited file is refused rather than producing an inverted view.
 
-Schema and samples arrive with milestone 1.
+Two samples ship in [`config/`](config/): [`ripcord.primary.yaml`](config/ripcord.primary.yaml)
+and [`ripcord.dr.yaml`](config/ripcord.dr.yaml). Both are parsed and validated by the test
+suite, so a sample that stops being valid breaks the build.
+
+Startup validation reports **every** error at once rather than failing on the first, and it
+answers one question only: "can this file be read?". Whether reality matches the file — the
+switch exists, the target has the RAM, the certificate is still valid — is `ripcord check`,
+milestone 2.
+
+The machine names, addresses and thumbprints throughout this repository are pseudonymous.
+
+## Commands
+
+```
+ripcord status [--config <path>]   read both sides of the pair
+ripcord version                    version and commit hash
+```
+
+`status` describes; it does not judge — that is `ripcord check`, milestone 2. Output is fixed
+at 75 columns with no colour, because the real reading conditions are a 1024×768 KVM during an
+incident.
+
+```
+RIPCORD STATUS                                      2026-09-12 14:00:00 UTC
+
+LOCAL   HV-REPLICA-01                                             REACHABLE
+  VM                   ROLE     STATE            HEALTH       LAG   PENDING
+  -------------------------------------------------------------------------
+  VM-DC-01             Replica  Resynchronizing  Critical   6h00m     16 GB
+  VM-LEGACY-01         Replica  Replicating      Warning    9m00s    256 MB
+  VM-BACKUP-01         None     Disabled         Unknown        -         -
+
+PEER    HV-PRIMARY-01                                               OFFLINE
+  No peer channel configured on this node.
+  Unreachable since: never contacted
+```
+
+| Exit code | Meaning |
+|---|---|
+| 0 | success — **including an unreachable peer** |
+| 2 | invalid invocation, or invalid or missing configuration |
+| 3 | local access failure (WMI, privileges, timeout) |
+
+An unreachable peer is a degraded state, not an error: a scheduled `ripcord status` must not
+alert because the other host is down.
+
+The PENDING column renders `-` on real hardware at this milestone: the pending replication
+volume is not on the class the rest of the row comes from, and reaching it needs a WMI method
+that cannot be exercised off Windows. See the known gap in
+[milestone 1](docs/milestones/milestone-1.md).
+
+Install is a copy: the `.exe` and one of the samples from `config/`, renamed `ripcord.yaml`,
+side by side. `--config` overrides the path.
 
 ## License
 

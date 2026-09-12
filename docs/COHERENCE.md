@@ -18,7 +18,8 @@ explicitly presented as the guard that makes the hexagonal boundary non-negotiab
 first line".
 
 **Taken**: milestone 0 first — it fits in one session, and it is what keeps milestone 1 from
-drifting. Milestone 1 follows immediately. Shipped together.
+drifting. Milestone 1 follows immediately. (They were first meant to ship together; the
+milestone 1 / 1b split made that moot, and milestone 0 shipped on its own.)
 
 ### B2 — The Linux CI does not guard the boundary on its own — *settled, premise corrected*
 
@@ -87,7 +88,8 @@ certificates, chain *and* CN validation, firewall-restricted to the peer's IP, r
 "the channel carries states, never orders" — and "no command received from the network
 triggers a Hyper-V action".
 
-Milestone 1 needs peer state on day one. A remote CIM session (WinRM or DCOM) is the obvious
+The original premise here — since overturned by the decision below — was that milestone 1
+needs peer state on day one. A remote CIM session (WinRM or DCOM) is the obvious
 route, and it satisfies none of that: it is not the specified channel, it is authenticated by
 Windows credentials rather than the pair's certificates, and it is not read-only by
 construction — the same session that reads state can invoke a method.
@@ -127,12 +129,20 @@ Two ways out:
 1. **Accept `RecoveryHistory 0`**: the step disappears, `ripcord` fails over to the only
    available point and reports estimated data loss in seconds. Simpler, faithful to the
    current infrastructure.
-2. **Enable history** (`RecoveryHistory` > 0) on the infrastructure, which costs storage on
-   the target and requires reference checkpoints.
+2. **Enable history** (`RecoveryHistory` > 0), up to 24 points. These are ordinary Hyper-V
+   checkpoints on the replica, so the cost is replica storage and I/O — there is no "reference
+   checkpoint" requirement. (*Application-consistent* points are the thing that needs more:
+   `-VSSSnapshotFrequencyHour`, and it is only valid when `RecoveryHistory` is non-zero.)
 
-**Recommendation**: option 1 for milestone 4, while still modelling point selection as a
-one-element list — the step exists in the model, it simply has nothing to choose. Moving to
-option 2 then becomes a config change rather than a refactor.
+**Correction on the modelling.** Point selection must be modelled as an **optional, possibly
+absent** selection, not as a one-element list. Recovery-point failover is
+`Start-VMFailover -VMRecoverySnapshot <snapshot>`; with `RecoveryHistory 0` there is no
+snapshot object at all and the call is `Start-VMFailover -VMName <VM>` with no recovery-point
+argument. A one-element-list model produces an adapter that enumerates and passes a snapshot
+which does not exist.
+
+**Recommendation**: see the DR-posture argument added in R9 below — this is not only a
+modelling question.
 
 ### S2 — `ripcord.yaml` is asymmetric; it differs on each host — *settled*
 
@@ -249,6 +259,13 @@ an `InformationalVersion` injected at build time, read by reflection. Wired at m
 - **Repository name**: the specification says `ripcord` (lowercase); the local folder and
   `RipCord.sln` say `RipCord`. Taken: solution `Ripcord.sln`, assemblies `Ripcord.*`, binary
   `ripcord.exe`, repository `ripcord`. The existing `RipCord.sln` gets replaced.
+  **Deviation on record**: the git remote is still `Hraph/RipCord`, and `RepositoryUrl` in
+  `Directory.Build.props` matches the remote rather than the intended lowercase name. GitHub
+  resolves the case, so this is cosmetic until the repository is renamed.
+- **The specification names a cmdlet that does not exist.** `Cancel-Failover` (spec, milestone 4
+  guardrails) is not a Hyper-V cmdlet; cancellation is `Stop-VMFailover`. The English milestone
+  files already use the correct name. Recorded because the specification is nominally
+  authoritative, so a silent divergence would look like a transcription error later.
 - **`LICENSE` missing** while MIT is announced. To add at milestone 0.
 - **`.gitignore` missing**, and `.idea/` plus `.DS_Store` are already untracked in the tree.
   To add at milestone 0.

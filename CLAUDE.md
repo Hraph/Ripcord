@@ -34,8 +34,10 @@ allowed to fail. Settle every decision against that.
    never crash, never stay silent.
 6. **Console output legible on a 1024×768 KVM.** That is the real usage context.
 7. **No secrets in plaintext** in config or logs. Explicit timeouts everywhere.
-8. The hexagonal boundary is enforced by the Linux CI: a Windows reference in the Domain
-   breaks the build. Never work around that guard.
+8. The hexagonal boundary is guarded by `HexagonalBoundaryTests`, which parses every
+   `.csproj` and asserts the reference matrix. The Linux build is only a secondary check
+   (`NU1201`, if the Domain ever targets Windows) — the Windows projects compile off Windows,
+   so the build alone proves nothing. Treat a change to that test as an architecture change.
 
 ## Development workflow
 
@@ -105,9 +107,10 @@ Primary development happens on macOS, which shapes what can and cannot be verifi
   `-p:EnableWindowsTargeting=true` is harmless and stays documented in case a future
   `net10.0-windows10.x` bump needs it. Never add it to the CI test run.
 
-Because the Windows projects *do* compile off Windows, the Linux build is **not** the boundary
-guard on its own. `HexagonalBoundaryTests` is — it parses the `.csproj` files and asserts the
-whole reference matrix. Treat a change to that test as an architecture change.
+`HexagonalBoundaryTests` is the guard. It asserts project references exactly, and packages as a
+subset of an allow-list per project — so adding a package means widening that list on purpose.
+Every milestone that introduces a project or a dependency has to extend the matrix; that is the
+intended friction, not an obstacle to route around.
 
 **Consequence**: `WmiHypervProvider` is written blind and validated on real hardware. That is
 what turns "the adapter is thin and dumb" from architectural hygiene into an operational
