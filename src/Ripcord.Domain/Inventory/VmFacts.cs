@@ -54,6 +54,9 @@ public sealed record VmFacts(
 /// One virtual NIC. `SwitchName` null means bound to no switch; `IsConnected` null means the
 /// binding could not be read (V6 — which CIM class reports which is not settled). The two are
 /// different answers and the rules treat them differently.
+///
+/// `VlanId` null means untagged, not unknown: an access port and an unread port would
+/// otherwise compare equal across the pair, and the VLAN rule would never fire.
 public sealed record VirtualAdapter(
     string Name,
     string? SwitchName,

@@ -6,6 +6,7 @@ namespace Ripcord.Domain;
 public enum ExitCode
 {
     Success = 0,
+    CriticalFinding = 1,
     InvalidConfiguration = 2,
     LocalAccessFailure = 3,
 }
