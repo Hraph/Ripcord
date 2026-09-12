@@ -22,6 +22,17 @@ replication:
   expected_frequency_sec: 30
   lag_warning_multiplier: 3
 
+# The read-only pair channel. Remove this block entirely, or set enabled: false, and the node
+# degrades to the local-only view rather than failing.
+listener:
+  enabled: true
+  port: 7443
+  local_certificate_thumbprint: "1111AAAA2222BBBB3333CCCC4444DDDD5555EEEE"
+  peer_certificate_thumbprint: "AAAA1111BBBB2222CCCC3333DDDD4444EEEE5555"
+  # Written by `ripcord status`, served by the listener. The service account gets read access
+  # to this one file and nothing else.
+  snapshot_path: "D:\\Ripcord\\state.json"
+
 vms:
   - name: VM-DC-01
     priority: P1

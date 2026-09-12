@@ -12,6 +12,8 @@ public sealed class ConfigurationDocument
 
     public PeerDocument? Peer { get; set; }
 
+    public ListenerDocument? Listener { get; set; }
+
     public List<VmDocument>? Vms { get; set; }
 }
 
@@ -27,6 +29,20 @@ public sealed class PeerDocument
     public string? Address { get; set; }
 
     public int? OfflineAfterSec { get; set; }
+}
+
+/// Absent entirely on a node with no listener, which is the documented off switch.
+public sealed class ListenerDocument
+{
+    public bool Enabled { get; set; }
+
+    public int? Port { get; set; }
+
+    public string? LocalCertificateThumbprint { get; set; }
+
+    public string? PeerCertificateThumbprint { get; set; }
+
+    public string? SnapshotPath { get; set; }
 }
 
 public sealed class VmDocument

@@ -27,12 +27,13 @@ public static class ConfigurationValidator
         ValidateSchemaVersion(document.SchemaVersion, errors);
         string? nodeHostname = ValidateNode(document.Node, machineName, errors);
         PeerSettings? peer = ValidatePeer(document.Peer, nodeHostname, errors);
+        ListenerSettings? listener = ValidateListener(document.Listener, errors);
         IReadOnlyList<VmSettings> vms = ValidateVms(document.Vms, errors);
 
-        return errors.Count > 0 || nodeHostname is null || peer is null
+        return errors.Count > 0 || nodeHostname is null || peer is null || listener is null
             ? ConfigurationValidation.Invalid(errors)
             : ConfigurationValidation.Valid(
-                new RipcordConfiguration(new NodeSettings(nodeHostname), peer, vms));
+                new RipcordConfiguration(new NodeSettings(nodeHostname), peer, listener, vms));
     }
 
     private static void ValidateSchemaVersion(int? version, List<ConfigurationError> errors)
@@ -109,6 +110,90 @@ public static class ConfigurationValidator
             ? new PeerSettings(
                 hostname, address, TimeSpan.FromSeconds(peer.OfflineAfterSec!.Value))
             : null;
+    }
+
+    /// No block at all is the documented off switch: the node degrades to the local-only
+    /// view. A block that is present and enabled has to be complete, because a listener
+    /// started without both thumbprints is a listener without mutual authentication.
+    private static ListenerSettings? ValidateListener(
+        ListenerDocument? listener, List<ConfigurationError> errors)
+    {
+        if (listener is null)
+        {
+            return ListenerSettings.Disabled();
+        }
+
+        bool complete = true;
+        int port = listener.Port ?? ListenerSettings.DefaultPort;
+
+        if (port is <= 0 or > 65_535)
+        {
+            errors.Add(new ConfigurationError("listener.port", "must be between 1 and 65535"));
+            complete = false;
+        }
+
+        string? local = ValidateThumbprint(
+            listener.LocalCertificateThumbprint,
+            "listener.local_certificate_thumbprint",
+            listener.Enabled,
+            errors,
+            ref complete);
+
+        string? peer = ValidateThumbprint(
+            listener.PeerCertificateThumbprint,
+            "listener.peer_certificate_thumbprint",
+            listener.Enabled,
+            errors,
+            ref complete);
+
+        // The same certificate on both ends would authenticate a host to itself.
+        if (local is not null && local == peer)
+        {
+            errors.Add(new ConfigurationError(
+                "listener.peer_certificate_thumbprint",
+                "must identify the other host's certificate, not this one's"));
+            complete = false;
+        }
+
+        string snapshotPath = string.IsNullOrWhiteSpace(listener.SnapshotPath)
+            ? ListenerSettings.DefaultSnapshotPath
+            : listener.SnapshotPath.Trim();
+
+        return complete
+            ? new ListenerSettings(listener.Enabled, port, local, peer, snapshotPath)
+            : null;
+    }
+
+    /// Windows tooling copies thumbprints with spaces and in either case; both paste forms
+    /// name the same certificate, so they are normalised rather than refused.
+    private static string? ValidateThumbprint(
+        string? value,
+        string path,
+        bool required,
+        List<ConfigurationError> errors,
+        ref bool complete)
+    {
+        string normalised = (value ?? "").Replace(" ", "", StringComparison.Ordinal).ToUpperInvariant();
+
+        if (normalised.Length == 0)
+        {
+            if (required)
+            {
+                errors.Add(new ConfigurationError(path, "required when the listener is enabled"));
+                complete = false;
+            }
+
+            return null;
+        }
+
+        if (normalised.Length != 40 || !normalised.All(Uri.IsHexDigit))
+        {
+            errors.Add(new ConfigurationError(path, "must be 40 hexadecimal characters"));
+            complete = false;
+            return null;
+        }
+
+        return normalised;
     }
 
     private static List<VmSettings> ValidateVms(
