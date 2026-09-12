@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- No package: System.Text.Json and SslStream are in the framework, and the whole thing
+       runs on Linux, so the pair channel is testable without Windows. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ripcord.Domain\Ripcord.Domain.csproj" />
+    <ProjectReference Include="..\Ripcord.Ports\Ripcord.Ports.csproj" />
+  </ItemGroup>
+
+</Project>
