@@ -99,9 +99,15 @@ Primary development happens on macOS, which shapes what can and cannot be verifi
 - **Cannot run locally, ever**: `WmiHypervProvider`. There is no `root\virtualization\v2` on
   macOS and no WMI emulator. The fake substitutes the *port*, not WMI — the adapter itself is
   never exercised off Windows.
-- **Compiles locally**: the Windows projects build with `-p:EnableWindowsTargeting=true`.
-  Use it to catch typos and API misuse before they reach the host. Never add it to the CI test
-  run: there the Linux-only build is the boundary guard.
+- **Compiles locally**: the Windows projects build off Windows with no special flag —
+  `Microsoft.Management.Infrastructure` restores fine and a plain `net10.0-windows` target
+  needs no targeting pack. `dotnet build Ripcord.sln -c Release` compiles everything.
+  `-p:EnableWindowsTargeting=true` is harmless and stays documented in case a future
+  `net10.0-windows10.x` bump needs it. Never add it to the CI test run.
+
+Because the Windows projects *do* compile off Windows, the Linux build is **not** the boundary
+guard on its own. `HexagonalBoundaryTests` is — it parses the `.csproj` files and asserts the
+whole reference matrix. Treat a change to that test as an architecture change.
 
 **Consequence**: `WmiHypervProvider` is written blind and validated on real hardware. That is
 what turns "the adapter is thin and dumb" from architectural hygiene into an operational

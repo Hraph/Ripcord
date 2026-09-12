@@ -1,0 +1,32 @@
+name: ci
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # The filter keeps the tested surface Linux-only. Note it is not a workaround: a
+      # solution-level build here would compile the WMI adapter fine. The boundary is held by
+      # HexagonalBoundaryTests, and by NU1201 if the Domain ever targets Windows.
+      - run: dotnet build Ripcord.Linux.slnf -c Release
+      - run: dotnet test Ripcord.Linux.slnf -c Release --logger trx
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: '**/*.trx'
+
+  # The Dockerfile is the documented local way to run the tests. Building it here keeps it
+  # from rotting unnoticed.
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t ripcord-tests .

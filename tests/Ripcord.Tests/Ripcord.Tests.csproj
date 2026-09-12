@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <!-- No reference to Adapters.Wmi or Host.Windows: the tests must run on Linux. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Ripcord.Domain\Ripcord.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Ripcord.Ports\Ripcord.Ports.csproj" />
+    <ProjectReference Include="..\..\src\Ripcord.Application\Ripcord.Application.csproj" />
+    <ProjectReference Include="..\..\src\Ripcord.Cli\Ripcord.Cli.csproj" />
+    <ProjectReference Include="..\..\src\Ripcord.Adapters.Fake\Ripcord.Adapters.Fake.csproj" />
+  </ItemGroup>
+
+</Project>

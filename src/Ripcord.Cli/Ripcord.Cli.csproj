@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ripcord.Domain\Ripcord.Domain.csproj" />
+    <ProjectReference Include="..\Ripcord.Ports\Ripcord.Ports.csproj" />
+    <ProjectReference Include="..\Ripcord.Application\Ripcord.Application.csproj" />
+  </ItemGroup>
+
+</Project>

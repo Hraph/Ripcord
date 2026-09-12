@@ -1,0 +1,13 @@
+{
+  "solution": {
+    "path": "Ripcord.sln",
+    "projects": [
+      "src\\Ripcord.Adapters.Fake\\Ripcord.Adapters.Fake.csproj",
+      "src\\Ripcord.Application\\Ripcord.Application.csproj",
+      "src\\Ripcord.Cli\\Ripcord.Cli.csproj",
+      "src\\Ripcord.Domain\\Ripcord.Domain.csproj",
+      "src\\Ripcord.Ports\\Ripcord.Ports.csproj",
+      "tests\\Ripcord.Tests\\Ripcord.Tests.csproj"
+    ]
+  }
+}

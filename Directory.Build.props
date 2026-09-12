@@ -1,0 +1,48 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <!-- Pinned: with TreatWarningsAsErrors, "latest" lets an SDK patch turn the CI red. -->
+    <AnalysisLevel>10.0-recommended</AnalysisLevel>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <!-- No reference items here, ever: they would land in Ripcord.Domain too.
+       HexagonalBoundaryTests asserts this file stays reference-free. -->
+
+  <PropertyGroup>
+    <Product>Ripcord</Product>
+    <Authors>Ripcord contributors</Authors>
+    <RepositoryUrl>https://github.com/Hraph/RipCord</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <VersionPrefix>0.1.0</VersionPrefix>
+  </PropertyGroup>
+
+  <!-- SourceLink ships in the SDK, so no PackageReference. -->
+  <PropertyGroup>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <DebugType>embedded</DebugType>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <!-- Shorten the SDK's 40-char SHA, and stamp something explicit when there is no
+       repository at all, so InformationalVersion always carries a "+<revision>" part.
+       The hook matters: BeforeTargets="GetAssemblyAttributes" never runs. -->
+  <Target Name="SetRipcordCommitHash"
+          AfterTargets="InitializeSourceControlInformation"
+          BeforeTargets="AddSourceRevisionToInformationalVersion">
+    <PropertyGroup>
+      <SourceRevisionId Condition="'$(SourceRevisionId)' == ''">unknown</SourceRevisionId>
+      <SourceRevisionId Condition="$(SourceRevisionId.Length) > 12">$(SourceRevisionId.Substring(0, 12))</SourceRevisionId>
+    </PropertyGroup>
+  </Target>
+
+</Project>

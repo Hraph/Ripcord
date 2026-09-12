@@ -20,19 +20,41 @@ first line".
 **Taken**: milestone 0 first — it fits in one session, and it is what keeps milestone 1 from
 drifting. Milestone 1 follows immediately. Shipped together.
 
-### B2 — `dotnet build -c Release` will fail on `ubuntu-latest` — *settled*
+### B2 — The Linux CI does not guard the boundary on its own — *settled, premise corrected*
 
-`Ripcord.Adapters.Wmi` targets `net10.0-windows`. A solution-level build on Linux tries to
-restore it and fails (`NETSDK1100`). The proposed CI cannot pass as written.
+The original reasoning here was that a solution-level build on Linux would fail with
+`NETSDK1100` because `Ripcord.Adapters.Wmi` targets `net10.0-windows`, so the specification's
+CI could not pass as written.
+
+**That is wrong, and it was measured at milestone 0.** On macOS with SDK 10.0.401 and a clean
+restore, `dotnet build Ripcord.sln -c Release` **succeeds** with no flag:
+`Microsoft.Management.Infrastructure` 3.0.0 restores off Windows, and a plain
+`net10.0-windows` target needs no Windows targeting pack. `NETSDK1100` comes from the
+WindowsDesktop SDK path (`UseWPF` / `UseWindowsForms` / a `net10.0-windows10.x` TFM), which
+this project never takes.
+
+The consequence is the opposite of reassuring: **a Linux CI would happily compile the WMI
+adapter**, so "the Linux build breaks if WMI leaks into the Domain" is not automatic. The
+guard has to be built deliberately, and it now rests on two things:
+
+1. `Ripcord.Linux.slnf`, excluding the two Windows projects. Within the filtered build, a
+   Domain that targets `net10.0-windows` fails with `NU1201` on every project referencing it —
+   verified by actually doing it.
+2. `HexagonalBoundaryTests`, which parses the `.csproj` files and asserts the full reference
+   matrix. This carries more weight than first credited: it is the only check that catches an
+   *unused* `PackageReference`, and the only one that does not depend on TFM accidents.
+
+The decision stands — the filter is still the right call, and it keeps the tested surface
+honest — but it is the architecture test, not the compiler, that makes the boundary
+non-negotiable.
 
 **Taken**: a solution filter `Ripcord.Linux.slnf` excluding the Windows projects, used by
-both the CI and the Dockerfile. `EnableWindowsTargeting=true` is deliberately **not** used
-there: it would compile the WMI code on Linux and dilute the very guard being installed.
+both the CI and the Dockerfile.
 
-It is however useful **locally on macOS**, as a separate opt-in build, to compile-check the
-adapter that cannot be run there. That does not weaken the guard: a WMI reference in the
-Domain is still caught by the Linux `slnf` build and by the architecture test that parses the
-`.csproj`. See the development section of `CLAUDE.md`.
+`EnableWindowsTargeting=true` turns out to be unnecessary for these projects (see above), but
+it stays documented for local use on macOS so the adapter can be compile-checked even if a
+future `net10.0-windows10.x` bump does start requiring it. It must never appear in the CI test
+run. See the development section of `CLAUDE.md`.
 
 ### B3 — The composition root breaks the Linux build — *settled*
 
@@ -58,7 +80,7 @@ Three milestone 2 rules have nothing to do with `root\virtualization\v2`:
 `IHostSystemProvider` (volume, BitLocker) and `ICertificateProvider`. The "never
 `powershell.exe`" rule holds: `X509Store` is a native .NET API.
 
-### B5 — The peer channel is specified in Security but assigned to no milestone — *open*
+### B5 — The peer channel is specified in Security but assigned to no milestone — *settled*
 
 The Security section requires, for any communication with the peer: **mTLS with the pair's
 certificates, chain *and* CN validation, firewall-restricted to the peer's IP, read-only** —
@@ -81,12 +103,16 @@ Three options:
 3. **Milestone 1 is local-only.** `ripcord status` runs on one host and shows one side. The
    pair view arrives with option 2, later.
 
-**Recommendation**: option 3 for milestone 1, then option 2 as its own milestone before
-milestone 4. It keeps the first deliverable honest — a single-host status view that works is
-already better than `Get-VMReplication` — and it avoids standing up a credentialed remote
-channel that the specification explicitly does not want, only to remove it later.
+**Decided**: option 3 for milestone 1, then option 2 as [milestone 1b](milestones/milestone-1b.md).
+It keeps the first deliverable honest — a single-host status view that works is already better
+than `Get-VMReplication` — and it avoids standing up a credentialed remote channel the
+specification explicitly does not want, only to remove it later.
 
-This is the largest open point in the review. Milestone 1's scope depends on the answer.
+**Correction to the placement**: 1b lands **before milestone 2**, not before milestone 4 as
+first suggested. Several of `check`'s rules are intrinsically cross-host — a P1 VM's startup
+RAM on the primary against available RAM on the target, the sum of P1 startup RAM against the
+target's usable RAM, inverted replication direction. Without the pair view, `ripcord check`
+loses its feasibility calculator, which is its point.
 
 ---
 
