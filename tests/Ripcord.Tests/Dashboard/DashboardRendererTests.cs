@@ -46,6 +46,7 @@ public sealed class DashboardRendererTests
     [InlineData("<script")]
     [InlineData("<img")]
     [InlineData("onclick")]
+    [InlineData("url(")]
     public void The_page_reaches_for_nothing_and_runs_nothing(string forbidden)
     {
         string html = Render(Healthy());
@@ -72,6 +73,47 @@ public sealed class DashboardRendererTests
     {
         Assert.Contains("READY", Render(Healthy()), StringComparison.Ordinal);
         Assert.Contains("NOT READY", Render(Broken()), StringComparison.Ordinal);
+        Assert.Contains("DEGRADED", Render(Degraded()), StringComparison.Ordinal);
+
+        Assert.Contains(
+            "UNKNOWN",
+            DashboardRenderer.Render(DashboardView.Unavailable(Now, "nothing was read"), Refresh),
+            StringComparison.Ordinal);
+    }
+
+    /// The screen this is read on may be a KVM set to anything. A palette that only works on
+    /// a white background is a palette that fails on half the consoles it will meet.
+    [Fact]
+    public void The_page_carries_a_palette_for_a_dark_screen_too()
+    {
+        Assert.Contains(
+            "prefers-color-scheme: dark", Render(Healthy()), StringComparison.Ordinal);
+    }
+
+    /// Colour is redundant encoding, never the encoding: the severity is in the class so it
+    /// can be painted, and in the heading so it can be read when it is not.
+    [Fact]
+    public void A_finding_section_is_classed_by_the_severity_it_carries()
+    {
+        string html = Render(Page(
+            Pairs.Healthy(Now), Report(Critical(), Warning(), Unevaluable())));
+
+        Assert.Contains("findings alarm", html, StringComparison.Ordinal);
+        Assert.Contains("findings advisory", html, StringComparison.Ordinal);
+        Assert.Contains("findings caution", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_hosts_presence_is_classed_as_well_as_written()
+    {
+        PairView view = Pairs.Healthy(Now).WithUnreachableSource(Now.AddMinutes(-30));
+
+        string html = Render(Page(view));
+
+        Assert.Contains("presence offline", html, StringComparison.Ordinal);
+        Assert.Contains("presence reachable", html, StringComparison.Ordinal);
+        Assert.Contains("OFFLINE", html, StringComparison.Ordinal);
+        Assert.Contains("REACHABLE", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -166,6 +208,8 @@ public sealed class DashboardRendererTests
 
     private static DashboardView Broken() => Page(Pairs.Healthy(Now), Report(Critical()));
 
+    private static DashboardView Degraded() => Page(Pairs.Healthy(Now), Report(Warning()));
+
     private static DashboardView Page(PairView view, CheckReport? report = null) =>
         DashboardView.Of(view, report ?? Report(), OfflineAfter, Now, []);
 
@@ -187,6 +231,15 @@ public sealed class DashboardRendererTests
             "attached to vSwitch-OLD",
             "this VM would boot with no network on the target",
             "Connect-VMNetworkAdapter -VMName VM-DC-01 -SwitchName vSwitch-PROD",
+            FindingVerdict.Violated);
+
+    private static Finding Warning() =>
+        new(
+            CheckRules.ById(CheckRules.CertificateNearExpiry)!,
+            null,
+            "expires in 20 days",
+            "replication stops when it lapses",
+            null,
             FindingVerdict.Violated);
 
     private static Finding Unevaluable() =>
