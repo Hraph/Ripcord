@@ -9,6 +9,23 @@ half-updated pair depends on.
 
 A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binary.
 
+## 0.2.1 — 2026-09-14
+
+### Fixed
+
+- **`install.ps1` could not be parsed, so the one-liner in the README died at load.** An
+  operator warning added in 0.2.0 was written with its `+` at the start of a continuation
+  line; PowerShell ends a statement at the newline unless the line *ends* with the operator, so
+  the expression never closed and the file failed before a single function was defined.
+  `irm … | iex` reported only `Missing closing ')' in expression`. This is the second parse
+  defect in a file no machine here can execute, and the CI job that runs the installer under
+  both PowerShell versions caught it in fourteen seconds — which is what it is for.
+- The version is derived in one place. `VersionPrefix` was a second name for the release, kept
+  by hand beside the one the workflow works out from the commits, and the two disagreed
+  silently: on Windows, environment variables are case-insensitive, so the job's `VERSION`
+  was picked up by MSBuild as its own `Version` property and every build in that job was
+  stamped with a version the tree did not declare.
+
 ## 0.2.0 — 2026-09-14
 
 ### Added
