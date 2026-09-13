@@ -115,7 +115,7 @@ public static class FailoverRenderer
                 : $"  NEXT, ON {elsewhere.Step.HostName}");
 
         output.AppendLine(
-            $"    ripcord failover --scenario {Scenario(report.Operation)} --vm {report.VmName}"
+            $"    {Invocation(report.Operation)} --vm {report.VmName}"
                 + (dryRun ? " --dry-run" : ""));
 
         // The other host runs a different half of the same plan, so the same command there
@@ -155,9 +155,19 @@ public static class FailoverRenderer
         }
     }
 
-    /// The word the operator typed, so the line they are handed is the one they can type back.
-    private static string Scenario(FailoverOperation operation) =>
-        operation == FailoverOperation.UnplannedFailover ? "unplanned" : "planned";
+    /// The command the operator typed, so the line they are handed is one they can type back.
+    ///
+    /// `failback` is its own verb and refuses `--scenario`, so it is not a third word slotted
+    /// into the same sentence: handing back `failover --scenario planned` after a failback
+    /// would fail when typed, and — worse — that command builds the same plan with the two
+    /// hosts the other way round.
+    private static string Invocation(FailoverOperation operation) =>
+        operation switch
+        {
+            FailoverOperation.Failback => "ripcord failback",
+            FailoverOperation.UnplannedFailover => "ripcord failover --scenario unplanned",
+            _ => "ripcord failover --scenario planned",
+        };
 
     private static void AppendRollback(StringBuilder output, FailoverRunReport report)
     {

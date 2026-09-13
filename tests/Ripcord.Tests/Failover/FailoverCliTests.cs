@@ -228,6 +228,24 @@ public class FailoverCliTests
         Assert.Contains("--force", run.Error, StringComparison.Ordinal);
     }
 
+    /// The line handed to the operator has to be one they can type. `failback` refuses
+    /// `--scenario`, and `failover --scenario planned` builds a plan with the two hosts the
+    /// other way round — so printing that here sends somebody to run the wrong sequence, off
+    /// the screen they are reading precisely because they cannot compose it from memory.
+    [Fact]
+    public async Task A_failback_dry_run_hands_back_the_failback_command()
+    {
+        CliRun run = await Run(
+            ["failback", "--vm", "VM-DC-01", "--dry-run"],
+            provider: new FakeHypervProvider(FakeScenarios.Healthy(Now)),
+            typed: null,
+            peerChannel: FakePeerChannel.Answering(
+                FakeScenarios.PeerSnapshot(Now, Build)));
+
+        Assert.Contains("ripcord failback --vm", run.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("--scenario", run.Output, StringComparison.Ordinal);
+    }
+
     /// `failback` is one operation. A `--scenario` on it would be the operator naming a second
     /// one, and the two could only disagree.
     [Fact]
