@@ -176,10 +176,9 @@ public sealed class MutualTlsChannelTests : IDisposable
     {
         using TcpSilence silent = new();
 
-        // A second, not the 250 ms this was written with. The budget covers connecting and a
-        // handshake attempt as well as the wait, and on a loaded machine 250 ms expired before
-        // the connection was made — a red run that means nothing, on a suite that gates a
-        // release. A test nobody trusts is re-run rather than read.
+        // A second rather than the 250 ms this was written with — a bound, not a measurement.
+        // The intermittence that prompted the change was never the budget: it was TcpSilence
+        // letting the collector close the accepted socket, which is fixed where it belongs.
         PeerEndpoint endpoint = this.EndpointFor(silent.Port) with
         {
             Timeout = TimeSpan.FromSeconds(1),
@@ -359,16 +358,31 @@ public sealed class MutualTlsChannelTests : IDisposable
     {
         private readonly System.Net.Sockets.TcpListener listener;
 
+        /// Held rather than discarded. An accepted client nobody has a reference to is closed
+        /// by its finalizer the next time the collector runs — which, in a full test run, is
+        /// mid-handshake. The caller then sees a reset rather than silence and reports a
+        /// failure rather than a timeout, in a third of a second, nowhere near any deadline.
+        /// This is what made the timeout test look intermittent.
+        private readonly Task<System.Net.Sockets.TcpClient> accepted;
+
         public TcpSilence()
         {
             this.listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
             this.listener.Start();
-            _ = this.listener.AcceptTcpClientAsync();
+            this.accepted = this.listener.AcceptTcpClientAsync();
         }
 
         public int Port => ((IPEndPoint)this.listener.LocalEndpoint).Port;
 
-        public void Dispose() => this.listener.Dispose();
+        public void Dispose()
+        {
+            this.listener.Dispose();
+
+            if (this.accepted.IsCompletedSuccessfully)
+            {
+                this.accepted.Result.Dispose();
+            }
+        }
     }
 }
 
