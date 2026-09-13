@@ -190,31 +190,32 @@ public sealed class MutualTlsChannelTests : IDisposable
         Assert.Equal(ReachabilityKind.TimedOut, fetch.Reachability.Kind);
     }
 
-    /// The ordering the deadline depends on: it must start when the connection arrives, not
-    /// when the wait for one does. Nobody connects until well past the deadline here, and the
-    /// exchange that follows still has to complete — under a deadline that covered the idle
-    /// wait, the accept itself would have been cancelled long before this client dialled.
+    /// The ordering the deadline depends on: it starts when the connection arrives, not when
+    /// the wait for one does.
+    ///
+    /// Asserted on the accept still being pending rather than on an exchange completing. The
+    /// exchange version of this test measured a TLS handshake against a three-hundred
+    /// millisecond budget and failed on a loaded runner — proving something about the machine
+    /// rather than about the code. Whether the accept is still waiting is the claim itself,
+    /// and it is not a race: under a deadline that covered the idle wait, this task would have
+    /// been cancelled less than halfway through the delay below.
     [Fact]
-    public async Task A_caller_arriving_long_after_the_deadline_would_have_elapsed_is_served()
+    public async Task The_deadline_does_not_run_while_there_is_nobody_to_serve()
     {
-        InMemorySnapshotStore store = new();
-        store.Write("state.json", FakeScenarios.PeerSnapshot(Now.AddMinutes(-2)));
-
         await using SnapshotListener listener = this.Listener(
-            store, connectionDeadline: TimeSpan.FromMilliseconds(300));
+            new InMemorySnapshotStore(), connectionDeadline: TimeSpan.FromMilliseconds(300));
 
         listener.Start(IPAddress.Loopback, 0);
 
         Task<ServedConnection> serving = listener.ServeOneAsync(
             "state.json", this.RulesFor("CN=HV-REPLICA-01", "127.0.0.1"), CancellationToken.None);
 
-        await Task.Delay(TimeSpan.FromMilliseconds(750));
+        await Task.Delay(TimeSpan.FromMilliseconds(900));
 
-        PeerFetch fetch = await this.Channel()
-            .FetchAsync(this.EndpointFor(listener.Port), CancellationToken.None);
-
-        Assert.NotNull(fetch.Snapshot);
-        Assert.True((await serving).Served);
+        Assert.False(
+            serving.IsCompleted,
+            "the listener gave up waiting for a caller: its per-connection deadline is running "
+            + "before there is a connection");
     }
 
     /// The listener serves one caller at a time, so a caller that connects and then says
