@@ -257,8 +257,13 @@ jobs:
     # short enough that a wedged step is noticed the same afternoon.
     timeout-minutes: 30
 
+    # Not `VERSION`. Windows matches environment variables without regard to case, so a
+    # variable by that name is read by MSBuild as its own `Version` property — and every
+    # `dotnet build` and `dotnet test` in this job was then silently stamped with it, including
+    # the test asserting that the repository declares no version of its own. The release
+    # version reaches the build in exactly one place: `-p:Version=` on the publish, below.
     env:
-      VERSION: ${{ needs.version.outputs.version }}
+      RELEASE_VERSION: ${{ needs.version.outputs.version }}
       TAG: ${{ needs.version.outputs.tag }}
 
     steps:
@@ -288,7 +293,7 @@ jobs:
           dotnet publish src/Ripcord.Host.Windows/Ripcord.Host.Windows.csproj
           -c Release -r win-x64 --self-contained true
           -p:PublishSingleFile=true
-          -p:Version=${{ env.VERSION }}
+          -p:Version=${{ env.RELEASE_VERSION }}
           -o publish
 
       # Nothing ever ran the binary this workflow produces. It does now, before it is signed
@@ -306,8 +311,8 @@ jobs:
 
           Write-Host $reported
 
-          if (-not $reported.StartsWith("ripcord $env:VERSION+")) {
-            throw "the binary reports '$reported'; this release is $env:VERSION"
+          if (-not $reported.StartsWith("ripcord $env:RELEASE_VERSION+")) {
+            throw "the binary reports '$reported'; this release is $env:RELEASE_VERSION"
           }
 
       # Still no Authenticode signature — that needs a paid certificate. The checksum detects
@@ -372,18 +377,18 @@ jobs:
         shell: pwsh
         run: |
           $lines = Get-Content CHANGELOG.md
-          $heading = '^##\s+' + [regex]::Escape($env:VERSION) + '([^0-9.]|$)'
+          $heading = '^##\s+' + [regex]::Escape($env:RELEASE_VERSION) + '([^0-9.]|$)'
           $start = -1
           for ($i = 0; $i -lt $lines.Count; $i++) {
             if ($lines[$i] -match $heading) { $start = $i; break }
           }
           if ($start -lt 0) {
-            throw "CHANGELOG.md has no '## $env:VERSION' section"
+            throw "CHANGELOG.md has no '## $env:RELEASE_VERSION' section"
           }
           $rest = $lines[($start + 1)..($lines.Count - 1)]
           $end = ($rest | Select-String -Pattern '^## ' | Select-Object -First 1).LineNumber
           $body = if ($end) { $rest[0..($end - 2)] } else { $rest }
-          $notes = @("## What is in ${env:VERSION}") + $body + @("") + (Get-Content docs/RELEASE_NOTES.md)
+          $notes = @("## What is in ${env:RELEASE_VERSION}") + $body + @("") + (Get-Content docs/RELEASE_NOTES.md)
           $notes | Out-File -Encoding utf8 release-notes.md
 
       # Rule 4, applied to the one operation here that cannot be taken back: a published
@@ -404,7 +409,7 @@ jobs:
         if: inputs.dry_run
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: ripcord-${{ env.VERSION }}-dry-run
+          name: ripcord-${{ env.RELEASE_VERSION }}-dry-run
           path: |
             publish/ripcord.exe
             publish/ripcord.exe.sha256
@@ -423,7 +428,7 @@ jobs:
           $arguments = @(
             'release', 'create', $env:TAG,
             'publish/ripcord.exe', 'publish/ripcord.exe.sha256', 'publish/ripcord.exe.sig',
-            '--title', "ripcord $env:VERSION",
+            '--title', "ripcord $env:RELEASE_VERSION",
             '--notes-file', 'release-notes.md'
           )
 
