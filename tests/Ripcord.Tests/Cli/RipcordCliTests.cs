@@ -11,6 +11,7 @@ using Ripcord.Ports.Replication;
 using Ripcord.Domain.Deployment;
 using Ripcord.Ports;
 using Ripcord.Domain.Pairing;
+using Ripcord.Ports.Dashboard;
 using Ripcord.Ports.Deployment;
 using Ripcord.Ports.Alerting;
 using Ripcord.Ports.Updates;
@@ -481,6 +482,70 @@ public class RipcordCliTests
         Assert.Empty(run.Output);
     }
 
+    /// The page is served on the loopback interface and nowhere else, so the command prints
+    /// the address it is on: an operator who has to guess it will type the host name.
+    [Fact]
+    public async Task Dashboard_serves_the_page_on_the_loopback_interface()
+    {
+        CapturingDashboardServer server = new();
+
+        CliRun run = await Run(
+            ["dashboard"],
+            configStore: new RecordingConfigStore(dashboard: true),
+            dashboardServer: server);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Contains("127.0.0.1:7080", run.Output, StringComparison.Ordinal);
+        Assert.NotNull(server.Served);
+        Assert.True(server.Served!.Enabled);
+    }
+
+    [Fact]
+    public async Task Dashboard_builds_a_page_carrying_the_state_of_the_pair()
+    {
+        CapturingDashboardServer server = new();
+
+        await Run(
+            ["dashboard"],
+            configStore: new RecordingConfigStore(dashboard: true),
+            dashboardServer: server);
+
+        Assert.StartsWith("<!DOCTYPE html>", server.Page!, StringComparison.Ordinal);
+        Assert.Contains(FakeScenarios.LocalHostName, server.Page!, StringComparison.Ordinal);
+    }
+
+    /// Off is the ordinary state. A node asked to serve a page it does not serve says so and
+    /// exits cleanly, the same degradation `serve` makes with the listener switched off.
+    [Fact]
+    public async Task Dashboard_on_a_node_that_serves_no_page_says_so_and_serves_nothing()
+    {
+        CapturingDashboardServer server = new();
+
+        CliRun run = await Run(["dashboard"], dashboardServer: server);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Contains("disabled on this node", run.Error, StringComparison.Ordinal);
+        Assert.Null(server.Served);
+    }
+
+    /// There is no stderr anybody is watching and no exit code to read: a host that cannot be
+    /// read has to say so on the page itself.
+    [Fact]
+    public async Task Dashboard_renders_a_page_saying_why_when_the_host_cannot_be_read()
+    {
+        CapturingDashboardServer server = new();
+
+        await Run(
+            ["dashboard"],
+            configStore: new RecordingConfigStore(dashboard: true),
+            provider: new UnreadableHypervProvider(),
+            dashboardServer: server);
+
+        Assert.StartsWith("<!DOCTYPE html>", server.Page!, StringComparison.Ordinal);
+        Assert.Contains("UNKNOWN", server.Page!, StringComparison.Ordinal);
+        Assert.Contains("WMI refused the query", server.Page!, StringComparison.Ordinal);
+    }
+
     private static async Task<CliRun> Run(
         string[] args,
         string machineName = FakeScenarios.LocalHostName,
@@ -491,6 +556,7 @@ public class RipcordCliTests
         INotifier? notifier = null,
         IAlertStateStore? alertState = null,
         IReleaseFeed? releaseFeed = null,
+        IDashboardServer? dashboardServer = null,
         CancellationToken cancellationToken = default)
     {
         StringWriter output = new();
@@ -507,6 +573,7 @@ public class RipcordCliTests
                 new InMemorySnapshotStore(),
                 deploymentExecutor ?? new FakeDeploymentExecutor(),
                 new NoOpPeerListener(),
+                dashboardServer ?? new NoOpDashboardServer(),
                 new InMemoryAuditLog(),
                 notifier ?? new StubNotifier(),
                 alertState ?? new MemoryAlertStateStore(),
@@ -521,6 +588,12 @@ public class RipcordCliTests
     }
 
     private sealed record CliRun(ExitCode Code, string Output, string Error);
+
+    private sealed class UnreadableHypervProvider : ReadOnlyHypervProvider
+    {
+        public override Task<HostState> GetLocalStateAsync(CancellationToken cancellationToken) =>
+            Task.FromException<HostState>(new InvalidOperationException("WMI refused the query"));
+    }
 
     private sealed class CancellingProvider : ReadOnlyHypervProvider
     {
@@ -548,7 +621,10 @@ public class RipcordCliTests
 
     /// Returns a document the validator accepts, and remembers which path was asked for.
     private sealed class RecordingConfigStore(
-        bool listenerEnabled = true, bool alerting = false, bool updates = false) : IConfigStore
+        bool listenerEnabled = true,
+        bool alerting = false,
+        bool updates = false,
+        bool dashboard = false) : IConfigStore
     {
         public string? RequestedPath { get; private set; }
 
@@ -576,6 +652,11 @@ public class RipcordCliTests
             if (updates)
             {
                 document.Updates = new UpdatesDocument { Check = true };
+            }
+
+            if (dashboard)
+            {
+                document.Dashboard = new DashboardDocument { Enabled = true };
             }
 
             return ConfigurationRead.Succeeded(document);

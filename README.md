@@ -145,6 +145,7 @@ ripcord failback (--vm <name> | --all | --priority P1) [--dry-run]
                                               move it back once the pair is protected again
 ripcord fence [--dry-run]                     stop this host's VMs starting themselves
 ripcord serve [--config <path>]               run the read-only pair listener
+ripcord dashboard [--config <path>]           serve the read-only page on 127.0.0.1
 ripcord deploy-listener [--dry-run] [--remove]  install or remove that listener
 ripcord check-update [--config <path>]        is a newer release published
 ripcord version                               version and commit hash
@@ -210,6 +211,42 @@ PEER    HV-PRIMARY-01                                               OFFLINE
 
 An unreachable peer is a degraded state, not an error: a scheduled `ripcord status` must not
 alert because the other host is down.
+
+### `ripcord dashboard`
+
+The same `check`, in a browser, for reading rather than typing. It is **off unless the
+configuration switches it on**, and it is served on `127.0.0.1` and nowhere else — the address
+is written in the code, not read from the file, so there is no key that can widen it onto the
+network.
+
+```yaml
+dashboard:
+  enabled: true
+  port: 7080
+  refresh_sec: 30
+```
+
+The page is one self-contained document: no script, no stylesheet, no image, nothing fetched
+from anywhere. These hosts have no outbound access by design, and a page that degrades to
+unstyled markup the moment the network goes degrades exactly when it is being read. It reloads
+itself through a `<meta>` refresh, so it keeps working with scripting switched off.
+
+It serves a read of `/` and nothing else — every other verb is refused, every other path is
+absent, and nothing on it changes anything. A failover still needs a human typing a node name
+into a terminal.
+
+A reading that failed becomes a page saying the reading failed. There is no stderr anybody is
+watching and no exit code to carry it, so the alternative is a page still showing the previous
+state, which is the one thing a dashboard must never do.
+
+Browse to `http://127.0.0.1:7080/`, not `http://localhost:7080/` — `localhost` resolves to the
+IPv6 loopback first on a modern Windows, and the page is served on the IPv4 one only.
+
+If `HttpListener` refuses to bind under a non-elevated account, reserve the URL once:
+
+```
+netsh http add urlacl url=http://127.0.0.1:7080/ user=DOMAIN\account
+```
 
 ### `ripcord check`
 

@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Text;
+using Ripcord.Domain.Replication;
 
 namespace Ripcord.Cli.Rendering;
 
@@ -13,6 +15,17 @@ internal static class Layout
     public const int Width = 75;
 
     public const int Indent = 2;
+
+    /// The one place a rendered block becomes a string. The renderers build with
+    /// StringBuilder.AppendLine, which is CRLF on Windows and LF in the Linux container the
+    /// tests run in — and on a fixed 75-column layout a trailing carriage return is a 76th
+    /// column. One format, whatever the host, decided here rather than by the framework.
+    public static string Rendered(StringBuilder output)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+
+        return output.ToString().Replace("\r\n", "\n", StringComparison.Ordinal);
+    }
 
     public static string Banner(string title, DateTimeOffset now)
     {
@@ -70,4 +83,61 @@ internal static class Layout
             yield return remaining;
         }
     }
+
+    /// Null is "never replicated", which must never read as a lag of zero.
+    public static string Duration(TimeSpan? span) => span switch
+    {
+        null => "-",
+        { TotalSeconds: < 60 } value => $"{(int)value.TotalSeconds}s",
+        { TotalHours: < 1 } value => $"{value.Minutes}m{value.Seconds:00}s",
+        { TotalDays: < 1 } value => $"{(int)value.TotalHours}h{value.Minutes:00}m",
+        // Capped, because PadLeft does not truncate and a months-old lag would push the
+        // column beside it sideways.
+        { TotalDays: >= 100 } => ">99d",
+        { } value => $"{(int)value.TotalDays}d{value.Hours:00}h",
+    };
+
+    /// Null is "no relationship", not "nothing pending".
+    public static string Bytes(long? bytes)
+    {
+        if (bytes is not { } value)
+        {
+            return "-";
+        }
+
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        double scaled = value;
+        int unit = 0;
+
+        while (scaled >= 1023.95 && unit < units.Length - 1)
+        {
+            scaled /= 1024;
+            unit++;
+        }
+
+        return scaled < 10 && unit > 0
+            ? string.Create(CultureInfo.InvariantCulture, $"{scaled:0.0} {units[unit]}")
+            : string.Create(CultureInfo.InvariantCulture, $"{Math.Round(scaled)} {units[unit]}");
+    }
+
+    /// The WMI state names are up to 28 characters; these fit a 16-column field without
+    /// truncation, so no state ever reads as a prefix of another.
+    public static string StateLabel(ReplicationState state) => state switch
+    {
+        ReplicationState.ReadyForReplication => "Ready",
+        ReplicationState.WaitingToCompleteInitialReplication => "Initial repl.",
+        ReplicationState.RepurposeReplicationInProgress => "Repurposing",
+        ReplicationState.PreparedForSyncReplication => "Prepared (sync)",
+        ReplicationState.PreparedForGroupReverseReplication => "Prepared (rev.)",
+        ReplicationState.DiskUpdateInProgress => "Disk update",
+        ReplicationState.DiskUpdateCritical => "Disk upd. crit.",
+        ReplicationState.FiredrillInProgress => "Firedrill",
+        ReplicationState.SyncedReplicationComplete => "Synced",
+        ReplicationState.WaitingToStartResynchronization => "Await resync",
+        ReplicationState.ResynchronizationSuspended => "Resync susp.",
+        ReplicationState.FailoverInProgress => "Failover",
+        ReplicationState.FailbackInProgress => "Failback",
+        ReplicationState.FailbackComplete => "Failback done",
+        _ => state.ToString(),
+    };
 }

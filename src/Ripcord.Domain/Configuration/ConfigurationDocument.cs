@@ -27,6 +27,20 @@ public sealed class ConfigurationDocument
     public AlertingDocument? Alerting { get; set; }
 
     public UpdatesDocument? Updates { get; set; }
+
+    /// Absent on a host that serves no page, which is the default.
+    public DashboardDocument? Dashboard { get; set; }
+}
+
+/// No address key: the page is served on the loopback interface by construction, so
+/// there is nothing here an operator can widen by accident.
+public sealed class DashboardDocument
+{
+    public bool Enabled { get; set; }
+
+    public int? Port { get; set; }
+
+    public int? RefreshSec { get; set; }
 }
 
 /// Absent on every host that has no outbound access, which is both of them by design.

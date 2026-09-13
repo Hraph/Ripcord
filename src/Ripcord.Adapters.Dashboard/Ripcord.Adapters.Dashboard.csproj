@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ripcord.Domain\Ripcord.Domain.csproj" />
+    <ProjectReference Include="..\Ripcord.Ports\Ripcord.Ports.csproj" />
+  </ItemGroup>
+
+</Project>

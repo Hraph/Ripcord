@@ -121,3 +121,13 @@ storage:
 # reports a version number and stops there.
 # updates:
 #   check: true
+
+# The read-only page of `ripcord dashboard`, served on 127.0.0.1 and nowhere else. Off, and
+# meant to stay off: a disaster recovery tool that opens a listening socket nobody asked for
+# has widened the attack surface of a Hyper-V host to save typing a command. There is no
+# address key — the page is bound to the loopback interface by construction.
+# dashboard:
+#   enabled: true
+#   port: 7080
+#   # Each refresh re-reads Hyper-V. Between 5 and 86400 seconds.
+#   refresh_sec: 30

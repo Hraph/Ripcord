@@ -3,6 +3,7 @@
     "path": "Ripcord.sln",
     "projects": [
       "src\\Ripcord.Adapters.Audit\\Ripcord.Adapters.Audit.csproj",
+      "src\\Ripcord.Adapters.Dashboard\\Ripcord.Adapters.Dashboard.csproj",
       "src\\Ripcord.Adapters.Fake\\Ripcord.Adapters.Fake.csproj",
       "src\\Ripcord.Adapters.Notify\\Ripcord.Adapters.Notify.csproj",
       "src\\Ripcord.Adapters.Pairing\\Ripcord.Adapters.Pairing.csproj",

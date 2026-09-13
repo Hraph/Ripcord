@@ -1,4 +1,5 @@
 using Ripcord.Domain.Alerting;
+using Ripcord.Domain.Dashboard;
 using Ripcord.Domain.Updates;
 
 namespace Ripcord.Domain.Configuration;
@@ -14,6 +15,7 @@ public sealed record RipcordConfiguration(
     StorageSettings Storage,
     AlertingSettings Alerting,
     UpdateSettings Updates,
+    DashboardSettings Dashboard,
     IReadOnlyList<VmSettings> Vms,
     IReadOnlyList<Acknowledgement> Acknowledgements);
 

@@ -1,6 +1,7 @@
 using Ripcord.Adapters.Pairing;
 using Ripcord.Adapters.Pairing.Transport;
 using Ripcord.Adapters.Audit;
+using Ripcord.Adapters.Dashboard;
 using Ripcord.Adapters.Notify;
 using Ripcord.Adapters.Wmi;
 using Ripcord.Adapters.Wmi.Deployment;
@@ -64,6 +65,7 @@ internal static class Program
                     snapshotStore,
                     clock,
                     Report),
+                new LoopbackDashboardServer(Console.Error.WriteLine),
                 new JsonLinesAuditLog(
                     Path.Combine(AppContext.BaseDirectory, "audit.jsonl")),
                 new TransportNotifier(

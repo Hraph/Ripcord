@@ -1,5 +1,6 @@
 using Ripcord.Domain.Alerting;
 using Ripcord.Domain.Checks;
+using Ripcord.Domain.Dashboard;
 using Ripcord.Domain.Updates;
 
 namespace Ripcord.Domain.Configuration;
@@ -61,6 +62,7 @@ public static class ConfigurationValidator
         UpdateSettings updates = document.Updates is { } asked
             ? new UpdateSettings(asked.Check)
             : UpdateSettings.Disabled();
+        DashboardSettings? dashboard = ValidateDashboard(document.Dashboard, listener, errors);
         IReadOnlyList<VmSettings> vms = ValidateVms(document.Vms, errors);
 
         IReadOnlyList<Acknowledgement> acknowledgements =
@@ -77,10 +79,11 @@ public static class ConfigurationValidator
             || replication is null
             || storage is null
             || alerting is null
+            || dashboard is null
             ? ConfigurationValidation.Invalid(errors)
             : ConfigurationValidation.Valid(new RipcordConfiguration(
-                node, peer, listener, replication, storage, alerting, updates, vms,
-                acknowledgements));
+                node, peer, listener, replication, storage, alerting, updates, dashboard,
+                vms, acknowledgements));
     }
 
     /// Authorising a VM to be tested with no human present is the one place the typed
@@ -230,6 +233,18 @@ public static class ConfigurationValidator
         {
             errors.Add(new ConfigurationError(
                 "alerting.smtp.password_secret", "required when username names an account"));
+            usable = false;
+        }
+
+        // A password on a connection that never starts TLS is a password on the wire. The
+        // relay is inside the same rack as these two hosts, which is exactly the argument
+        // that gets made right up until it is not true any more.
+        if (username is not null && !smtp.StartTls)
+        {
+            errors.Add(new ConfigurationError(
+                "alerting.smtp.start_tls",
+                "required when the relay is given credentials; a password would otherwise "
+                + "cross the network in the clear"));
             usable = false;
         }
 
@@ -628,6 +643,52 @@ public static class ConfigurationValidator
             ? new PeerSettings(
                 hostname, address, TimeSpan.FromSeconds(peer.OfflineAfterSec!.Value))
             : null;
+    }
+
+    /// Off unless the file switches it on, and refused rather than corrected when a figure is
+    /// out of range: a page bound to the wrong port is a page nobody finds, and silently
+    /// moving it would be worse than refusing to start.
+    private static DashboardSettings? ValidateDashboard(
+        DashboardDocument? dashboard,
+        ListenerSettings? listener,
+        List<ConfigurationError> errors)
+    {
+        if (dashboard is null)
+        {
+            return DashboardSettings.Disabled();
+        }
+
+        bool complete = true;
+        int port = dashboard.Port ?? DashboardSettings.DefaultPort;
+
+        if (port is <= 0 or > 65_535)
+        {
+            errors.Add(new ConfigurationError("dashboard.port", "must be between 1 and 65535"));
+            complete = false;
+        }
+        else if (listener is not null && port == listener.Port)
+        {
+            // Two sockets on one port means one of them fails to bind, and which one is
+            // whichever started first.
+            errors.Add(new ConfigurationError(
+                "dashboard.port", "must differ from listener.port"));
+            complete = false;
+        }
+
+        TimeSpan refresh = TimeSpan.FromSeconds(
+            dashboard.RefreshSec ?? DashboardSettings.DefaultRefresh.TotalSeconds);
+
+        if (refresh < DashboardSettings.MinimumRefresh
+            || refresh > DashboardSettings.MaximumRefresh)
+        {
+            errors.Add(new ConfigurationError(
+                "dashboard.refresh_sec",
+                $"must be between {(int)DashboardSettings.MinimumRefresh.TotalSeconds} "
+                + $"and {(int)DashboardSettings.MaximumRefresh.TotalSeconds} seconds"));
+            complete = false;
+        }
+
+        return complete ? new DashboardSettings(dashboard.Enabled, port, refresh) : null;
     }
 
     /// No block at all is the documented off switch: the node degrades to the local-only

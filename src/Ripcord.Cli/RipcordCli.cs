@@ -7,8 +7,10 @@ using Ripcord.Application.Status;
 using Ripcord.Application.TestFailover;
 using Ripcord.Application;
 using Ripcord.Cli.Rendering;
+using Ripcord.Domain.Dashboard;
 using Ripcord.Domain.Deployment;
 using Ripcord.Domain.Pairing;
+using Ripcord.Ports.Dashboard;
 using Ripcord.Ports.Deployment;
 using Ripcord.Domain.Checks;
 using Ripcord.Domain.Failover;
@@ -54,6 +56,7 @@ public sealed record RipcordPorts(
     ISnapshotStore SnapshotStore,
     IDeploymentExecutor DeploymentExecutor,
     IPeerListener PeerListener,
+    IDashboardServer DashboardServer,
     IAuditLog Audit,
     INotifier Notifier,
     IAlertStateStore AlertState,
@@ -123,6 +126,10 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
             case "serve":
                 return await this.ServeAsync(args[1..], error, cancellationToken)
+                    .ConfigureAwait(false);
+
+            case "dashboard":
+                return await this.DashboardAsync(args[1..], output, error, cancellationToken)
                     .ConfigureAwait(false);
 
             case "deploy-listener":
@@ -332,6 +339,103 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
     /// Mutating, so it obeys both rules at once: `--dry-run` shows the plan and stops, and
     /// without it nothing happens until the operator types the node name.
+    /// The read-only page of milestone 7. It runs the same `check` the console does and lays
+    /// its answer out in a browser — it decides nothing of its own, and it is served on the
+    /// loopback interface only.
+    private async Task<ExitCode> DashboardAsync(
+        string[] args, TextWriter output, TextWriter error, CancellationToken cancellationToken)
+    {
+        if (!TryReadConfigurationPath(args, out string path, out string? optionError))
+        {
+            error.WriteLine($"ripcord: {optionError}");
+            return ExitCode.InvalidConfiguration;
+        }
+
+        ConfigurationValidation validation = ConfigurationGate.Open(
+            ports.ConfigStore, path, environment.MachineName);
+
+        if (validation.Configuration is not { } configuration)
+        {
+            WriteFailure(error, new StatusOutcome(
+                ExitCode.InvalidConfiguration, null, validation.Errors, null, []));
+            return ExitCode.InvalidConfiguration;
+        }
+
+        // Off is the ordinary state, and asking a node that serves nothing to serve is not an
+        // error — the same degradation `serve` makes when the listener is switched off.
+        if (!configuration.Dashboard.Enabled)
+        {
+            error.WriteLine(
+                "ripcord: the dashboard is disabled on this node, nothing to serve.");
+            return ExitCode.Success;
+        }
+
+        output.WriteLine(
+            $"ripcord: serving the read-only page on http://127.0.0.1:{configuration.Dashboard.Port}/");
+
+        await ports.DashboardServer
+            .RunAsync(
+                configuration.Dashboard,
+                token => this.PageAsync(path, configuration.Dashboard.Refresh, token),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return ExitCode.Success;
+    }
+
+    /// One reading per request, and one reading only: `check` already carries the pair it
+    /// judged, so the page shows the findings and the inventory they were decided from rather
+    /// than two reads taken a moment apart that can disagree.
+    ///
+    /// Nothing here throws out of the callback. A page is the only channel this command has —
+    /// there is no stderr anybody is watching and no exit code to carry a failure — so a
+    /// failed reading has to become a page that says it failed.
+    private async Task<string> PageAsync(
+        string path, TimeSpan refresh, CancellationToken cancellationToken)
+    {
+        DateTimeOffset now = ports.Clock.UtcNow;
+
+        try
+        {
+            CheckQuery query = new(ports.ConfigStore, this.Pair(), ports.Clock);
+
+            CheckOutcome outcome = await query
+                .ExecuteAsync(
+                    new CheckRequestOptions(path, environment.MachineName), cancellationToken)
+                .ConfigureAwait(false);
+
+            if (outcome.View is not { } view)
+            {
+                return DashboardRenderer.Render(
+                    DashboardView.Unavailable(now, Reason(outcome)), refresh);
+            }
+
+            // A `CheckOutcome` carrying a view always carries the configuration it was read
+            // with: the query returns the two together or neither.
+            return DashboardRenderer.Render(
+                DashboardView.Of(
+                    view,
+                    outcome.Report,
+                    outcome.Configuration!.Peer.OfflineAfter,
+                    now,
+                    outcome.Report?.Notes ?? []),
+                refresh);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return DashboardRenderer.Render(
+                DashboardView.Unavailable(now, exception.Message), refresh);
+        }
+    }
+
+    private static string Reason(CheckOutcome outcome) =>
+        outcome.FailureMessage
+            ?? (outcome.Errors.Count > 0
+                ? string.Join(
+                    ", ",
+                    outcome.Errors.Select(error => $"{error.Path} {error.Message}".Trim()))
+                : "the pair could not be read");
+
     private ExitCode DeployListener(string[] args, TextWriter output, TextWriter error)
     {
         if (!TryReadOptions(args, out DeployOptions options, out string? optionError))
@@ -1127,6 +1231,10 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         writer.WriteLine("                                     themselves — run it first when a");
         writer.WriteLine("                                     failed-over host comes back");
         writer.WriteLine("  ripcord serve [--config <path>]    run the read-only pair listener");
+        writer.WriteLine("  ripcord dashboard [--config <path>]");
+        writer.WriteLine("                                     serve the read-only page on");
+        writer.WriteLine("                                     127.0.0.1 (off unless the");
+        writer.WriteLine("                                     configuration switches it on)");
         writer.WriteLine("  ripcord check-update               is a newer release published");
         writer.WriteLine("                                     (off unless the configuration");
         writer.WriteLine("                                     switches it on)");

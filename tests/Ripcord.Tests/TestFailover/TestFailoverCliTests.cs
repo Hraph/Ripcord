@@ -1,3 +1,4 @@
+using Ripcord.Ports.Dashboard;
 using Ripcord.Adapters.Fake;
 using Ripcord.Cli;
 using Ripcord.Domain.Configuration;
@@ -241,6 +242,7 @@ public class TestFailoverCliTests
                 new InMemorySnapshotStore(),
                 new NoOpDeploymentExecutor(),
                 new NoOpPeerListener(),
+                new NoOpDashboardServer(),
                 new InMemoryAuditLog(),
                 new StubNotifier(),
                 new MemoryAlertStateStore(),

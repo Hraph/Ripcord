@@ -9,6 +9,25 @@ half-updated pair depends on.
 
 A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binary.
 
+## Unreleased
+
+### Added
+
+- `ripcord dashboard` — the read-only page of milestone 7, served on `127.0.0.1` only and off
+  unless `dashboard.enabled` says otherwise. It runs the same `check` the console does and lays
+  its answer out in a browser: one reading per refresh, taken from the pair the findings were
+  judged from. One self-contained document, no script and nothing fetched from anywhere, so it
+  renders on a host with no outbound access. A reading that failed becomes a page saying so.
+- `dashboard.port` and `dashboard.refresh_sec` in `ripcord.yaml`. There is deliberately no
+  address key: the page is bound to the loopback interface by construction.
+
+### Notes
+
+- Milestone 7 was gated on an evaluation of Windows Admin Center, recorded in
+  `docs/milestones/milestone-7.md`. WAC is supported and its Virtualization Mode does cover
+  Hyper-V Replica, but it is still public preview, it assumes live connectivity to both hosts,
+  and it has no equivalent of the pre-failover check. The milestone proceeds.
+
 ## 0.1.0 — 2026-09-13
 
 ### Added

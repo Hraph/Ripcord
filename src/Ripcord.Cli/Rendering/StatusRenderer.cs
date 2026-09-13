@@ -1,7 +1,6 @@
 using Ripcord.Domain;
 using Ripcord.Domain.Pairing;
 using Ripcord.Domain.Replication;
-using System.Globalization;
 using System.Text;
 
 namespace Ripcord.Cli.Rendering;
@@ -134,67 +133,16 @@ public static class StatusRenderer
         + PadLeft(lag, LagColumn) + "  "
         + PadLeft(pending, PendingColumn);
 
-    /// The WMI state names are up to 28 characters; these fit the column without truncation,
-    /// so no state ever reads as a prefix of another.
-    private static string StateLabel(ReplicationState state) => state switch
-    {
-        ReplicationState.ReadyForReplication => "Ready",
-        ReplicationState.WaitingToCompleteInitialReplication => "Initial repl.",
-        ReplicationState.RepurposeReplicationInProgress => "Repurposing",
-        ReplicationState.PreparedForSyncReplication => "Prepared (sync)",
-        ReplicationState.PreparedForGroupReverseReplication => "Prepared (rev.)",
-        ReplicationState.DiskUpdateInProgress => "Disk update",
-        ReplicationState.DiskUpdateCritical => "Disk upd. crit.",
-        ReplicationState.FiredrillInProgress => "Firedrill",
-        ReplicationState.SyncedReplicationComplete => "Synced",
-        ReplicationState.WaitingToStartResynchronization => "Await resync",
-        ReplicationState.ResynchronizationSuspended => "Resync susp.",
-        ReplicationState.FailoverInProgress => "Failover",
-        ReplicationState.FailbackInProgress => "Failback",
-        ReplicationState.FailbackComplete => "Failback done",
-        _ => state.ToString(),
-    };
-
-    /// Null is "never replicated", which must never read as a lag of zero.
-    private static string Duration(TimeSpan? span) => span switch
-    {
-        null => "-",
-        { TotalSeconds: < 60 } value => $"{(int)value.TotalSeconds}s",
-        { TotalHours: < 1 } value => $"{value.Minutes}m{value.Seconds:00}s",
-        { TotalDays: < 1 } value => $"{(int)value.TotalHours}h{value.Minutes:00}m",
-        // Capped, because PadLeft does not truncate and a months-old lag would push the
-        // PENDING column sideways.
-        { TotalDays: >= 100 } => ">99d",
-        { } value => $"{(int)value.TotalDays}d{value.Hours:00}h",
-    };
-
-    /// Null is "no relationship", not "nothing pending".
-    private static string Bytes(long? bytes)
-    {
-        if (bytes is not { } value)
-        {
-            return "-";
-        }
-
-        string[] units = ["B", "KB", "MB", "GB", "TB"];
-        double scaled = value;
-        int unit = 0;
-
-        while (scaled >= 1023.95 && unit < units.Length - 1)
-        {
-            scaled /= 1024;
-            unit++;
-        }
-
-        return scaled < 10 && unit > 0
-            ? string.Create(CultureInfo.InvariantCulture, $"{scaled:0.0} {units[unit]}")
-            : string.Create(CultureInfo.InvariantCulture, $"{Math.Round(scaled)} {units[unit]}");
-    }
-
     private static string Sentence(string reason) =>
         char.ToUpperInvariant(reason[0]) + reason[1..] + ".";
 
     private static string TimestampOf(DateTimeOffset instant) => Layout.Timestamp(instant);
+
+    private static string StateLabel(ReplicationState state) => Layout.StateLabel(state);
+
+    private static string Duration(TimeSpan? span) => Layout.Duration(span);
+
+    private static string Bytes(long? bytes) => Layout.Bytes(bytes);
 
     private static string Truncate(string value, int width) => Layout.Truncate(value, width);
 
