@@ -178,7 +178,7 @@ jobs:
       # be visible to whoever pressed the button, not buried in a log.
       - name: Say what is in it
         env:
-          VERSION: ${{ steps.resolve.outputs.version }}
+          RELEASE_VERSION: ${{ steps.resolve.outputs.version }}
           LEVEL: ${{ steps.resolve.outputs.level }}
         run: |
           set -euo pipefail
@@ -187,7 +187,7 @@ jobs:
           range="${last_tag:+$last_tag..}HEAD"
 
           {
-            echo "## ripcord $VERSION ($LEVEL)"
+            echo "## ripcord $RELEASE_VERSION ($LEVEL)"
             echo
             echo "Since ${last_tag:-the first commit}:"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -227,16 +227,16 @@ jobs:
       # than generated — and why the release waits for it.
       - name: Refuse a version the changelog does not describe
         env:
-          VERSION: ${{ steps.resolve.outputs.version }}
+          RELEASE_VERSION: ${{ steps.resolve.outputs.version }}
         run: |
           set -euo pipefail
 
           # The heading carries the date — `## 0.5.0 — 2026-09-13` — so the version is matched
           # as a whole word at its start, and still anchored: `## 0.5.0` must not be satisfied
           # by `## 0.5.01`.
-          if ! grep -Eq "^## ${VERSION//./\\.}([^0-9.]|\$)" CHANGELOG.md; then
-            echo "CHANGELOG.md has no '## $VERSION' section." >&2
-            echo "Move what is under '## Unreleased' into '## $VERSION — <today>', commit it," >&2
+          if ! grep -Eq "^## ${RELEASE_VERSION//./\\.}([^0-9.]|\$)" CHANGELOG.md; then
+            echo "CHANGELOG.md has no '## $RELEASE_VERSION' section." >&2
+            echo "Move what is under '## Unreleased' into '## $RELEASE_VERSION — <today>', commit it," >&2
             echo "and run this again." >&2
             exit 1
           fi
@@ -257,11 +257,15 @@ jobs:
     # short enough that a wedged step is noticed the same afternoon.
     timeout-minutes: 30
 
-    # Not `VERSION`. Windows matches environment variables without regard to case, so a
-    # variable by that name is read by MSBuild as its own `Version` property — and every
-    # `dotnet build` and `dotnet test` in this job was then silently stamped with it, including
-    # the test asserting that the repository declares no version of its own. The release
-    # version reaches the build in exactly one place: `-p:Version=` on the publish, below.
+    # Not `VERSION`. MSBuild reads the environment as properties and matches their names
+    # without regard to case **on every platform** — not only on Windows, which was the first
+    # reading and is the wrong one: a build run with `VERSION=7.7.7` on macOS stamps 7.7.7 just
+    # the same. So a variable by that name is `$(Version)`, and every `dotnet build` and
+    # `dotnet test` in this job was silently stamped with the release version, including the
+    # test asserting the repository declares none of its own.
+    #
+    # The release version reaches the build in exactly one place: `-p:Version=` on the publish,
+    # below. `WorkflowEnvironmentTests` is what keeps it that way.
     env:
       RELEASE_VERSION: ${{ needs.version.outputs.version }}
       TAG: ${{ needs.version.outputs.tag }}
