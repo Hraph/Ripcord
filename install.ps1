@@ -65,8 +65,6 @@ param(
     [switch] $SourceOnly
 )
 
-$ErrorActionPreference = 'Stop'
-
 # The repository by numeric id, never by owner and name. A rename leaves a redirect that keeps
 # working right up to the moment somebody creates a repository under the abandoned name — at
 # which point the old URL stops failing and starts answering, successfully, with a stranger's
@@ -524,6 +522,76 @@ function Save-Installer {
     }
 }
 
+<#
+    The configuration this host gets when there is no sample to be had.
+
+    **It is written so that it does not validate.** Every field the machine can answer is
+    filled in; every field only the operator can answer is left blank, and the validator
+    refuses each one by name. A default configuration that loaded cleanly would describe a
+    pair that does not exist — `ripcord status` would answer about the wrong peer, which is
+    the confident wrong answer this tool exists to keep off the screen.
+
+    So the refusals are the checklist. Run `ripcord status` and it names what is missing, one
+    line per field, until nothing is.
+#>
+$script:DefaultConfiguration = @'
+# Written by install.ps1 because this host had no configuration and no sample to copy.
+#
+# It is deliberately incomplete: the blank fields below are the ones only you can answer, and
+# `ripcord status` refuses, by name, until each is filled in. That refusal is the checklist.
+#
+# The full sample, with every option explained, is in config/ in the repository.
+schema_version: 1
+
+node:
+  hostname: __NODE__
+  host_memory_reserve_gb: 4
+
+peer:
+  # The other host of the pair, and the address it answers on. Not a name: it is compared
+  # against where a connection came from and it lands in a firewall rule.
+  hostname:
+  address:
+  offline_after_sec: 120
+
+replication:
+  # Which side this host normally is. The pair's two files are mirror images, and nothing
+  # observable says which way round the replication is meant to run.
+  expected_role: __ROLE__
+  # The virtual switch the replicas are expected to be attached to on the failover target.
+  expected_switch_name:
+  expected_frequency_sec: 30
+  lag_warning_multiplier: 3
+
+storage:
+  data_volume: "D:"
+  free_space_warning_gb: 200
+  check_bitlocker_autounlock: true
+
+# Every VM that matters, in failover order. P1 comes back first.
+#
+# vms:
+#   - name: VM-DC-01
+#     priority: P1
+#     is_domain_controller: true
+#     expected_startup_ram_mb: 2048
+'@
+
+function New-DefaultConfiguration {
+    param(
+        [Parameter(Mandatory)][string] $Destination,
+        [Parameter(Mandatory)][string] $ForRole,
+        [Parameter(Mandatory)][string] $NodeName)
+
+    $role = if ($ForRole -eq 'dr') { 'replica' } else { 'primary' }
+
+    $text = $script:DefaultConfiguration.
+        Replace('__NODE__', $NodeName).
+        Replace('__ROLE__', $role)
+
+    Set-Content -LiteralPath $Destination -Value $text -Encoding ASCII
+}
+
 function Add-ToMachinePath {
     param([Parameter(Mandatory)][string] $Directory)
 
@@ -627,9 +695,12 @@ function Assert-Elevated {
 }
 
 function Invoke-Install {
-    # Set here rather than at the top of the file: dot-sourcing this script to reach its
-    # functions must not impose strict mode on whoever did the sourcing.
+    # Both set here rather than at the top of the file. Under `irm | iex` the script has no
+    # scope of its own — it runs in the caller's — so a preference set at the top would still
+    # be set in the operator's session long after the install, and strict mode would be
+    # imposed on whoever dot-sourced the file to reach its functions.
     Set-StrictMode -Version 2.0
+    $ErrorActionPreference = 'Stop'
 
     Assert-Windows
 
@@ -698,9 +769,19 @@ function Invoke-Install {
             Copy-Item -LiteralPath $fromFolder -Destination $configuration
             Write-Step "sample configuration for the $chosen host"
         }
-        else {
-            Save-SampleConfiguration -ForRole $chosen -Destination $configuration | Out-Null
+        elseif (-not (Save-SampleConfiguration -ForRole $chosen -Destination $configuration)) {
+            # Neither a folder to copy from nor a network to fetch from. The host still ends
+            # up with a file, because leaving it with none means the next command fails on a
+            # missing path rather than on the fields somebody has to fill in.
+            New-DefaultConfiguration -Destination $configuration -ForRole $chosen `
+                -NodeName $env:COMPUTERNAME
+
+            Write-Step "wrote a starting ripcord.yaml for the $chosen host"
         }
+
+        Write-Warning (
+            "$configuration is a template, not a configuration. It names no peer and no VM, "
+            + 'and every command refuses until you fill it in.')
     }
 
     Add-ToMachinePath -Directory $Path

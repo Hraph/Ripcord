@@ -145,7 +145,10 @@ against a public key written into the script** — the same key the binary carri
 that fails either check is not installed and nothing on the host is touched. There is no
 switch to skip that, because a switch to skip verification is the switch somebody uses at
 3 a.m. Then it puts `ripcord.exe` in `C:\Program Files\Ripcord`, adds that to the machine
-`PATH`, drops the sample configuration beside it, and prints what to edit.
+`PATH`, and leaves a `ripcord.yaml` beside it — the annotated sample if it could fetch one, a
+deliberately incomplete template otherwise. Either way the file names no peer and no VM, and
+every command refuses until you fill it in: those refusals are the checklist. An existing
+`ripcord.yaml` is never touched.
 
 One thing to be clear about: `irm | iex` runs a script nobody checked. The script verifies what
 it installs; nothing verifies the script. On a host that runs a domain controller that is worth
