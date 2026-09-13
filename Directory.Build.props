@@ -22,12 +22,15 @@
     <Authors>Ripcord contributors</Authors>
     <RepositoryUrl>https://github.com/Hraph/RipCord</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <!-- The version this repository declares itself to be, and what the binary stamps into
-         its own informational version. The release workflow derives a version from the
-         commits and refuses to cut one this does not match: two names for the same release
-         that nothing reconciled is how a binary reporting 0.2.0 shipped from a tree saying
-         0.1.0. `ripcord update` compares these strings, so the disagreement is not cosmetic. -->
-    <VersionPrefix>0.2.0</VersionPrefix>
+    <!-- Not a version anybody maintains. The released version is worked out from the tags and
+         the conventional commits, and passed in as `-p:Version=` by the release workflow —
+         one source of truth, and no file to remember to bump.
+
+         `0.0.0` is what a build that is not a release reports, and saying so is the point:
+         `ripcord version` on a working copy should not claim to be a release that exists.
+         `ripcord update` compares these strings, and 0.0.0 is behind everything, so a
+         development build is offered the update rather than told it is current. -->
+    <VersionPrefix>0.0.0</VersionPrefix>
   </PropertyGroup>
 
   <!-- SourceLink ships in the SDK, so no PackageReference. -->

@@ -47,8 +47,20 @@ public class BuildChainTests
         Assert.Matches(@"^\d+\.\d+\.\d+\+([0-9a-f]{12}|unknown)$", BuildInfo.VersionWithCommit);
     }
 
+    /// The repository declares no release version of its own. The released one is worked out
+    /// from the tags and the conventional commits and passed in at publish time, so there is
+    /// one source of truth and no file anybody has to remember to bump.
+    ///
+    /// What this pins is that nobody quietly puts one back. A tree declaring `0.2.0` stamps
+    /// every working copy as a release that exists, and `ripcord update` compares exactly
+    /// these strings — a developer's build would then be told it is current. `0.0.0` is behind
+    /// every real release, so it is offered the update instead, which is the truthful answer.
+    ///
+    /// That the *published* binary reports the version actually being released is checked
+    /// where it can be checked for real: the release workflow runs the artefact it just built
+    /// and compares what it prints.
     [Fact]
-    public void Version_matches_the_version_prefix_in_the_build_properties()
+    public void The_repository_declares_no_release_version_of_its_own()
     {
         XDocument properties =
             XDocument.Load(Path.Combine(RepositoryLayout.Root, "Directory.Build.props"));
@@ -57,6 +69,7 @@ public class BuildChainTests
             .Single(element => element.Name.LocalName == "VersionPrefix")
             .Value;
 
+        Assert.Equal("0.0.0", versionPrefix);
         Assert.Equal(versionPrefix, BuildInfo.Version);
     }
 

@@ -40,6 +40,12 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
   stopped to ask a question on a runner with no keyboard would have waited six hours before
   anybody was told — including on the workflow that ends by publishing a binary two hosts are
   pointed at.
+- The version is derived in one place and nowhere else. `Directory.Build.props` no longer
+  carries a release number to keep in step by hand — it says `0.0.0`, which is what a working
+  copy honestly is — and the released version comes from the tags and the conventional
+  commits. The workflow then runs the binary it just built and refuses to sign one that does
+  not report the version being released, which is a stronger check than the file comparison it
+  replaces, and an automatic one.
 - The Windows PowerShell 5.1 installer job no longer spends minutes drawing a progress bar
   nobody can see, trusts the gallery before installing from it so nothing can stop to ask, and
   says which Pester actually loaded: 5.1 ships 3.4.0 in `System32` and it wins load order more
@@ -55,6 +61,14 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ### Added
 
+- `install.ps1` — the first install, in one line:
+  `irm https://raw.githubusercontent.com/Hraph/Ripcord/main/install.ps1 | iex`. It checks the
+  SHA-256 and verifies the release signature against a key written into the script before
+  anything lands, and installs nothing if either fails. `-Prepare` and `-FromPath` split that
+  in two for a host with no outbound access. It refuses a host that already has a binary —
+  that host wants `ripcord update`. **Two defects in this version are fixed in 0.2.0**, and one
+  of them stops it running at all; the one-liner is fetched from `main` rather than from a
+  release, so it picks the fix up on its own.
 - `ripcord failover --scenario planned --vm <name> [--dry-run]` — carries out this host's half
   of a planned failover and names the host that continues it.
 - `ripcord failover --scenario unplanned` — the disaster path. Three steps, all on the replica;

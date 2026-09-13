@@ -85,18 +85,16 @@ change moves the minor instead. Reaching 1.0.0 is a decision rather than an arit
 so it takes an explicit `version` input. A range with nothing but `docs`, `test`, `refactor`,
 `chore`, `ci` or `build` in it is refused: there is no behaviour to release.
 
-Then, both of them, because the workflow refuses the release if either is missing:
+Then:
 
 1. Update `CHANGELOG.md`: move `Unreleased` into `## <version> — <date>`.
-2. Set `<VersionPrefix>` in `Directory.Build.props` to that same version. It is what the binary
-   stamps into its own informational version, and `ripcord update` compares those strings — a
-   tree declaring one version and a release publishing another is a host that cannot tell
-   whether it is current.
-3. Commit and push both to `main`.
-4. Run the workflow again with `dry_run` **off**.
+2. Commit and push it to `main`.
+3. Run the workflow again with `dry_run` **off**.
 
-A release is described and declared before it is cut. Both gates run in the first job, before
-anything is compiled, so a missing one costs a minute rather than a build.
+**No version number is edited by hand anywhere else.** `Directory.Build.props` says `0.0.0`
+and stays there: it is what a working copy reports, not a release. The released version comes
+from the tags and the commits, is passed to the publish as `-p:Version=`, and the workflow then
+runs the binary it just built and refuses to sign one that does not report it.
 
 The tag is created at the end, by the release itself, pointing at the commit that was built.
 The two can therefore never name different commits — and there is no window in which a tag
