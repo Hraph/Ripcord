@@ -1,3 +1,4 @@
+using Ripcord.Application.Alerting;
 using Ripcord.Application.Checks;
 using Ripcord.Application.Deployment;
 using Ripcord.Application.Failover;
@@ -16,6 +17,7 @@ using Ripcord.Domain;
 using Ripcord.Ports.Configuration;
 using Ripcord.Ports.Hosts;
 using Ripcord.Ports.Pairing;
+using Ripcord.Ports.Alerting;
 using Ripcord.Ports.Audit;
 using Ripcord.Ports.Replication;
 using Ripcord.Ports;
@@ -49,6 +51,8 @@ public sealed class RipcordCli(
     IDeploymentExecutor deploymentExecutor,
     IPeerListener peerListener,
     IAuditLog audit,
+    INotifier notifier,
+    IAlertStateStore alertState,
     IClock clock,
     CliEnvironment environment)
 {
@@ -162,10 +166,13 @@ public sealed class RipcordCli(
 
     /// Read-only, and the one command whose exit code reports on the infrastructure rather
     /// than on the tool: 1 means at least one critical rule is violated (decision D7).
+    ///
+    /// `--notify` is the scheduled task's form of the same command. Delivery never changes
+    /// the exit code: a relay that is down must not be reported as a pair that is broken.
     private async Task<ExitCode> CheckAsync(
         string[] args, TextWriter output, TextWriter error, CancellationToken cancellationToken)
     {
-        if (!TryReadConfigurationPath(args, out string path, out string? optionError))
+        if (!TryReadCheckOptions(args, out CheckOptions options, out string? optionError))
         {
             error.WriteLine($"ripcord: {optionError}");
             return ExitCode.InvalidConfiguration;
@@ -175,12 +182,23 @@ public sealed class RipcordCli(
 
         CheckOutcome outcome = await query
             .ExecuteAsync(
-                new CheckRequestOptions(path, environment.MachineName), cancellationToken)
+                new CheckRequestOptions(
+                    options.ConfigurationPath ?? environment.DefaultConfigurationPath,
+                    environment.MachineName),
+                cancellationToken)
             .ConfigureAwait(false);
 
         if (outcome.Report is { } report)
         {
             output.Write(CheckRenderer.Render(report));
+
+            if (options.Notify)
+            {
+                await this.NotifyAsync(
+                        report, outcome.Configuration!, options.DryRun, error, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             return outcome.Code;
         }
 
@@ -188,6 +206,38 @@ public sealed class RipcordCli(
             outcome.Code, null, outcome.Errors, outcome.FailureMessage, []));
 
         return outcome.Code;
+    }
+
+    /// Whatever the alerting decided goes to stderr beside the report: a notification that
+    /// was held, refused or never attempted is a degraded state, and degradations are never
+    /// silent (rule 5).
+    private async Task NotifyAsync(
+        CheckReport report,
+        RipcordConfiguration configuration,
+        bool dryRun,
+        TextWriter error,
+        CancellationToken cancellationToken)
+    {
+        if (!configuration.Alerting.Enabled)
+        {
+            // Asked to notify by a host that notifies nobody. The check itself stands, so the
+            // exit code is untouched — but nothing about this is allowed to be quiet.
+            error.WriteLine(
+                "ripcord: --notify was given, but alerting is switched off in the "
+                + "configuration; nothing will be sent.");
+            return;
+        }
+
+        AlertDispatch dispatch = new(alertState, notifier, clock);
+
+        AlertOutcome outcome = await dispatch
+            .ExecuteAsync(report, configuration.Alerting, dryRun, cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (string note in outcome.Notes)
+        {
+            error.WriteLine($"ripcord: {note}");
+        }
     }
 
     /// The service entry point. It serves the published snapshot and nothing else — it never
@@ -908,6 +958,56 @@ public sealed class RipcordCli(
         return true;
     }
 
+    private readonly record struct CheckOptions(
+        string? ConfigurationPath, bool Notify, bool DryRun);
+
+    /// `--dry-run` on its own is refused rather than accepted as a no-op: `check` changes
+    /// nothing, so an operator who typed it meant the notification.
+    private static bool TryReadCheckOptions(
+        string[] args, out CheckOptions options, out string? error)
+    {
+        string? path = null;
+        bool notify = false;
+        bool dryRun = false;
+        error = null;
+
+        for (int index = 0; index < args.Length; index++)
+        {
+            switch (args[index])
+            {
+                case "--notify":
+                    notify = true;
+                    break;
+
+                case "--dry-run":
+                    dryRun = true;
+                    break;
+
+                case "--config" when !TryConsumeConfig(args, ref index, ref path, out error):
+                    options = default;
+                    return false;
+
+                case "--config":
+                    break;
+
+                default:
+                    error = $"unexpected argument '{args[index]}'.";
+                    options = default;
+                    return false;
+            }
+        }
+
+        if (dryRun && !notify)
+        {
+            error = "check changes nothing; --dry-run only means anything with --notify.";
+            options = default;
+            return false;
+        }
+
+        options = new CheckOptions(path, notify, dryRun);
+        return true;
+    }
+
     private readonly record struct DeployOptions(
         string? ConfigurationPath, bool DryRun, bool Remove);
 
@@ -957,6 +1057,8 @@ public sealed class RipcordCli(
         writer.WriteLine();
         writer.WriteLine("  ripcord status [--config <path>]   read both sides of the pair");
         writer.WriteLine("  ripcord check [--config <path>]    would a failover work right now");
+        writer.WriteLine("                [--notify [--dry-run]]");
+        writer.WriteLine("                                     notify on a new critical finding");
         writer.WriteLine("  ripcord deploy-listener [--dry-run] [--remove]");
         writer.WriteLine("                                     install or remove the pair listener");
         writer.WriteLine("  ripcord test-failover (--vm <name> | --all) [--dry-run]");

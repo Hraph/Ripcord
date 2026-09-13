@@ -9,6 +9,8 @@ using Ripcord.Ports.Configuration;
 using Ripcord.Ports.Replication;
 using Ripcord.Tests.Configuration;
 
+using Ripcord.Tests.Alerting;
+
 namespace Ripcord.Tests.Failover;
 
 /// `ripcord fence` — the first command run on the original primary when it comes back from an
@@ -147,6 +149,8 @@ public class FenceCliTests
             new NoOpDeploymentExecutor(),
             new NoOpPeerListener(),
             new InMemoryAuditLog(),
+            new StubNotifier(),
+            new MemoryAlertStateStore(),
             new FixedClock(Now),
             new CliEnvironment(
                 FakeScenarios.LocalHostName,

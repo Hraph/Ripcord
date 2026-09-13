@@ -8,6 +8,8 @@ using Ripcord.Ports.Replication;
 using Ripcord.Ports;
 using Ripcord.Tests.Configuration;
 
+using Ripcord.Tests.Alerting;
+
 namespace Ripcord.Tests.TestFailover;
 
 /// The command as an operator meets it. What is asserted here is mostly what the command
@@ -238,6 +240,8 @@ public class TestFailoverCliTests
             new NoOpDeploymentExecutor(),
             new NoOpPeerListener(),
             new InMemoryAuditLog(),
+            new StubNotifier(),
+            new MemoryAlertStateStore(),
             new FixedClock(Now),
             new CliEnvironment(
                 machineName,

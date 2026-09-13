@@ -8,6 +8,8 @@ using Ripcord.Ports.Configuration;
 using Ripcord.Ports.Replication;
 using Ripcord.Tests.Configuration;
 
+using Ripcord.Tests.Alerting;
+
 namespace Ripcord.Tests.Failover;
 
 /// The command as an operator meets it, at a KVM, at three in the morning. Most of what is
@@ -306,6 +308,8 @@ public class FailoverCliTests
             new NoOpDeploymentExecutor(),
             new NoOpPeerListener(),
             new InMemoryAuditLog(),
+            new StubNotifier(),
+            new MemoryAlertStateStore(),
             new FixedClock(Now),
             new CliEnvironment(
                 FakeScenarios.LocalHostName,

@@ -1,6 +1,7 @@
 using Ripcord.Adapters.Pairing;
 using Ripcord.Adapters.Pairing.Transport;
 using Ripcord.Adapters.Audit;
+using Ripcord.Adapters.Notify;
 using Ripcord.Adapters.Wmi;
 using Ripcord.Adapters.Wmi.Deployment;
 using Ripcord.Adapters.Yaml;
@@ -55,6 +56,9 @@ internal static class Program
                 Report),
             new JsonLinesAuditLog(
                 Path.Combine(AppContext.BaseDirectory, "audit.jsonl")),
+            new TransportNotifier(new EnvironmentSecretStore(), TransportNotifier.DefaultTimeout),
+            new FileAlertStateStore(
+                Path.Combine(AppContext.BaseDirectory, "alert-state.json")),
             clock,
             new CliEnvironment(
                 Environment.MachineName,

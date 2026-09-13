@@ -1,4 +1,6 @@
 using Ripcord.Adapters.Fake;
+using Ripcord.Domain.Alerting;
+using Ripcord.Tests.Alerting;
 using Ripcord.Cli;
 using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Replication;
@@ -9,6 +11,7 @@ using Ripcord.Domain.Deployment;
 using Ripcord.Ports;
 using Ripcord.Domain.Pairing;
 using Ripcord.Ports.Deployment;
+using Ripcord.Ports.Alerting;
 using Ripcord.Ports.Pairing;
 
 namespace Ripcord.Tests.Cli;
@@ -70,6 +73,96 @@ public class RipcordCliTests
 
         Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
         Assert.Contains("unexpected argument", run.Error, StringComparison.Ordinal);
+    }
+
+    /// The scheduled task's form of the command: the finding is on the console and on its way
+    /// to a human at the same time.
+    [Fact]
+    public async Task Check_with_notify_sends_when_a_critical_rule_is_violated()
+    {
+        StubNotifier notifier = new();
+
+        CliRun run = await Run(
+            ["check", "--notify"],
+            provider: new FakeHypervProvider(FakeScenarios.UnreadyForFailover(Now)),
+            configStore: new RecordingConfigStore(alerting: true),
+            notifier: notifier);
+
+        Assert.Equal(ExitCode.CriticalFinding, run.Code);
+        Assert.Equal(AlertKind.Raised, Assert.Single(notifier.Sent).Kind);
+        Assert.Contains("notified ops@example.net", run.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Check_with_notify_sends_nothing_on_a_clean_pair()
+    {
+        StubNotifier notifier = new();
+
+        CliRun run = await Run(
+            ["check", "--notify"],
+            configStore: new RecordingConfigStore(alerting: true),
+            notifier: notifier);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Empty(notifier.Sent);
+        Assert.Empty(run.Error);
+    }
+
+    /// Read before the scheduled task is switched on, which is the whole point of it.
+    [Fact]
+    public async Task Check_with_notify_and_dry_run_says_where_it_would_go_and_sends_nothing()
+    {
+        StubNotifier notifier = new();
+
+        CliRun run = await Run(
+            ["check", "--notify", "--dry-run"],
+            provider: new FakeHypervProvider(FakeScenarios.UnreadyForFailover(Now)),
+            configStore: new RecordingConfigStore(alerting: true),
+            notifier: notifier);
+
+        Assert.Empty(notifier.Sent);
+        Assert.Contains("would notify", run.Error, StringComparison.Ordinal);
+        Assert.Equal(ExitCode.CriticalFinding, run.Code);
+    }
+
+    /// A relay that is down is not a pair that is broken: the exit code still answers the
+    /// question the command was asked, and the failure is said out loud.
+    [Fact]
+    public async Task Check_with_notify_that_reaches_nobody_still_reports_the_pair()
+    {
+        StubNotifier notifier = new()
+        {
+            Outcome = new DeliveryOutcome([], ["smtp.example.net: connection refused"]),
+        };
+
+        CliRun run = await Run(
+            ["check", "--notify"],
+            provider: new FakeHypervProvider(FakeScenarios.UnreadyForFailover(Now)),
+            configStore: new RecordingConfigStore(alerting: true),
+            notifier: notifier);
+
+        Assert.Equal(ExitCode.CriticalFinding, run.Code);
+        Assert.Contains("could not notify", run.Error, StringComparison.Ordinal);
+    }
+
+    /// Asked to notify by a host that notifies nobody. The check still stands, and the
+    /// mismatch is not allowed to be quiet.
+    [Fact]
+    public async Task Check_with_notify_on_a_host_with_no_alerting_block_says_so()
+    {
+        CliRun run = await Run(["check", "--notify"]);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Contains("alerting is switched off", run.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Check_refuses_dry_run_without_notify()
+    {
+        CliRun run = await Run(["check", "--dry-run"]);
+
+        Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
+        Assert.Contains("--dry-run only means anything", run.Error, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -342,6 +435,8 @@ public class RipcordCliTests
         IConfigStore? configStore = null,
         IDeploymentExecutor? deploymentExecutor = null,
         string? typed = null,
+        INotifier? notifier = null,
+        IAlertStateStore? alertState = null,
         CancellationToken cancellationToken = default)
     {
         StringWriter output = new();
@@ -358,6 +453,8 @@ public class RipcordCliTests
             deploymentExecutor ?? new FakeDeploymentExecutor(),
             new NoOpPeerListener(),
             new InMemoryAuditLog(),
+            notifier ?? new StubNotifier(),
+            alertState ?? new MemoryAlertStateStore(),
             new FixedClock(Now),
             new CliEnvironment(
                 machineName, DefaultConfigPath, BinaryPath, new StringReader(typed ?? "")));
@@ -394,7 +491,8 @@ public class RipcordCliTests
 
 
     /// Returns a document the validator accepts, and remembers which path was asked for.
-    private sealed class RecordingConfigStore(bool listenerEnabled = true) : IConfigStore
+    private sealed class RecordingConfigStore(bool listenerEnabled = true, bool alerting = false)
+        : IConfigStore
     {
         public string? RequestedPath { get; private set; }
 
@@ -404,6 +502,20 @@ public class RipcordCliTests
             ConfigurationDocument document = Tests.Configuration.ValidDocument.Create();
             document.Listener!.Enabled = listenerEnabled;
             document.Listener.SnapshotPath = "state.json";
+
+            if (alerting)
+            {
+                document.Alerting = new AlertingDocument
+                {
+                    Enabled = true,
+                    Smtp = new SmtpDocument
+                    {
+                        Host = "smtp.example.net",
+                        From = "ripcord@example.net",
+                        To = ["ops@example.net"],
+                    },
+                };
+            }
 
             return ConfigurationRead.Succeeded(document);
         }
