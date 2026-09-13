@@ -77,14 +77,17 @@ public class AlertingSettingsValidationTests
         Assert.Equal(path, error.Path);
     }
 
-    [Fact]
-    public void An_smtp_port_outside_the_range_is_refused() =>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(70_000)]
+    public void An_smtp_port_outside_the_range_is_refused(int port) =>
         Assert.Equal(
             "alerting.smtp.port",
             Refused(document =>
             {
                 Alerting(document);
-                document.Alerting!.Smtp!.Port = 70_000;
+                document.Alerting!.Smtp!.Port = port;
             }).Path);
 
     /// Decision: the SMTP password is named here and stored elsewhere. A relay password in

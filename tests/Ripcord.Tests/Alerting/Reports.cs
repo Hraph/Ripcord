@@ -18,6 +18,11 @@ internal static class Reports
     public static CheckReport WithSwitchMismatchAndInvertedDirection() =>
         Of(SwitchMismatch(), InvertedDirection());
 
+    /// The same two findings the other way round. A report is ordered by the engine, but the
+    /// alerting must not depend on that order having been preserved by whatever built it.
+    public static CheckReport WithInvertedDirectionAndSwitchMismatch() =>
+        Of(InvertedDirection(), SwitchMismatch());
+
     public static CheckReport WithWarning() =>
         Of(new Finding(
             CheckRules.ById(CheckRules.LagBeyondThreshold)!,
@@ -59,6 +64,10 @@ internal static class Reports
     /// one of those names would be a finding of somebody else's writing.
     public static CheckReport WithAHostileHostName() =>
         Of(SwitchMismatch()) with { TargetHostName = "HV-REPLICA-01\nfake: all clear" };
+
+    /// The same host, with nothing wrong with it any more.
+    public static CheckReport CleanOnAHostileHost() =>
+        Of() with { TargetHostName = "HV-REPLICA-01\nfake: all clear" };
 
     private static CheckReport Of(params Finding[] findings) =>
         new(

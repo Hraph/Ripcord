@@ -43,6 +43,10 @@ public sealed class MutualTlsChannelTests : IDisposable
             FakeScenarios.PeerSnapshot(Now), clientCertificate: impostor);
 
         Assert.Null(fetch.Snapshot);
+
+        // How it failed matters too: a handshake that fell over for some unrelated reason
+        // would otherwise pass this test as a refusal.
+        Assert.Equal(ReachabilityKind.Failed, fetch.Reachability.Kind);
     }
 
     /// And the reverse: the subject the config expects, signed by a CA nobody trusts.
@@ -55,6 +59,10 @@ public sealed class MutualTlsChannelTests : IDisposable
             FakeScenarios.PeerSnapshot(Now), clientCertificate: forged);
 
         Assert.Null(fetch.Snapshot);
+
+        // How it failed matters too: a handshake that fell over for some unrelated reason
+        // would otherwise pass this test as a refusal.
+        Assert.Equal(ReachabilityKind.Failed, fetch.Reachability.Kind);
     }
 
     [Fact]
@@ -67,6 +75,10 @@ public sealed class MutualTlsChannelTests : IDisposable
             FakeScenarios.PeerSnapshot(Now), clientCertificate: expired);
 
         Assert.Null(fetch.Snapshot);
+
+        // How it failed matters too: a handshake that fell over for some unrelated reason
+        // would otherwise pass this test as a refusal.
+        Assert.Equal(ReachabilityKind.Failed, fetch.Reachability.Kind);
     }
 
     /// The right certificate used from somewhere that is not the peer: a stolen key.
@@ -112,6 +124,10 @@ public sealed class MutualTlsChannelTests : IDisposable
             serverCertificate: this.Issue(this.pairCa, "CN=HV-IMPOSTOR-01"));
 
         Assert.Null(fetch.Snapshot);
+
+        // How it failed matters too: a handshake that fell over for some unrelated reason
+        // would otherwise pass this test as a refusal.
+        Assert.Equal(ReachabilityKind.Failed, fetch.Reachability.Kind);
     }
 
     [Fact]
@@ -122,6 +138,10 @@ public sealed class MutualTlsChannelTests : IDisposable
             serverCertificate: this.Issue(this.strangerCa, "CN=HV-PRIMARY-01"));
 
         Assert.Null(fetch.Snapshot);
+
+        // How it failed matters too: a handshake that fell over for some unrelated reason
+        // would otherwise pass this test as a refusal.
+        Assert.Equal(ReachabilityKind.Failed, fetch.Reachability.Kind);
     }
 
     /// Nothing is served unless the verdict says so — asserted independently of whether the

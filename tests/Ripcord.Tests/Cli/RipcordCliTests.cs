@@ -78,6 +78,20 @@ public class RipcordCliTests
         Assert.Contains("unexpected argument", run.Error, StringComparison.Ordinal);
     }
 
+    /// `serve` takes --config and nothing else. It once borrowed the deployment parser, which
+    /// accepted --dry-run and --remove and then ignored both — an option that appears to be
+    /// read and is not is worse here than one that is refused.
+    [Theory]
+    [InlineData("--dry-run")]
+    [InlineData("--remove")]
+    public async Task Serve_refuses_an_option_it_does_not_have(string option)
+    {
+        CliRun run = await Run(["serve", option]);
+
+        Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
+        Assert.Contains("unexpected argument", run.Error, StringComparison.Ordinal);
+    }
+
     /// The scheduled task's form of the command: the finding is on the console and on its way
     /// to a human at the same time.
     [Fact]
@@ -589,6 +603,8 @@ public class RipcordCliTests
         IAlertStateStore? alertState = null,
         IReleaseFeed? releaseFeed = null,
         IDashboardServer? dashboardServer = null,
+        IReleaseSource? releaseSource = null,
+        IBinarySwap? binarySwap = null,
         CancellationToken cancellationToken = default)
     {
         StringWriter output = new();
@@ -610,6 +626,8 @@ public class RipcordCliTests
                 notifier ?? new StubNotifier(),
                 alertState ?? new MemoryAlertStateStore(),
                 releaseFeed ?? StubReleaseFeed.Unreachable(),
+                releaseSource ?? new NoReleaseSource(),
+                binarySwap ?? new NoBinarySwap(),
                 new FixedClock(Now)),
             new CliEnvironment(
                 machineName, DefaultConfigPath, BinaryPath, new StringReader(typed ?? "")));

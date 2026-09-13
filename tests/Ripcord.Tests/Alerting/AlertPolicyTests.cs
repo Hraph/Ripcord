@@ -77,6 +77,21 @@ public class AlertPolicyTests
         Assert.Contains("2 critical findings", widened.Notification!.Subject);
     }
 
+    /// The fingerprint is ordered before it is compared, so the same two findings arriving in
+    /// the other order are the same alert. Without the ordering, a report that listed them
+    /// differently would read as news and notify again.
+    [Fact]
+    public void The_same_two_findings_in_the_other_order_are_the_same_alert()
+    {
+        AlertState after = Decide(
+            Reports.WithSwitchMismatchAndInvertedDirection(), AlertState.Clear, Noon).State;
+
+        AlertDecision again = Decide(
+            Reports.WithInvertedDirectionAndSwitchMismatch(), after, Noon.AddMinutes(15));
+
+        Assert.Equal(AlertAction.Suppress, again.Action);
+    }
+
     /// One of two findings clearing is not news worth waking anybody for, and re-sending the
     /// remaining one would restart its repeat threshold every time something else recovers.
     [Fact]

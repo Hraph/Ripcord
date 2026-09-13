@@ -57,6 +57,11 @@ public class CheckSettingsValidationTests
     [InlineData("vSwitch-PROD", 0, 3, "replication.expected_frequency_sec")]
     [InlineData("vSwitch-PROD", 30, null, "replication.lag_warning_multiplier")]
     [InlineData("vSwitch-PROD", 30, 0, "replication.lag_warning_multiplier")]
+    // The upper bounds, which are not opinions: a frequency longer than a day and a multiplier
+    // past which the lag rule can never fire are both ways of switching a rule off by a large
+    // number rather than by name.
+    [InlineData("vSwitch-PROD", 86_401, 3, "replication.expected_frequency_sec")]
+    [InlineData("vSwitch-PROD", 30, 1_001, "replication.lag_warning_multiplier")]
     public void The_replication_fields_the_rules_read_are_required(
         string? switchName, int? frequency, int? multiplier, string path)
     {
@@ -156,6 +161,7 @@ public class CheckSettingsValidationTests
     [InlineData(null)]
     [InlineData(0)]
     [InlineData(-1)]
+    [InlineData(1_000_001)]
     public void The_free_space_threshold_is_required_and_positive(int? threshold)
     {
         ConfigurationDocument document = ValidDocument.Create();

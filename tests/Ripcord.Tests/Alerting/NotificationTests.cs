@@ -84,6 +84,22 @@ public class NotificationTests
         Assert.DoesNotContain('\n', notification.Subject);
     }
 
+    /// The recovery notice carries a host name too, and it is no less a mail header for being
+    /// good news.
+    [Fact]
+    public void The_recovery_subject_cannot_carry_a_name_that_forges_a_header()
+    {
+        AlertState raised = AlertPolicy.Decide(new AlertRequest(
+            Reports.WithAHostileHostName(), Settings, AlertState.Clear, Now)).State;
+
+        Notification notification = AlertPolicy.Decide(new AlertRequest(
+            Reports.CleanOnAHostileHost(), Settings, raised, Now.AddHours(1))).Notification!;
+
+        Assert.Equal(AlertKind.Recovered, notification.Kind);
+        Assert.DoesNotContain('\n', notification.Subject);
+        Assert.DoesNotContain("\nfake", notification.Body, StringComparison.Ordinal);
+    }
+
     private static readonly AlertingSettings Settings =
         new(true, TimeSpan.FromHours(24), null, null, null);
 
