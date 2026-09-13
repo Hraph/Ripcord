@@ -1,6 +1,7 @@
 using System.Text;
 using Ripcord.Application.Failover;
 using Ripcord.Domain;
+using Ripcord.Domain.Failover;
 
 namespace Ripcord.Cli.Rendering;
 
@@ -113,7 +114,7 @@ public static class FailoverRenderer
                 : $"  NEXT, ON {elsewhere.Step.HostName}");
 
         output.AppendLine(
-            $"    ripcord failover --scenario planned --vm {report.VmName}"
+            $"    ripcord failover --scenario {Scenario(report.Operation)} --vm {report.VmName}"
                 + (dryRun ? " --dry-run" : ""));
 
         // The other host runs a different half of the same plan, so the same command there
@@ -125,6 +126,10 @@ public static class FailoverRenderer
         output.AppendLine(
             "    twice is safe: Ripcord works out where the pair is from the pair itself.");
     }
+
+    /// The word the operator typed, so the line they are handed is the one they can type back.
+    private static string Scenario(FailoverOperation operation) =>
+        operation == FailoverOperation.UnplannedFailover ? "unplanned" : "planned";
 
     private static void AppendRollback(StringBuilder output, FailoverRunReport report)
     {

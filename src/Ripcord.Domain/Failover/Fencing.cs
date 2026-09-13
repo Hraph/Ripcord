@@ -112,6 +112,24 @@ public static class Fencing
         return new FencePlan(toFence, alreadyFenced, absent, notConfirmedOff, null);
     }
 
+    /// Which VMs the other host has taken, read off that host rather than remembered here.
+    /// A copy serving after a failover, or simply running where a replica should be idle, is
+    /// one that moved — and either reading is enough, because a stale relationship state and a
+    /// running machine are different ways of seeing the same claim.
+    public static IReadOnlyList<string> FailedOver(IReadOnlyList<VmReplicationState> onPeer)
+    {
+        ArgumentNullException.ThrowIfNull(onPeer);
+
+        return
+        [
+            .. onPeer
+                .Where(vm =>
+                    vm.State is ReplicationState.Recovered or ReplicationState.Committed
+                    || Live(vm))
+                .Select(vm => vm.Name),
+        ];
+    }
+
     private static bool Live(VmReplicationState vm) =>
         vm.PowerState is VmPowerState.Running or VmPowerState.Starting;
 

@@ -164,4 +164,57 @@ public class FencingTests
             null,
             power,
             startAction);
+
+    /// Which VMs the fence is about, read off the host that took them. A copy serving after a
+    /// failover, or simply running where a replica should be idle, is one that moved.
+    [Fact]
+    public void The_failed_over_set_is_read_from_the_host_that_took_them()
+    {
+        IReadOnlyList<VmReplicationState> onPeer =
+        [
+            Serving("VM-DC-01"),
+            new VmReplicationState(
+                "VM-LEGACY-01",
+                ReplicationRole.Replica,
+                ReplicationState.Replicating,
+                ReplicationHealth.Normal,
+                null,
+                null,
+                null,
+                VmPowerState.Off),
+        ];
+
+        Assert.Equal(["VM-DC-01"], Fencing.FailedOver(onPeer));
+    }
+
+    /// A replica that is simply running is a claimant whatever its replication state says.
+    [Fact]
+    public void A_running_copy_counts_as_failed_over_even_without_a_recovered_state()
+    {
+        IReadOnlyList<VmReplicationState> onPeer =
+        [
+            new VmReplicationState(
+                "VM-DC-01",
+                ReplicationRole.Replica,
+                ReplicationState.Replicating,
+                ReplicationHealth.Normal,
+                null,
+                null,
+                null,
+                VmPowerState.Running),
+        ];
+
+        Assert.Equal(["VM-DC-01"], Fencing.FailedOver(onPeer));
+    }
+
+    private static VmReplicationState Serving(string name) =>
+        new(
+            name,
+            ReplicationRole.Replica,
+            ReplicationState.Recovered,
+            ReplicationHealth.Critical,
+            null,
+            null,
+            null,
+            VmPowerState.Off);
 }

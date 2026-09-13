@@ -57,6 +57,20 @@ public class FailoverCliTests
         Assert.DoesNotContain(FakeScenarios.PeerHostName, run.Output, StringComparison.Ordinal);
     }
 
+    /// The command printed for the operator to type must be the one they typed. An unplanned
+    /// dry run that hands back `--scenario planned` sends them to run the wrong sequence, off
+    /// a screen they are reading precisely because they cannot compose it from memory.
+    [Fact]
+    public async Task An_unplanned_dry_run_hands_back_the_unplanned_command()
+    {
+        CliRun run = await Run(
+            ["failover", "--scenario", "unplanned", "--vm", "VM-DC-01", "--dry-run"],
+            typed: null);
+
+        Assert.Contains("--scenario unplanned", run.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("--scenario planned", run.Output, StringComparison.Ordinal);
+    }
+
     /// The confirmation prompt is where the operator learns what they are about to lose.
     /// A planned failover sends the last changes across first; an unplanned one cannot, so
     /// everything written since the last replication cycle is gone. Printing the planned
