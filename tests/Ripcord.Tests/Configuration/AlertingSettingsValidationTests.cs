@@ -187,6 +187,36 @@ public class AlertingSettingsValidationTests
                 document.Alerting!.RepeatAfterHours = hours;
             }).Path);
 
+    /// Credentials over a connection that never starts TLS are credentials on the wire. The
+    /// relay being in the same rack is the argument that holds until it does not.
+    [Fact]
+    public void A_relay_given_credentials_without_start_tls_is_refused()
+    {
+        ConfigurationError error = Refused(document =>
+        {
+            Alerting(document);
+            document.Alerting!.Smtp!.StartTls = false;
+        });
+
+        Assert.Equal("alerting.smtp.start_tls", error.Path);
+    }
+
+    /// Without credentials there is nothing to leak by authenticating, so an unauthenticated
+    /// relay on a plain connection stays sayable.
+    [Fact]
+    public void A_relay_with_no_credentials_may_run_without_start_tls()
+    {
+        AlertingSettings alerting = Validated(document =>
+        {
+            Alerting(document);
+            document.Alerting!.Smtp!.StartTls = false;
+            document.Alerting.Smtp.Username = null;
+            document.Alerting.Smtp.PasswordSecret = null;
+        }).Alerting;
+
+        Assert.False(alerting.Smtp!.StartTls);
+    }
+
     private static void Alerting(ConfigurationDocument document) =>
         document.Alerting = new AlertingDocument
         {
