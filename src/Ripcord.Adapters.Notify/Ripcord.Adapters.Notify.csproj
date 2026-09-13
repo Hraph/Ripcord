@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- No package: SmtpClient, HttpClient and System.Text.Json are all in the framework, so
+       the transports build and run on Linux like everything else outside the WMI adapter. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ripcord.Domain\Ripcord.Domain.csproj" />
+    <ProjectReference Include="..\Ripcord.Ports\Ripcord.Ports.csproj" />
+  </ItemGroup>
+
+</Project>

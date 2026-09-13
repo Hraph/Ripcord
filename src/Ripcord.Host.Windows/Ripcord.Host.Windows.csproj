@@ -13,6 +13,7 @@
     <ProjectReference Include="..\Ripcord.Adapters.Yaml\Ripcord.Adapters.Yaml.csproj" />
     <ProjectReference Include="..\Ripcord.Adapters.Pairing\Ripcord.Adapters.Pairing.csproj" />
     <ProjectReference Include="..\Ripcord.Adapters.Audit\Ripcord.Adapters.Audit.csproj" />
+    <ProjectReference Include="..\Ripcord.Adapters.Notify\Ripcord.Adapters.Notify.csproj" />
   </ItemGroup>
 
 </Project>
