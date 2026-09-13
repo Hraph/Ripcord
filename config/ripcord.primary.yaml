@@ -89,7 +89,29 @@ storage:
   free_space_warning_gb: 200
   check_bitlocker_autounlock: true
 
-alerts:
-  smtp: { enabled: false }
-  webhook: { enabled: false }
-  quiet_hours: "23:00-07:00"
+# Notification when a critical rule appears. Off by default and genuinely optional: these
+# hosts are meant to have no outbound access, and `ripcord check` behaves identically without
+# this block. Delete it and nothing notifies anybody.
+#
+# Only code 1 — a critical rule violated — notifies. Warnings never do, and the notification
+# goes out on a transition rather than on every scheduled run.
+# alerting:
+#   enabled: true
+#   # How long the same finding stays quiet before it is mentioned again. Default 24.
+#   repeat_after_hours: 24
+#   # Local time on this host. An alert raised inside the window is delivered when the window
+#   # ends, never dropped.
+#   quiet_hours: "22:00-07:00"
+#   smtp:
+#     host: smtp.example.net
+#     port: 587
+#     start_tls: true
+#     from: ripcord@example.net
+#     to:
+#       - ops@example.net
+#     # The password is never written here. This names the environment variable the service
+#     # reads it from; `password:` in this file is refused by name.
+#     username: ripcord@example.net
+#     password_secret: RIPCORD_SMTP_PASSWORD
+#   webhook:
+#     url: "https://hooks.example.net/ripcord"

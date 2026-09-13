@@ -1,3 +1,5 @@
+using Ripcord.Domain.Alerting;
+
 namespace Ripcord.Domain.Configuration;
 
 
@@ -9,6 +11,7 @@ public sealed record RipcordConfiguration(
     ListenerSettings Listener,
     ReplicationSettings Replication,
     StorageSettings Storage,
+    AlertingSettings Alerting,
     IReadOnlyList<VmSettings> Vms,
     IReadOnlyList<Acknowledgement> Acknowledgements);
 

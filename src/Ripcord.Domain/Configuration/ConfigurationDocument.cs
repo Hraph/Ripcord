@@ -21,6 +21,50 @@ public sealed class ConfigurationDocument
     public List<VmDocument>? Vms { get; set; }
 
     public ChecksDocument? Checks { get; set; }
+
+    /// Absent on a host that notifies nobody, which is the default: these two machines are
+    /// meant to have no outbound access at all.
+    public AlertingDocument? Alerting { get; set; }
+}
+
+public sealed class AlertingDocument
+{
+    public bool Enabled { get; set; }
+
+    public int? RepeatAfterHours { get; set; }
+
+    public string? QuietHours { get; set; }
+
+    public SmtpDocument? Smtp { get; set; }
+
+    public WebhookDocument? Webhook { get; set; }
+}
+
+/// `Password` is modelled only so it can be refused by name. The deserialiser ignores keys it
+/// does not know, and a relay password silently ignored is a relay password sitting in every
+/// backup of the configuration directory (decision D24).
+public sealed class SmtpDocument
+{
+    public string? Host { get; set; }
+
+    public int? Port { get; set; }
+
+    public bool StartTls { get; set; }
+
+    public string? From { get; set; }
+
+    public List<string>? To { get; set; }
+
+    public string? Username { get; set; }
+
+    public string? PasswordSecret { get; set; }
+
+    public string? Password { get; set; }
+}
+
+public sealed class WebhookDocument
+{
+    public string? Url { get; set; }
 }
 
 public sealed class NodeDocument

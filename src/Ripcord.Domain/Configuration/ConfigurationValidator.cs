@@ -1,3 +1,4 @@
+using Ripcord.Domain.Alerting;
 using Ripcord.Domain.Checks;
 
 namespace Ripcord.Domain.Configuration;
@@ -29,6 +30,13 @@ public static class ConfigurationValidator
 
     private const int MaxFreeSpaceWarningGb = 1_000_000;
 
+    /// A year, same reasoning as the orphan window: a threshold long enough to switch the
+    /// repeat off should be switched off by name, not by a large number.
+    private const int MaxRepeatAfterHours = 8_760;
+
+    /// Submission, not 25: the relays these hosts would use take mail on 587 with STARTTLS.
+    private const int DefaultSmtpPort = 587;
+
     public static ConfigurationValidation Validate(
         ConfigurationDocument? document, string machineName)
     {
@@ -46,6 +54,7 @@ public static class ConfigurationValidator
         ListenerSettings? listener = ValidateListener(document.Listener, errors);
         ReplicationSettings? replication = ValidateReplication(document.Replication, errors);
         StorageSettings? storage = ValidateStorage(document.Storage, errors);
+        AlertingSettings? alerting = ValidateAlerting(document.Alerting, errors);
         IReadOnlyList<VmSettings> vms = ValidateVms(document.Vms, errors);
 
         IReadOnlyList<Acknowledgement> acknowledgements =
@@ -61,9 +70,10 @@ public static class ConfigurationValidator
             || listener is null
             || replication is null
             || storage is null
+            || alerting is null
             ? ConfigurationValidation.Invalid(errors)
             : ConfigurationValidation.Valid(new RipcordConfiguration(
-                node, peer, listener, replication, storage, vms, acknowledgements));
+                node, peer, listener, replication, storage, alerting, vms, acknowledgements));
     }
 
     /// Authorising a VM to be tested with no human present is the one place the typed
@@ -106,6 +116,144 @@ public static class ConfigurationValidator
         }
 
         return replication with { UnattendedTestFailoverVmsOrNone = authorised };
+    }
+
+    /// The block is checked whether or not it is switched on: switching alerting on must not
+    /// be the moment the typos in the relay address surface.
+    private static AlertingSettings? ValidateAlerting(
+        AlertingDocument? alerting, List<ConfigurationError> errors)
+    {
+        if (alerting is null)
+        {
+            return AlertingSettings.Disabled();
+        }
+
+        bool complete = true;
+
+        int hours = alerting.RepeatAfterHours ?? (int)AlertingSettings.DefaultRepeatAfter.TotalHours;
+
+        if (hours is <= 0 or > MaxRepeatAfterHours)
+        {
+            errors.Add(new ConfigurationError(
+                "alerting.repeat_after_hours",
+                $"must be between 1 and {MaxRepeatAfterHours}"));
+            complete = false;
+        }
+
+        QuietHours? quiet = null;
+
+        if (!string.IsNullOrWhiteSpace(alerting.QuietHours)
+            && !QuietHours.TryParse(alerting.QuietHours, out quiet))
+        {
+            errors.Add(new ConfigurationError(
+                "alerting.quiet_hours", "must read as HH:mm-HH:mm, for instance 22:00-07:00"));
+            complete = false;
+        }
+
+        SmtpSettings? smtp = ValidateSmtp(alerting.Smtp, errors, ref complete);
+        WebhookSettings? webhook = ValidateWebhook(alerting.Webhook, errors, ref complete);
+
+        // Enabled with nowhere to send is the failure nobody sees until the night it matters:
+        // every run decides to notify, and nothing ever arrives. Judged on the blocks that
+        // are written rather than on the ones that validated, so a typo in the relay address
+        // is reported once instead of twice.
+        if (alerting.Enabled && alerting.Smtp is null && alerting.Webhook is null)
+        {
+            errors.Add(new ConfigurationError(
+                "alerting", "enabled, but neither an smtp nor a webhook block says where to send"));
+            complete = false;
+        }
+
+        return complete
+            ? new AlertingSettings(alerting.Enabled, TimeSpan.FromHours(hours), quiet, smtp, webhook)
+            : null;
+    }
+
+    private static SmtpSettings? ValidateSmtp(
+        SmtpDocument? smtp, List<ConfigurationError> errors, ref bool complete)
+    {
+        if (smtp is null)
+        {
+            return null;
+        }
+
+        bool usable = true;
+
+        usable &= Required(smtp.Host, "alerting.smtp.host", errors, out string host);
+        usable &= Required(smtp.From, "alerting.smtp.from", errors, out string from);
+
+        int port = smtp.Port ?? DefaultSmtpPort;
+
+        if (port is <= 0 or > 65_535)
+        {
+            errors.Add(new ConfigurationError("alerting.smtp.port", "must be between 1 and 65535"));
+            usable = false;
+        }
+
+        string[] recipients = [.. (smtp.To ?? []).Select(entry => entry?.Trim() ?? "").Where(entry => entry.Length > 0)];
+
+        if (recipients.Length == 0)
+        {
+            errors.Add(new ConfigurationError("alerting.smtp.to", "at least one recipient is required"));
+            usable = false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(smtp.Password))
+        {
+            errors.Add(new ConfigurationError(
+                "alerting.smtp.password",
+                "a password never goes in this file; name it with password_secret instead"));
+            usable = false;
+        }
+
+        string? username = string.IsNullOrWhiteSpace(smtp.Username) ? null : smtp.Username.Trim();
+        string? secret = string.IsNullOrWhiteSpace(smtp.PasswordSecret)
+            ? null
+            : smtp.PasswordSecret.Trim();
+
+        // Either both or neither: half a credential authenticates nothing, and finding that
+        // out at the relay means finding it out when the alert fails to leave.
+        if (username is null && secret is not null)
+        {
+            errors.Add(new ConfigurationError(
+                "alerting.smtp.username", "required when password_secret names a secret"));
+            usable = false;
+        }
+        else if (username is not null && secret is null)
+        {
+            errors.Add(new ConfigurationError(
+                "alerting.smtp.password_secret", "required when username names an account"));
+            usable = false;
+        }
+
+        if (!usable)
+        {
+            complete = false;
+            return null;
+        }
+
+        return new SmtpSettings(host, port, smtp.StartTls, from, recipients, username, secret);
+    }
+
+    /// Plain HTTP is refused rather than warned about: a webhook URL is a bearer token as
+    /// often as not, and the body names every VM that would not come back.
+    private static WebhookSettings? ValidateWebhook(
+        WebhookDocument? webhook, List<ConfigurationError> errors, ref bool complete)
+    {
+        if (webhook is null)
+        {
+            return null;
+        }
+
+        if (!Uri.TryCreate(webhook.Url?.Trim(), UriKind.Absolute, out Uri? url)
+            || url.Scheme != Uri.UriSchemeHttps)
+        {
+            errors.Add(new ConfigurationError("alerting.webhook.url", "must be an https:// URL"));
+            complete = false;
+            return null;
+        }
+
+        return new WebhookSettings(url);
     }
 
     private static void ValidateSchemaVersion(int? version, List<ConfigurationError> errors)
