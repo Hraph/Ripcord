@@ -85,10 +85,26 @@ Describe 'the release signature' {
             Should -Throw '*empty*'
     }
 
-    It 'refuses a signature that is not a DER sequence' {
-        { Test-ReleaseSignature -Payload $script:Payload `
-                -Signature ([byte[]] (1..40)) -PublicKeyPem $script:PublicKey } |
-            Should -Throw
+    <#
+        The two hosts refuse this differently and both are right. PowerShell 7 hands the DER
+        to .NET, which reads a malformed sequence as "does not verify" and returns false;
+        5.1 reads the DER here and stops by name. Asserting either shape passes on one host
+        and fails on the other, so what is asserted is the property that matters: whatever it
+        does, it must not come back true. The named refusal is covered directly against
+        `ConvertFrom-DerSignature`, below.
+    #>
+    It 'refuses a signature that is not a DER sequence, however it refuses it' {
+        $accepted = $true
+
+        try {
+            $accepted = Test-ReleaseSignature -Payload $script:Payload `
+                -Signature ([byte[]] (1..40)) -PublicKeyPem $script:PublicKey
+        }
+        catch {
+            $accepted = $false
+        }
+
+        $accepted | Should -BeFalse
     }
 }
 
@@ -145,6 +161,16 @@ Describe 'the DER signature reader' {
 
     It 'refuses a value too large for the curve' {
         { ConvertTo-Fixed32 -Value ([byte[]] (1..33)) } | Should -Throw
+    }
+
+    It 'says what is wrong when the bytes are not a sequence at all' {
+        { ConvertFrom-DerSignature -Der ([byte[]] (1..40)) } | Should -Throw '*DER sequence*'
+    }
+
+    It 'refuses a length form it does not read rather than guessing at one' {
+        # 0x30 then a two-byte long form, which a P-256 signature never uses.
+        { ConvertFrom-DerSignature -Der ([byte[]] (@(0x30, 0x82) + (1..40))) } |
+            Should -Throw '*length form*'
     }
 }
 
