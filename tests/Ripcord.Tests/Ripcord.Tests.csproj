@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\src\Ripcord.Adapters.Fake\Ripcord.Adapters.Fake.csproj" />
     <ProjectReference Include="..\..\src\Ripcord.Adapters.Yaml\Ripcord.Adapters.Yaml.csproj" />
     <ProjectReference Include="..\..\src\Ripcord.Adapters.Pairing\Ripcord.Adapters.Pairing.csproj" />
+    <ProjectReference Include="..\..\src\Ripcord.Adapters.Audit\Ripcord.Adapters.Audit.csproj" />
   </ItemGroup>
 
 </Project>

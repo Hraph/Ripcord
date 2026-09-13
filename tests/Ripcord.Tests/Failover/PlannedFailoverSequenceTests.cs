@@ -1,6 +1,7 @@
 using Ripcord.Adapters.Fake;
 using Ripcord.Application.Failover;
 using Ripcord.Domain;
+using Ripcord.Domain.Audit;
 using Ripcord.Domain.Failover;
 using Ripcord.Domain.Inventory;
 using Ripcord.Domain.Replication;
@@ -19,6 +20,8 @@ public class PlannedFailoverSequenceTests
     private const string Switch = "vSwitch-PROD";
 
     private static readonly FailoverPlan Plan = FailoverPlan.Planned(Vm, Primary, Replica);
+
+    private static readonly DateTimeOffset Now = new(2026, 3, 1, 9, 0, 0, TimeSpan.Zero);
 
     /// The primary's half is steps 1 and 2. It does not attempt the replica's, and says so
     /// rather than reporting a partial success as a success.
@@ -208,6 +211,87 @@ public class PlannedFailoverSequenceTests
         Assert.Equal(ExitCode.Refused, report.Code);
     }
 
+    /// The ordering is the guarantee. Once a step has run the host may not be writable, so an
+    /// operation that recorded only its outcome would record nothing in exactly the case the
+    /// record exists for.
+    [Fact]
+    public async Task What_could_not_be_seen_is_recorded_before_anything_changes()
+    {
+        FakeHypervProvider provider = Provider(VmPowerState.Running);
+        InMemoryAuditLog audit = new();
+        int callsAtFirstWrite = -1;
+
+        audit.OnAppend = _ =>
+            callsAtFirstWrite = callsAtFirstWrite < 0 ? provider.Calls.Count : callsAtFirstWrite;
+
+        await Run(provider, Primary, Fresh(), audit: audit);
+
+        Assert.Equal(0, callsAtFirstWrite);
+        Assert.Equal(AuditStage.Starting, audit.Entries[0].Stage);
+    }
+
+    /// The unknowns the precondition decided to proceed past travel into the trail, because a
+    /// failover that proceeds on unknowns owes a durable account of which ones.
+    [Fact]
+    public async Task The_unverified_facts_are_carried_into_the_trail()
+    {
+        InMemoryAuditLog audit = new();
+
+        await new PlannedFailoverSequence(
+                Provider(VmPowerState.Running), audit, new FixedClock(Now),
+                FailoverTiming.ForTests)
+            .RunAsync(
+                Plan,
+                Fresh(),
+                new SplitBrain(SplitBrainVerdict.NotSuspected, null),
+                new FailoverRequest(
+                    Vm, Primary, Switch, false, "RH", ["free space could not be read"]),
+                CancellationToken.None);
+
+        Assert.Contains(
+            "free space could not be read", audit.Entries[0].Unverified);
+    }
+
+    /// A failover that cannot record what it knew beforehand does not start. The audit trail is
+    /// not decoration on a mutating operation; it is the account of the state production was
+    /// moved from.
+    [Fact]
+    public async Task A_trail_that_cannot_be_written_stops_the_failover()
+    {
+        FakeHypervProvider provider = Provider(VmPowerState.Running);
+        InMemoryAuditLog audit = new() { Failure = new IOException("read-only") };
+
+        await Assert.ThrowsAsync<IOException>(
+            () => Run(provider, Primary, Fresh(), audit: audit));
+
+        Assert.Empty(provider.Calls);
+    }
+
+    /// Both ends are recorded, and the failing run is the one somebody reads.
+    [Fact]
+    public async Task The_outcome_is_recorded_as_well_as_the_intent()
+    {
+        InMemoryAuditLog audit = new();
+
+        await Run(Provider(VmPowerState.Running), Primary, Fresh(), audit: audit);
+
+        Assert.Equal(
+            [AuditStage.Starting, AuditStage.Finished],
+            audit.Entries.Select(entry => entry.Stage));
+    }
+
+    /// `--dry-run` changed nothing, so there is nothing to account for. A trail full of
+    /// rehearsals is a trail nobody reads on the day.
+    [Fact]
+    public async Task A_dry_run_writes_no_audit_entry()
+    {
+        InMemoryAuditLog audit = new();
+
+        await Run(Provider(VmPowerState.Running), Primary, Fresh(), dryRun: true, audit: audit);
+
+        Assert.Empty(audit.Entries);
+    }
+
     private static FakeHypervProvider Provider(
         VmPowerState power, ReplicationState state = ReplicationState.Replicating) =>
         new(new HostState(
@@ -248,8 +332,11 @@ public class PlannedFailoverSequenceTests
         string machineName,
         FailoverProgress progress,
         bool dryRun = false,
-        SplitBrain? splitBrain = null) =>
-        new PlannedFailoverSequence(provider, FailoverTiming.ForTests).RunAsync(
+        SplitBrain? splitBrain = null,
+        InMemoryAuditLog? audit = null) =>
+        new PlannedFailoverSequence(
+            provider, audit ?? new InMemoryAuditLog(), new FixedClock(Now), FailoverTiming.ForTests)
+        .RunAsync(
             Plan,
             progress,
             splitBrain ?? new SplitBrain(SplitBrainVerdict.NotSuspected, null),

@@ -1,13 +1,24 @@
 using Ripcord.Application.TestFailover;
 using Ripcord.Domain;
+using Ripcord.Domain.Audit;
 using Ripcord.Domain.Failover;
 using Ripcord.Domain.Replication;
+using Ripcord.Ports;
+using Ripcord.Ports.Audit;
 using Ripcord.Ports.Replication;
 
 namespace Ripcord.Application.Failover;
 
+/// `Unverified` is what the precondition decided to proceed past — the facts this run could not
+/// establish. It is carried into the audit trail before anything changes, because a failover
+/// that proceeds on unknowns owes a durable account of which ones.
 public sealed record FailoverRequest(
-    string VmName, string MachineName, string ExpectedSwitchName, bool DryRun);
+    string VmName,
+    string MachineName,
+    string ExpectedSwitchName,
+    bool DryRun,
+    string User = "unknown",
+    IReadOnlyList<string>? Unverified = null);
 
 public enum StepOutcome
 {
@@ -61,8 +72,11 @@ public sealed record FailoverTiming(TimeSpan RestoreDeadline, int RestoreAttempt
 ///
 /// Where it has got to is re-derived from `FailoverProgress`, never from a stored cursor, so
 /// running this twice is safe and running it on the wrong host is refused rather than obeyed.
-public sealed class PlannedFailoverSequence(IHypervProvider provider, FailoverTiming timing)
+public sealed class PlannedFailoverSequence(
+    IHypervProvider provider, IAuditLog audit, IClock clock, FailoverTiming timing)
 {
+    private const string Operation = "failover --scenario planned";
+
     public async Task<FailoverRunReport> RunAsync(
         FailoverPlan plan,
         FailoverProgress progress,
@@ -117,6 +131,14 @@ public sealed class PlannedFailoverSequence(IHypervProvider provider, FailoverTi
         FailoverRequest request,
         CancellationToken cancellationToken)
     {
+        // Before the first mutation, never after. Once a step has run, the host may not be in
+        // a state to write anything — and an operation that only records its outcome records
+        // nothing at all in exactly the case the record exists for. If the trail cannot be
+        // written, the failover does not start: the exception is deliberately not caught.
+        audit.Append(this.Entry(
+            request, AuditStage.Starting,
+            $"about to run this host's steps for {request.VmName}"));
+
         List<ExecutedStep> results = [];
         List<FailoverStep> performed = [];
 
@@ -147,15 +169,57 @@ public sealed class PlannedFailoverSequence(IHypervProvider provider, FailoverTi
                 results.Add(
                     new ExecutedStep(step.Step, StepOutcome.Failed, exception.Message));
 
-                return await this.UnwindAsync(
+                FailoverRunReport unwound = await this.UnwindAsync(
                         request, results, performed, step.Step, cancellationToken)
                     .ConfigureAwait(false);
+
+                this.Record(request, unwound);
+
+                return unwound;
             }
         }
 
-        return new FailoverRunReport(
+        FailoverRunReport report = new(
             request.VmName, results, ExitCode.Success, NextHost(results));
+
+        this.Record(request, report);
+
+        return report;
     }
+
+    /// The outcome, written whatever the outcome was. A failed run is the one somebody reads.
+    private void Record(FailoverRequest request, FailoverRunReport report)
+    {
+        try
+        {
+            audit.Append(this.Entry(
+                request, AuditStage.Finished,
+                $"exit {(int)report.Code}: {report.Continuation}"));
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // The starting entry is already durable, so the trail still says what was known
+            // before production moved. Failing the run now would replace a real outcome with a
+            // logging error, and the operator needs the outcome.
+            _ = exception;
+        }
+    }
+
+    private AuditEntry Entry(FailoverRequest request, AuditStage stage, string detail) =>
+        new(
+            clock.UtcNow,
+            request.User,
+            request.MachineName,
+            Operation,
+            request.VmName,
+            stage,
+            detail,
+            request.Unverified ?? [],
+            BuildVersion);
+
+    /// Set by the composition root. The audit trail has to name the binary that acted, because
+    /// a sequence spanning two hosts can be executed half by each version.
+    public static string BuildVersion { get; set; } = "unknown";
 
     private Task PerformAsync(
         FailoverStep step, FailoverRequest request, CancellationToken cancellationToken) =>

@@ -1,8 +1,10 @@
 using Ripcord.Domain.Inventory;
 using Ripcord.Domain.Replication;
 using Ripcord.Domain.TestFailover;
+using Ripcord.Domain.Audit;
 using Ripcord.Domain.Pairing;
 using Ripcord.Ports.Pairing;
+using Ripcord.Ports.Audit;
 using Ripcord.Ports.Replication;
 using Ripcord.Ports;
 
@@ -189,6 +191,36 @@ public sealed class FakeHypervProvider : IHypervProvider
         this.Calls.Add(call);
 
         return failure is null ? Task.CompletedTask : Task.FromException(failure);
+    }
+}
+
+/// The audit trail, without a file. `OnAppend` exists so a test can assert *when* an entry was
+/// written relative to the operations around it — the ordering is the guarantee, and an
+/// in-memory list alone would only show that something was eventually recorded.
+public sealed class InMemoryAuditLog : IAuditLog
+{
+    private readonly List<AuditEntry> entries = [];
+
+    public IReadOnlyList<AuditEntry> Entries => this.entries;
+
+    /// Raised before the entry is stored, so a handler sees the world as it was at the moment
+    /// of the write.
+    public Action<AuditEntry>? OnAppend { get; set; }
+
+    /// A trail that cannot be written to. An audit log that fails is not a detail: it is the
+    /// reason a failover should not start.
+    public Exception? Failure { get; set; }
+
+    public void Append(AuditEntry entry)
+    {
+        this.OnAppend?.Invoke(entry);
+
+        if (this.Failure is not null)
+        {
+            throw this.Failure;
+        }
+
+        this.entries.Add(entry);
     }
 }
 
