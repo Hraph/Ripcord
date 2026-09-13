@@ -52,6 +52,9 @@ public sealed record FailoverRunReport(
     /// unplanned run sends them to the wrong sequence off the screen they are reading because
     /// they cannot compose it from memory.
     FailoverOperation Operation = FailoverOperation.PlannedFailover,
+
+    /// The host to fence once it is reachable again, carried from the plan.
+    string? FenceOnReturn = null,
     Compensation? Rollback = null,
     string? ManualRecovery = null,
     string? Halt = null);
@@ -121,7 +124,7 @@ public sealed class FailoverSequence(
         {
             return new FailoverRunReport(
                 request.VmName, Mirror(plan, progress), ExitCode.Success,
-                "every step has already run", plan.Operation);
+                "every step has already run", plan.Operation, plan.FenceOnReturn);
         }
 
         if (!next.RunsOn(request.MachineName))
@@ -129,7 +132,7 @@ public sealed class FailoverSequence(
             return new FailoverRunReport(
                 request.VmName, Mirror(plan, progress), ExitCode.Refused,
                 $"step {next.Number} runs on {next.HostName}; nothing was changed here",
-                plan.Operation);
+                plan.Operation, plan.FenceOnReturn);
         }
 
         return request.DryRun
@@ -138,7 +141,7 @@ public sealed class FailoverSequence(
                 [.. plan.Steps.Select(step => new ExecutedStep(step, StepOutcome.Planned))],
                 ExitCode.Success,
                 $"nothing was changed. Re-run without --dry-run on {next.HostName} to apply",
-                plan.Operation)
+                plan.Operation, plan.FenceOnReturn)
             : await this.ExecuteAsync(plan, progress, request, cancellationToken)
                 .ConfigureAwait(false);
     }
@@ -188,8 +191,8 @@ public sealed class FailoverSequence(
                     new ExecutedStep(step.Step, StepOutcome.Failed, exception.Message));
 
                 FailoverRunReport unwound = await this.UnwindAsync(
-                        plan.Operation, request, results, performed, step.Step,
-                        cancellationToken)
+                        plan.Operation, plan.FenceOnReturn, request, results, performed,
+                        step.Step, cancellationToken)
                     .ConfigureAwait(false);
 
                 this.Record(request, plan.Operation, unwound);
@@ -199,7 +202,7 @@ public sealed class FailoverSequence(
         }
 
         FailoverRunReport report = new(
-            request.VmName, results, ExitCode.Success, NextHost(results), plan.Operation);
+            request.VmName, results, ExitCode.Success, NextHost(results), plan.Operation, plan.FenceOnReturn);
 
         this.Record(request, plan.Operation, report);
 
@@ -305,6 +308,7 @@ public sealed class FailoverSequence(
     /// exists to warn about. It is reported instead.
     private async Task<FailoverRunReport> UnwindAsync(
         FailoverOperation operation,
+        string? fenceOnReturn,
         FailoverRequest request,
         List<ExecutedStep> results,
         List<FailoverStep> performed,
@@ -317,7 +321,7 @@ public sealed class FailoverSequence(
                 request.VmName, results, ExitCode.CriticalFinding,
                 $"'{request.VmName}' is running on this host but its network is wrong; fix the "
                     + "adapter here rather than failing back",
-                operation);
+                operation, fenceOnReturn);
         }
 
         if (Undo(performed) is not { } undo)
@@ -332,6 +336,7 @@ public sealed class FailoverSequence(
                     ? "the step failed before anything else had been done here"
                     : $"'{request.VmName}' is failed over to this host but did not start",
                 operation,
+                fenceOnReturn,
                 null,
                 performed.Count == 0 ? null : StartByHand(request.VmName));
         }
@@ -347,6 +352,7 @@ public sealed class FailoverSequence(
                 ? "this host was put back as it was; the pair was not failed over"
                 : "THIS HOST IS NOT BACK AS IT WAS",
             operation,
+            fenceOnReturn,
             rollback,
             rollback.Succeeded ? null : ManualStep(undo, request.VmName));
     }
@@ -420,7 +426,7 @@ public sealed class FailoverSequence(
         FailoverPlan plan, FailoverProgress progress, ExitCode code, string why) =>
         new(
             plan.VmName, Mirror(plan, progress), code, "nothing was changed", plan.Operation,
-            null, null, why);
+            plan.FenceOnReturn, null, null, why);
 
     /// The plan as the hosts currently report it, with nothing attempted.
     private static List<ExecutedStep> Mirror(FailoverPlan plan, FailoverProgress progress) =>

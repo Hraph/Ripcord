@@ -34,7 +34,15 @@ public sealed record FailoverStep(
 /// operator has to move to the other host, which is the single thing they most need to know
 /// before starting.
 public sealed record FailoverPlan(
-    string VmName, IReadOnlyList<FailoverStep> Steps, FailoverOperation Operation)
+    string VmName,
+    IReadOnlyList<FailoverStep> Steps,
+    FailoverOperation Operation,
+
+    /// The host that has to be fenced the moment it is reachable again, or null when there is
+    /// none. Only an unplanned failover sets it, and it is part of the plan rather than a note
+    /// the renderer adds because it is the step easiest to leave out and the costliest to
+    /// forget: that host still holds a copy of every VM that moved, set to start itself.
+    string? FenceOnReturn = null)
 {
     /// The planned sequence. Reversal happens here, at step 4, and exactly once — a failback
     /// that reverses again inverts the pair and trips milestone 2's direction rule.
@@ -60,6 +68,17 @@ public sealed record FailoverPlan(
         ],
         FailoverOperation.PlannedFailover);
 
+    /// Coming home: the planned sequence pointed the other way, and nothing more.
+    ///
+    /// By the time this runs, `reprotect` has put the pair back under protection with the
+    /// direction inverted — `holder` is serving the VM and `home` is its replica. So the
+    /// planned sequence applies unchanged with the two hosts swapped, and in particular it
+    /// reverses replication exactly once. A failback that reversed again would invert the pair
+    /// and trip milestone 2's direction rule, leaving the VM at home with replication pointing
+    /// the wrong way. That was a bug in the sequence as first written.
+    public static FailoverPlan Failback(string vmName, string home, string holder) =>
+        Planned(vmName, holder, home) with { Operation = FailoverOperation.Failback };
+
     /// The disaster path. Three steps, all on the replica, and every step the planned sequence
     /// runs on the primary is absent — not omitted for brevity, but because that host is the
     /// reason this command is being typed. A plan listing a step the dead host has to carry out
@@ -80,7 +99,8 @@ public sealed record FailoverPlan(
             new FailoverStep(3, FailoverAction.VerifyNetwork, replica,
                 "Confirm the adapter is connected to the expected switch"),
         ],
-        FailoverOperation.UnplannedFailover);
+        FailoverOperation.UnplannedFailover,
+        primary);
 
     /// Whether carrying this plan out needs both hosts. An unplanned failover runs entirely on
     /// the replica, and a sequence confined to one host cannot be executed half by each
@@ -95,6 +115,7 @@ public sealed record FailoverPlan(
         other is not null
         && this.VmName == other.VmName
         && this.Operation == other.Operation
+        && this.FenceOnReturn == other.FenceOnReturn
         && Structural.Same(this.Steps, other.Steps);
 
     public override int GetHashCode()
@@ -102,6 +123,7 @@ public sealed record FailoverPlan(
         HashCode hash = new();
         hash.Add(this.VmName);
         hash.Add(this.Operation);
+        hash.Add(this.FenceOnReturn);
         Structural.Add(ref hash, this.Steps);
         return hash.ToHashCode();
     }

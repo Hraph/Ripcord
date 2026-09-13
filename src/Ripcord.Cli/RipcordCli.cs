@@ -99,6 +99,16 @@ public sealed class RipcordCli(
                 return await this.FailoverAsync(args[1..], output, error, cancellationToken)
                     .ConfigureAwait(false);
 
+            case "failback":
+                return await this.FailoverAsync(
+                        args[1..], output, error, cancellationToken,
+                        FailoverOperation.Failback)
+                    .ConfigureAwait(false);
+
+            case "fence":
+                return await this.FenceAsync(args[1..], output, error, cancellationToken)
+                    .ConfigureAwait(false);
+
             case "serve":
                 return await this.ServeAsync(args[1..], error, cancellationToken)
                     .ConfigureAwait(false);
@@ -276,10 +286,18 @@ public sealed class RipcordCli(
     /// The reason the project exists. Everything about it is shaped by being read under
     /// pressure: `--dry-run` prints the whole cross-host plan and stops, and a real run does
     /// nothing at all until the node name is typed in full.
+    /// `failover` and `failback` are the same command with the scenario fixed rather than
+    /// typed. `failback` is the planned sequence pointed home, so giving it its own parser
+    /// would be a second place for the scope rules to drift.
     private async Task<ExitCode> FailoverAsync(
-        string[] args, TextWriter output, TextWriter error, CancellationToken cancellationToken)
+        string[] args,
+        TextWriter output,
+        TextWriter error,
+        CancellationToken cancellationToken,
+        FailoverOperation? fixedScenario = null)
     {
-        if (!TryReadFailoverOptions(args, out FailoverOptions options, out string? optionError))
+        if (!TryReadFailoverOptions(
+            args, fixedScenario, out FailoverOptions options, out string? optionError))
         {
             error.WriteLine($"ripcord: {optionError}");
             WriteUsage(error);
@@ -333,6 +351,87 @@ public sealed class RipcordCli(
         return sweep.Code;
     }
 
+    /// The first command to run on the original primary when it comes back from an unplanned
+    /// failover, and before anything else is done to the pair.
+    private async Task<ExitCode> FenceAsync(
+        string[] args, TextWriter output, TextWriter error, CancellationToken cancellationToken)
+    {
+        if (!TryReadFenceOptions(args, out FenceOptions options, out string? optionError))
+        {
+            error.WriteLine($"ripcord: {optionError}");
+            WriteUsage(error);
+            return ExitCode.InvalidConfiguration;
+        }
+
+        // Rule 3. It changes what this host does on its next boot, which is the whole point,
+        // and a host left unable to start its VMs is its own kind of outage.
+        if (!options.DryRun && !this.Confirmed(
+            output,
+            error,
+            "This stops the VMs on this host from starting themselves when it reboots."))
+        {
+            return ExitCode.Refused;
+        }
+
+        FenceOutcome outcome = await new FenceQuery(
+                configStore, this.Pair(), provider, audit, clock)
+            .ExecuteAsync(
+                new FenceCommand(
+                    options.ConfigurationPath ?? environment.DefaultConfigurationPath,
+                    environment.MachineName,
+                    options.DryRun,
+                    environment.UserName,
+                    this.LocalBuild),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (outcome.Errors.Count > 0)
+        {
+            WriteFailure(error, new StatusOutcome(
+                outcome.Code, null, outcome.Errors, outcome.FailureMessage, []));
+
+            return outcome.Code;
+        }
+
+        output.Write(FenceRenderer.Render(outcome, clock.UtcNow));
+        return outcome.Code;
+    }
+
+    private readonly record struct FenceOptions(string? ConfigurationPath, bool DryRun);
+
+    private static bool TryReadFenceOptions(
+        string[] args, out FenceOptions options, out string? error)
+    {
+        string? path = null;
+        bool dryRun = false;
+
+        error = null;
+        options = new FenceOptions(null, false);
+
+        for (int index = 0; index < args.Length; index++)
+        {
+            switch (args[index])
+            {
+                case "--dry-run":
+                    dryRun = true;
+                    break;
+
+                case "--config" when !TryConsumeConfig(args, ref index, ref path, out error):
+                    return false;
+
+                case "--config":
+                    break;
+
+                default:
+                    error = $"unexpected argument '{args[index]}'.";
+                    return false;
+            }
+        }
+
+        options = new FenceOptions(path, dryRun);
+        return true;
+    }
+
     private static void WriteVmOutcome(SweptVm swept, TextWriter output, TextWriter error)
     {
         FailoverOutcome outcome = swept.Outcome;
@@ -372,10 +471,17 @@ public sealed class RipcordCli(
                 ? $"every {tier} VM"
                 : "every VM in this configuration";
 
-        return options.Scenario == FailoverOperation.UnplannedFailover
-            ? $"This brings {subject} up on this host from the last replicated point. "
-                + "Everything written since the last replication is lost."
-            : $"This shuts down {subject} and fails it over to the other host.";
+        return options.Scenario switch
+        {
+            FailoverOperation.UnplannedFailover =>
+                $"This brings {subject} up on this host from the last replicated point. "
+                    + "Everything written since the last replication is lost.",
+
+            FailoverOperation.Failback =>
+                $"This shuts down {subject} here and moves it back to the other host.",
+
+            _ => $"This shuts down {subject} and fails it over to the other host.",
+        };
     }
 
     private sealed record FailoverOptions(
@@ -388,7 +494,10 @@ public sealed class RipcordCli(
     /// So is the scope: exactly one of `--vm`, `--all` and `--priority`. Neither a VM nor a
     /// sweep is a missing argument, not a failover of everything.
     private static bool TryReadFailoverOptions(
-        string[] args, out FailoverOptions options, out string? error)
+        string[] args,
+        FailoverOperation? fixedScenario,
+        out FailoverOptions options,
+        out string? error)
     {
         string? path = null;
         List<string> vmNames = [];
@@ -449,13 +558,26 @@ public sealed class RipcordCli(
             }
         }
 
-        if (scenario is null)
+        FailoverOperation operation;
+
+        if (fixedScenario is { } fixedOperation)
+        {
+            // `failback` is one operation. A --scenario on it would be the operator naming a
+            // second one, and the two could only disagree.
+            if (scenario is not null)
+            {
+                error = "failback takes no --scenario.";
+                return false;
+            }
+
+            operation = fixedOperation;
+        }
+        else if (scenario is null)
         {
             error = "--scenario is required: planned or unplanned.";
             return false;
         }
-
-        if (!TryReadScenario(scenario, out FailoverOperation operation))
+        else if (!TryReadScenario(scenario, out operation))
         {
             error = $"--scenario '{scenario}' is not one this binary runs; "
                 + "use planned or unplanned.";
@@ -844,6 +966,12 @@ public sealed class RipcordCli(
             "  ripcord failover --scenario planned|unplanned --vm <name> [--dry-run]");
         writer.WriteLine("                                     move a VM to the other host");
         writer.WriteLine("                                     --all or --priority P1 sweeps");
+        writer.WriteLine("  ripcord failback --vm <name> [--dry-run]");
+        writer.WriteLine("                                     move a VM back home once the");
+        writer.WriteLine("                                     pair is protected again");
+        writer.WriteLine("  ripcord fence [--dry-run]          stop this host's VMs starting");
+        writer.WriteLine("                                     themselves — run it first when a");
+        writer.WriteLine("                                     failed-over host comes back");
         writer.WriteLine("  ripcord serve [--config <path>]    run the read-only pair listener");
         writer.WriteLine("  ripcord version                    version and commit hash");
         writer.WriteLine();

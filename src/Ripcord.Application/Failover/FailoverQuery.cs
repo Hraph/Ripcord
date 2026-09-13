@@ -151,9 +151,18 @@ public sealed class FailoverQuery(
     /// the rules cannot disagree about the direction of the pair.
     private static FailoverPlan PlanFor(
         CheckReport report, string vmName, FailoverOperation scenario) =>
-        scenario == FailoverOperation.UnplannedFailover
-            ? FailoverPlan.Unplanned(vmName, report.SourceHostName, report.TargetHostName)
-            : FailoverPlan.Planned(vmName, report.SourceHostName, report.TargetHostName);
+        scenario switch
+        {
+            FailoverOperation.UnplannedFailover =>
+                FailoverPlan.Unplanned(vmName, report.SourceHostName, report.TargetHostName),
+
+            // Mirrored: by the time a failback runs, the failover target is the host serving
+            // the VM and the source is where it is going home to.
+            FailoverOperation.Failback => FailoverPlan.Failback(
+                vmName, home: report.SourceHostName, holder: report.TargetHostName),
+
+            _ => FailoverPlan.Planned(vmName, report.SourceHostName, report.TargetHostName),
+        };
 
     /// "Source" means the host that normally holds the primary copies, which is not necessarily
     /// the local one — `CheckSubject` already settled that from `replication.expected_role`, and

@@ -47,6 +47,7 @@ public static class FailoverRenderer
         output.AppendLine($"  {report.Continuation}");
 
         AppendNextCommand(output, report);
+        AppendFence(output, report);
 
         // Last, alone, and in capitals. Production is off at this point and the operator is
         // reading under pressure; anything after it would compete with the one line that has
@@ -125,6 +126,33 @@ public static class FailoverRenderer
             "    The same command on either host runs only that host's steps, and running it");
         output.AppendLine(
             "    twice is safe: Ripcord works out where the pair is from the pair itself.");
+    }
+
+    /// The step easiest to leave out and costliest to forget. Production is now running here,
+    /// and the other host still holds a copy of every VM that moved, set to start itself — so
+    /// the operator is told what to do the moment it comes back, while the screen is in front
+    /// of them rather than in a runbook they will look for later.
+    private static void AppendFence(StringBuilder output, FailoverRunReport report)
+    {
+        if (report.FenceOnReturn is not { } host)
+        {
+            return;
+        }
+
+        output.AppendLine();
+        output.AppendLine($"  WHEN {host} COMES BACK, BEFORE ANYTHING ELSE, ON THAT HOST");
+        output.AppendLine("    ripcord fence");
+        output.AppendLine();
+
+        foreach (string line in Layout.Wrap(
+            "It still holds a copy of every VM that moved, set to start itself. Both hosts "
+                + "are on the same switch, so letting it boot puts two copies of the same "
+                + "machine on the same subnet — and for a domain controller there is no "
+                + "sequence here that repairs that.",
+            68))
+        {
+            output.AppendLine("    " + line);
+        }
     }
 
     /// The word the operator typed, so the line they are handed is the one they can type back.

@@ -54,7 +54,11 @@ public class FailoverCliTests
             typed: null);
 
         Assert.Equal(ExitCode.Success, run.Code);
-        Assert.DoesNotContain(FakeScenarios.PeerHostName, run.Output, StringComparison.Ordinal);
+
+        // Every step's host column is this one. The peer is named further down, as the host to
+        // go and fence — not as a host with a step in this plan.
+        Assert.DoesNotContain(
+            $"{FakeScenarios.PeerHostName}  ", run.Output, StringComparison.Ordinal);
     }
 
     /// The command printed for the operator to type must be the one they typed. An unplanned
@@ -69,6 +73,21 @@ public class FailoverCliTests
 
         Assert.Contains("--scenario unplanned", run.Output, StringComparison.Ordinal);
         Assert.DoesNotContain("--scenario planned", run.Output, StringComparison.Ordinal);
+    }
+
+    /// The step that is easiest to leave out, and the one that costs the most when it is. Once
+    /// production is running here, the original primary still holds a copy of every VM that
+    /// moved, set to start itself — so the run has to end by telling the operator what to do
+    /// the moment that host comes back, while they are still reading the screen.
+    [Fact]
+    public async Task An_unplanned_run_says_to_fence_the_other_host_when_it_returns()
+    {
+        CliRun run = await Run(
+            ["failover", "--scenario", "unplanned", "--vm", "VM-DC-01", "--dry-run"],
+            typed: null);
+
+        Assert.Contains("ripcord fence", run.Output, StringComparison.Ordinal);
+        Assert.Contains(FakeScenarios.PeerHostName, run.Output, StringComparison.Ordinal);
     }
 
     /// The confirmation prompt is where the operator learns what they are about to lose.
@@ -207,6 +226,37 @@ public class FailoverCliTests
 
         Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
         Assert.Contains("--force", run.Error, StringComparison.Ordinal);
+    }
+
+    /// `failback` is one operation. A `--scenario` on it would be the operator naming a second
+    /// one, and the two could only disagree.
+    [Fact]
+    public async Task Failback_takes_no_scenario()
+    {
+        CliRun run = await Run(
+            ["failback", "--scenario", "planned", "--vm", "VM-DC-01", "--dry-run"]);
+
+        Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
+        Assert.Contains("--scenario", run.Error, StringComparison.Ordinal);
+    }
+
+    /// The scope rules are the same ones `failover` uses, because they are the same code —
+    /// including the `manual` VM that no sweep picks up.
+    [Fact]
+    public async Task Failback_shares_the_scope_rules_with_failover()
+    {
+        CliRun run = await Run(["failback", "--dry-run"]);
+
+        Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
+        Assert.Contains("--vm", run.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_usage_names_the_failback_verb()
+    {
+        CliRun run = await Run([]);
+
+        Assert.Contains("ripcord failback", run.Output, StringComparison.Ordinal);
     }
 
     /// The verb appears in the usage, because a command nobody can discover is a command
