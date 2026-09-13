@@ -45,7 +45,9 @@ try {
     Set-Content -LiteralPath (Join-Path $Destination 'stranger.pub.pem') `
         -Value $stranger.ExportSubjectPublicKeyInfoPem()
 
-    $payload = [byte[]] (1..512)
+    # 512 bytes, cycling 0..255 twice. `1..512` cast to byte[] throws at 256 — a byte is a
+    # byte — and the length is what matters here, not the values.
+    $payload = [byte[]] (0..511 | ForEach-Object { $_ -band 0xFF })
     [IO.File]::WriteAllBytes((Join-Path $Destination 'payload.bin'), $payload)
 
     $tampered = [byte[]] $payload.Clone()
