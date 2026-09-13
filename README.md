@@ -23,11 +23,17 @@ file written in calm conditions.
 
 ## Project state
 
-**Milestone 0 shipped. Milestones 1, 1b, 2, 3 and 4 built, awaiting validation on the real
-hosts.** `status`, `check`, `test-failover`, `failover --scenario planned`, `version`, `serve`
-and `deploy-listener` are implemented and covered by tests that run on Linux — including the
-mTLS handshake end to end, with generated certificates and real sockets, and a case table per
-check rule.
+**Milestone 0 shipped. Milestones 1, 1b, 2, 3, 4 and most of 4B built, awaiting validation on
+the real hosts.** `status`, `check`, `test-failover`, `failover` in both scenarios, `failback`,
+`fence`, `version`, `serve` and `deploy-listener` are implemented and covered by tests that run
+on Linux — including the mTLS handshake end to end, with generated certificates and real
+sockets, and a case table per check rule.
+
+`reprotect` is **not** built. It re-establishes replication onto the returning host, and the
+`Set-VMReplication -AsReplica -AllowedPrimaryServer` step it turns on is the one no GUI offers
+and no documentation settles (V3, V16). Writing that sequence before the lab answers those
+would be guessing at the one operation whose failure mode is a pair that looks protected and
+is not.
 
 **Nothing here has run on a Hyper-V host.** The WMI adapters are written blind from the
 Microsoft reference, and a round of checking names against that reference found four that did
@@ -132,8 +138,11 @@ ripcord status [--config <path>]              read both sides of the pair
 ripcord check [--config <path>]               would a failover work right now
 ripcord test-failover (--vm <name> | --all) [--dry-run] [--unattended]
                                               boot a replica in isolation, then destroy it
-ripcord failover --scenario planned --vm <name> [--dry-run]
+ripcord failover --scenario planned|unplanned (--vm <name> | --all | --priority P1)
                                               move a VM to the other host
+ripcord failback (--vm <name> | --all | --priority P1) [--dry-run]
+                                              move it back once the pair is protected again
+ripcord fence [--dry-run]                     stop this host's VMs starting themselves
 ripcord serve [--config <path>]               run the read-only pair listener
 ripcord deploy-listener [--dry-run] [--remove]  install or remove that listener
 ripcord version                               version and commit hash
@@ -152,6 +161,21 @@ the primary is dead by definition, so a cross-host execution path is unavailable
 case the tool exists for. Where the sequence has got to is re-derived from what both hosts
 report, never from a stored position, so running it twice is safe and running it on the wrong
 host is refused rather than obeyed.
+
+`fence` is the command that is easy to leave out and expensive to forget. After an unplanned
+failover the original primary still holds a copy of every VM that moved, set to start itself,
+and both hosts sit on the same external switch on the same subnet — so restoring its power
+boots the old domain controller beside the failed-over one, with the same identity and the same
+address. `fence` records each VM's `AutomaticStartAction`, sets it to `Nothing`, and names any
+copy it could not confirm switched off. The unplanned failover prints the instruction to run it,
+on the host it has to be run on, before the operator leaves the screen.
+
+A VM can be kept out of sweeps with `failover: manual` in its configuration block. The backup VM
+is set that way: it boots without its 4 TB repository, and depending on the backup product it
+may start writing fresh full backups into the target's `D:` — the volume already carrying the
+replica disks and the failover undo data. Filling it puts the failed-over VMs into
+paused-critical, the domain controller included. Failing it over is still possible; it has to be
+named.
 
 The pair channel carries one thing in one direction: this host's published state. It has no
 verb, no parameter and no request body, so there is nothing to abuse — and the service that
