@@ -30,7 +30,11 @@ public sealed record CliEnvironment(
     TextReader? ConfirmationReader = null,
     /// Who is running the command. It goes in the audit trail (D8), which is read afterwards by
     /// somebody working out who moved production and what they knew at the time.
-    string UserName = "unknown");
+    string UserName = "unknown",
+    /// Which binary this is. Normally the one that is running, and injectable so a test can
+    /// put two known builds on the two sides of the pair rather than assert against whatever
+    /// the test host happened to stamp.
+    BuildIdentity? Build = null);
 
 /// Argument parsing and console rendering. No decision lives here: the exit code comes from
 /// the use case, the layout from StatusRenderer.
@@ -299,7 +303,8 @@ public sealed class RipcordCli(
                     environment.MachineName,
                     options.VmName!,
                     options.DryRun,
-                    environment.UserName),
+                    environment.UserName,
+                    this.LocalBuild),
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -534,7 +539,14 @@ public sealed class RipcordCli(
             new LocalStateReader(provider, hostSystemProvider, certificateProvider),
             peerChannel,
             snapshotStore,
-            clock);
+            clock,
+            this.LocalBuild);
+
+    /// What this binary is, for the snapshot it publishes and for the skew check that reads the
+    /// peer's. Both halves, because two builds at the same version from different commits differ
+    /// in exactly the way nobody thinks to check.
+    internal BuildIdentity LocalBuild =>
+        environment.Build ?? new BuildIdentity(BuildInfo.Version, BuildInfo.CommitHash);
 
     private bool Confirmed(TextWriter output, TextWriter error, string consequence)
     {

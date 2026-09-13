@@ -6,7 +6,11 @@ namespace Ripcord.Domain.Replication;
 /// PeerCapturedAt is when the peer's state was true, not when it was fetched: since decision
 /// D18 the peer publishes a snapshot rather than answering live, and the age of that snapshot
 /// is part of the answer. Null when the peer said nothing.
-public sealed record PairView(HostState Local, HostState Peer, DateTimeOffset? PeerCapturedAt)
+public sealed record PairView(
+    HostState Local,
+    HostState Peer,
+    DateTimeOffset? PeerCapturedAt,
+    BuildIdentity? PeerBuild = null)
 {
     public PairView(HostState local, HostState peer)
         : this(local, peer, null)

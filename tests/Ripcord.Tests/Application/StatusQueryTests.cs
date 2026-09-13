@@ -238,7 +238,8 @@ public class StatusQueryTests
                     Tests.Configuration.ValidDocument.LocalThumbprint, "CN=HV-REPLICA-01")),
             peerChannel ?? FakePeerChannel.Absent(),
             snapshotStore ?? new InMemorySnapshotStore(),
-            new FixedClock(Now));
+            new FixedClock(Now),
+            new BuildIdentity("0.1.0", "abc123"));
 
     private sealed class StubConfigStore(ConfigurationRead read) : IConfigStore
     {

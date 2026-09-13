@@ -16,7 +16,8 @@ public sealed record FailoverCommand(
     string MachineName,
     string VmName,
     bool DryRun,
-    string User);
+    string User,
+    BuildIdentity LocalBuild);
 
 public sealed record FailoverOutcome(
     ExitCode Code,
@@ -85,6 +86,20 @@ public sealed class FailoverQuery(
                 null);
         }
 
+        // Before anything else about this VM. The sequences are encoded in the binary and span
+        // two hosts, so a pair running two versions would execute half a sequence written by
+        // each — and the plan this run would print is itself the wrong plan. It blocks the dry
+        // run too, deliberately: a plan produced by a binary that will not be executing the
+        // other half is worse than no plan, because it reads as one.
+        VersionSkew skew = VersionSkew.Between(command.LocalBuild, view.PeerBuild);
+
+        if (skew.Verdict != VersionSkewVerdict.Same)
+        {
+            return new FailoverOutcome(
+                ExitCode.Refused, null, null, configuration, [],
+                $"the two hosts are not running the same Ripcord: {skew.Explanation}");
+        }
+
         FailoverRefusal refusal =
             FailoverPrecondition.Evaluate(
                 report, FailoverOperation.PlannedFailover, command.VmName);
@@ -113,7 +128,8 @@ public sealed class FailoverQuery(
                     configuration.Replication.ExpectedSwitchName,
                     command.DryRun,
                     command.User,
-                    Unverified(refusal)),
+                    Unverified(refusal),
+                    command.LocalBuild),
                 cancellationToken)
             .ConfigureAwait(false);
 

@@ -211,6 +211,69 @@ public class PlannedFailoverSequenceTests
         Assert.Equal(ExitCode.Refused, report.Code);
     }
 
+    /// Step 6 actually running, on a VM whose adapter is connected to the expected switch.
+    /// Every other test stops before this step; the milestone calls it "not a formality".
+    [Fact]
+    public async Task The_network_check_passes_when_the_adapter_is_connected_to_the_switch()
+    {
+        FakeHypervProvider provider = Provider(VmPowerState.Running);
+
+        FailoverRunReport report = await Run(provider, Replica, AfterStart());
+
+        Assert.Equal(ExitCode.Success, report.Code);
+    }
+
+    /// A VM that boots without network is a failed failover, and the host-level checks all
+    /// passed while that was true.
+    [Fact]
+    public async Task A_disconnected_adapter_fails_the_network_check()
+    {
+        FakeHypervProvider provider = Provider(VmPowerState.Running, connected: false);
+
+        FailoverRunReport report = await Run(provider, Replica, AfterStart());
+
+        Assert.Equal(ExitCode.CriticalFinding, report.Code);
+    }
+
+    /// Connected, but to something else. Bound to the right switch and disconnected, and bound
+    /// to the wrong switch while connected, are two different ways to have no production
+    /// network — checking only one of them is the proxy trap.
+    [Fact]
+    public async Task An_adapter_on_the_wrong_switch_fails_the_network_check()
+    {
+        FakeHypervProvider provider = Provider(VmPowerState.Running, switchName: "vSwitch-DMZ");
+
+        FailoverRunReport report = await Run(provider, Replica, AfterStart());
+
+        Assert.Equal(ExitCode.CriticalFinding, report.Code);
+    }
+
+    /// The network could not be read at all. That is not a pass: it is reported as unverified,
+    /// because a green line here would say the failover was confirmed when nothing was.
+    [Fact]
+    public async Task An_unreadable_network_is_not_treated_as_a_working_one()
+    {
+        FakeHypervProvider provider = Provider(VmPowerState.Running, facts: false);
+
+        FailoverRunReport report = await Run(provider, Replica, AfterStart());
+
+        Assert.Equal(ExitCode.CriticalFinding, report.Code);
+    }
+
+    /// **No rollback here.** The VM is up and serving; step 6 is a verification, and tearing a
+    /// live workload down because a check failed would cause the outage the check exists to
+    /// warn about. Fix the adapter on this host instead.
+    [Fact]
+    public async Task A_failed_network_check_does_not_unwind_a_running_vm()
+    {
+        FakeHypervProvider provider = Provider(VmPowerState.Running, connected: false);
+
+        FailoverRunReport report = await Run(provider, Replica, AfterStart());
+
+        Assert.DoesNotContain($"cancel:{Vm}", provider.Calls);
+        Assert.Null(report.Rollback);
+    }
+
     /// The ordering is the guarantee. Once a step has run the host may not be writable, so an
     /// operation that recorded only its outcome would record nothing in exactly the case the
     /// record exists for.
@@ -293,14 +356,24 @@ public class PlannedFailoverSequenceTests
     }
 
     private static FakeHypervProvider Provider(
-        VmPowerState power, ReplicationState state = ReplicationState.Replicating) =>
+        VmPowerState power,
+        ReplicationState state = ReplicationState.Replicating,
+        bool connected = true,
+        string switchName = Switch,
+        bool facts = true) =>
         new(new HostState(
             Primary,
-            [State(Vm, ReplicationRole.Primary, state, power)],
+            [State(Vm, ReplicationRole.Primary, state, power, connected, switchName, facts)],
             HostReachability.Reachable()));
 
     private static VmReplicationState State(
-        string name, ReplicationRole role, ReplicationState state, VmPowerState? power) =>
+        string name,
+        ReplicationRole role,
+        ReplicationState state,
+        VmPowerState? power,
+        bool connected = true,
+        string switchName = Switch,
+        bool facts = true) =>
         new(
             name,
             role,
@@ -308,12 +381,23 @@ public class PlannedFailoverSequenceTests
             ReplicationHealth.Normal,
             null,
             null,
-            new VmFacts(
-                2048, 4096, 1024,
-                [new VirtualAdapter("Network Adapter", Switch, true, "00-15-5D-01", false, 10)],
-                [],
-                []),
+            facts
+                ? new VmFacts(
+                    2048, 4096, 1024,
+                    [new VirtualAdapter(
+                        "Network Adapter", switchName, connected, "00-15-5D-01", false, 10)],
+                    [],
+                    [])
+                : null,
             power);
+
+    /// Steps 1 to 5 behind it: the target is serving the VM and it is running, so only the
+    /// network check is left.
+    private static FailoverProgress AfterStart() =>
+        FailoverProgress.Of(
+            Plan,
+            State(Vm, ReplicationRole.Replica, ReplicationState.Replicating, VmPowerState.Off),
+            State(Vm, ReplicationRole.Primary, ReplicationState.Recovered, VmPowerState.Running));
 
     private static FailoverProgress Fresh() =>
         FailoverProgress.Of(

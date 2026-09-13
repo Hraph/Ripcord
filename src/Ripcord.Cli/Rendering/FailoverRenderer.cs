@@ -45,6 +45,8 @@ public static class FailoverRenderer
         output.AppendLine();
         output.AppendLine($"  {report.Continuation}");
 
+        AppendNextCommand(output, report);
+
         // Last, alone, and in capitals. Production is off at this point and the operator is
         // reading under pressure; anything after it would compete with the one line that has
         // to be acted on now.
@@ -84,6 +86,44 @@ public static class FailoverRenderer
                 }
             }
         }
+    }
+
+    /// The half of the sequence this host cannot run, as the line to type on the other one.
+    ///
+    /// Ripcord drives only the host it is on, so every run that succeeds ends with the operator
+    /// walking to the other machine. Naming the host and the step number is not enough for
+    /// somebody standing at a KVM under pressure: they need the command, spelled out, so it can
+    /// be read off one screen and typed into another without composing it from memory.
+    private static void AppendNextCommand(StringBuilder output, FailoverRunReport report)
+    {
+        ExecutedStep? elsewhere = report.Steps.FirstOrDefault(step =>
+            step.Outcome is StepOutcome.NotThisHost or StepOutcome.Planned);
+
+        if (elsewhere is null)
+        {
+            return;
+        }
+
+        bool dryRun = elsewhere.Outcome == StepOutcome.Planned;
+
+        output.AppendLine();
+        output.AppendLine(
+            dryRun
+                ? $"  START ON {elsewhere.Step.HostName}"
+                : $"  NEXT, ON {elsewhere.Step.HostName}");
+
+        output.AppendLine(
+            $"    ripcord failover --scenario planned --vm {report.VmName}"
+                + (dryRun ? " --dry-run" : ""));
+
+        // The other host runs a different half of the same plan, so the same command there
+        // does something different — and re-running it here does nothing, because the sequence
+        // re-derives where it is from what the hosts report rather than from a counter.
+        output.AppendLine();
+        output.AppendLine(
+            "    The same command on either host runs only that host's steps, and running it");
+        output.AppendLine(
+            "    twice is safe: Ripcord works out where the pair is from the pair itself.");
     }
 
     private static void AppendRollback(StringBuilder output, FailoverRunReport report)

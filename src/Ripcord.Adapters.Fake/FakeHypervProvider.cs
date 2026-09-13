@@ -1,3 +1,4 @@
+using Ripcord.Domain;
 using Ripcord.Domain.Inventory;
 using Ripcord.Domain.Replication;
 using Ripcord.Domain.TestFailover;
@@ -352,7 +353,10 @@ public static class FakeScenarios
     }
 
     /// What the peer publishes when it is healthy.
-    public static HostSnapshot PeerSnapshot(DateTimeOffset capturedAt) =>
+    /// `publishedBy` is the Ripcord the peer is running. A pair on two versions refuses every
+    /// mutating command, so a scenario meant to reach one has to say which build published it.
+    public static HostSnapshot PeerSnapshot(
+        DateTimeOffset capturedAt, BuildIdentity? publishedBy = null) =>
         new(
             capturedAt,
             new HostState(
@@ -362,7 +366,8 @@ public static class FakeScenarios
                     Primary("VM-LEGACY-01", ReplicationHealth.Normal, capturedAt.AddSeconds(-9)),
                 ],
                 HostReachability.Reachable(),
-                PrimaryHost()));
+                PrimaryHost()),
+            publishedBy);
 
     private static VmReplicationState Primary(
         string name, ReplicationHealth health, DateTimeOffset lastReplication) =>

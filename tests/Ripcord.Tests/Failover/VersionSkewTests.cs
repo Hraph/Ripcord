@@ -1,3 +1,4 @@
+using Ripcord.Domain;
 using Ripcord.Domain.Failover;
 
 namespace Ripcord.Tests.Failover;

@@ -18,7 +18,8 @@ public sealed record FailoverRequest(
     string ExpectedSwitchName,
     bool DryRun,
     string User = "unknown",
-    IReadOnlyList<string>? Unverified = null);
+    IReadOnlyList<string>? Unverified = null,
+    BuildIdentity? Build = null);
 
 public enum StepOutcome
 {
@@ -215,11 +216,12 @@ public sealed class PlannedFailoverSequence(
             stage,
             detail,
             request.Unverified ?? [],
-            BuildVersion);
 
-    /// Set by the composition root. The audit trail has to name the binary that acted, because
-    /// a sequence spanning two hosts can be executed half by each version.
-    public static string BuildVersion { get; set; } = "unknown";
+            // Carried on the request rather than read from a static. The trail has to name the
+            // binary that acted — a sequence spanning two hosts can be executed half by each
+            // version — and a mutable global that nobody assigns records "unknown" for ever.
+            (request.Build ?? new BuildIdentity(
+                BuildIdentity.Unknown, BuildIdentity.Unknown)).ToString());
 
     private Task PerformAsync(
         FailoverStep step, FailoverRequest request, CancellationToken cancellationToken) =>

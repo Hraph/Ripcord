@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Ripcord.Domain;
 using Ripcord.Domain.Inventory;
 using Ripcord.Domain.Pairing;
 using Ripcord.Domain.Replication;
@@ -81,6 +82,17 @@ internal sealed record SnapshotPayload
 
     public HostFactsPayload? Facts { get; init; }
 
+    /// The binary that published this snapshot. Optional and added without moving the wire
+    /// version, for the same reason the power state was: the gate in `ToSnapshot` protects
+    /// whoever holds the list, so a bump would make a not-yet-updated host reject its peer
+    /// outright — and during an update is exactly when the two sides differ.
+    ///
+    /// Absent means "the peer did not say", which `VersionSkew` reports as not comparable. It
+    /// must never read as a match.
+    public string? PublishedByVersion { get; init; }
+
+    public string? PublishedByCommit { get; init; }
+
     public static SnapshotPayload From(HostSnapshot snapshot) => new()
     {
         SchemaVersion = SnapshotWireFormat.WireFormatVersion,
@@ -88,6 +100,8 @@ internal sealed record SnapshotPayload
         HostName = snapshot.State.HostName,
         Vms = [.. snapshot.State.Vms.Select(VmPayload.From)],
         Facts = HostFactsPayload.From(snapshot.State.Facts),
+        PublishedByVersion = snapshot.PublishedBy?.Version,
+        PublishedByCommit = snapshot.PublishedBy?.CommitHash,
     };
 
     /// Anything missing, unknown or out of range yields null rather than a partly built
@@ -117,7 +131,15 @@ internal sealed record SnapshotPayload
         return new HostSnapshot(
             capturedAt,
             new HostState(
-                this.HostName, vms, HostReachability.Reachable(), this.Facts?.ToFacts()));
+                this.HostName, vms, HostReachability.Reachable(), this.Facts?.ToFacts()),
+
+            // Both halves or neither. A build identified by only one of them cannot be shown to
+            // match another, and a half-filled identity would compare unequal for a reason
+            // nobody could act on.
+            this.PublishedByVersion is { Length: > 0 } version
+                && this.PublishedByCommit is { Length: > 0 } commit
+                    ? new BuildIdentity(version, commit)
+                    : null);
     }
 }
 

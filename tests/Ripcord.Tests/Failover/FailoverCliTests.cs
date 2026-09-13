@@ -1,6 +1,7 @@
 using Ripcord.Adapters.Fake;
 using Ripcord.Cli;
 using Ripcord.Domain;
+using Ripcord.Domain.Pairing;
 using Ripcord.Domain.Replication;
 using Ripcord.Domain.Configuration;
 using Ripcord.Ports.Configuration;
@@ -15,6 +16,10 @@ namespace Ripcord.Tests.Failover;
 public class FailoverCliTests
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 13, 14, 0, 0, TimeSpan.Zero);
+
+    /// Both hosts on the same build. A pair running two versions refuses every mutating
+    /// command, so a test meant to reach one has to put the same binary on both sides.
+    private static readonly BuildIdentity Build = new("0.4.0", "abc123def456");
 
     /// Planned and unplanned are different operations with different consequences. Defaulting
     /// would let the wrong one run because nobody typed the word.
@@ -88,7 +93,8 @@ public class FailoverCliTests
             ["failover", "--scenario", "planned", "--vm", "VM-DC-01", "--dry-run"],
             provider: new FakeHypervProvider(FakeScenarios.Healthy(Now)),
             typed: null,
-            peerChannel: FakePeerChannel.Answering(FakeScenarios.PeerSnapshot(Now)));
+            peerChannel: FakePeerChannel.Answering(
+                FakeScenarios.PeerSnapshot(Now, Build)));
 
         Assert.Contains("HOST", run.Output, StringComparison.Ordinal);
         Assert.Contains(FakeScenarios.PeerHostName, run.Output, StringComparison.Ordinal);
@@ -149,11 +155,59 @@ public class FailoverCliTests
                 @"C:\ProgramData\Ripcord\ripcord.yaml",
                 @"C:\Program Files\Ripcord\ripcord.exe",
                 new StringReader(typed ?? ""),
-                "RH"));
+                "RH",
+                Build));
 
         ExitCode code = await cli.RunAsync(args, output, error, CancellationToken.None);
 
         return new CliRun(code, output.ToString(), error.ToString());
+    }
+
+    /// The operator is at a KVM on one host and has to continue on the other. Naming the host
+    /// is not enough — they need the line to type, so it can be read off one screen and entered
+    /// on another without composing it from memory.
+    [Fact]
+    public async Task The_output_gives_the_command_to_run_on_the_other_host()
+    {
+        CliRun run = await Run(
+            ["failover", "--scenario", "planned", "--vm", "VM-DC-01", "--dry-run"],
+            provider: new FakeHypervProvider(FakeScenarios.Healthy(Now)),
+            typed: null,
+            peerChannel: FakePeerChannel.Answering(FakeScenarios.PeerSnapshot(Now, Build)));
+
+        Assert.Contains(
+            "ripcord failover --scenario planned --vm VM-DC-01",
+            run.Output,
+            StringComparison.Ordinal);
+    }
+
+    /// A pair on two versions would execute half a sequence written by each. It refuses, and it
+    /// refuses the dry run too: a plan produced by a binary that will not be running the other
+    /// half is not the plan that would run.
+    [Fact]
+    public async Task A_version_mismatch_refuses_rather_than_warning()
+    {
+        CliRun run = await Run(
+            ["failover", "--scenario", "planned", "--vm", "VM-DC-01", "--dry-run"],
+            typed: null,
+            peerChannel: FakePeerChannel.Answering(
+                FakeScenarios.PeerSnapshot(Now, new BuildIdentity("0.3.0", "999999999999"))));
+
+        Assert.Equal(ExitCode.Refused, run.Code);
+        Assert.Contains("0.3.0", run.Error, StringComparison.Ordinal);
+    }
+
+    /// A peer that never said which binary it runs cannot be shown to match. "Could not be
+    /// established" must not read as "the same".
+    [Fact]
+    public async Task A_peer_that_published_no_build_is_refused_rather_than_assumed_equal()
+    {
+        CliRun run = await Run(
+            ["failover", "--scenario", "planned", "--vm", "VM-DC-01", "--dry-run"],
+            typed: null,
+            peerChannel: FakePeerChannel.Answering(FakeScenarios.PeerSnapshot(Now)));
+
+        Assert.Equal(ExitCode.Refused, run.Code);
     }
 
     private sealed record CliRun(ExitCode Code, string Output, string Error);

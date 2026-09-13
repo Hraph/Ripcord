@@ -44,7 +44,8 @@ public sealed class PairReader(
     LocalStateReader localState,
     IPeerChannel peerChannel,
     ISnapshotStore snapshotStore,
-    IClock clock)
+    IClock clock,
+    BuildIdentity localBuild)
 {
     public async Task<PairRead> ReadAsync(
         RipcordConfiguration configuration, CancellationToken cancellationToken)
@@ -71,7 +72,10 @@ public sealed class PairReader(
             : HostState.Unreachable(configuration.Peer.Hostname, fetch.Reachability);
 
         return new PairRead(
-            new PairView(state, peer, fetch.Snapshot?.CapturedAt), null, local.Notes);
+            new PairView(
+                state, peer, fetch.Snapshot?.CapturedAt, fetch.Snapshot?.PublishedBy),
+            null,
+            local.Notes);
     }
 
     /// A snapshot this host cannot publish is not a reason to fail the command: both callers
@@ -87,8 +91,12 @@ public sealed class PairReader(
 
         try
         {
+            // The snapshot names the binary that wrote it. The peer needs that before it will
+            // move production: a sequence spanning two hosts executed half by each version is
+            // the error class that cannot be recovered from at 3 a.m.
             snapshotStore.Write(
-                configuration.Listener.SnapshotPath, new HostSnapshot(clock.UtcNow, local));
+                configuration.Listener.SnapshotPath,
+                new HostSnapshot(clock.UtcNow, local, localBuild));
         }
         catch (Exception exception) when (
             exception is IOException or UnauthorizedAccessException or ArgumentException)
