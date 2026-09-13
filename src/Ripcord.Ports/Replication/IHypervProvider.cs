@@ -41,4 +41,34 @@ public interface IHypervProvider
     Task StartTestVmAsync(string testVmName, CancellationToken cancellationToken);
 
     Task<Heartbeat> ReadHeartbeatAsync(string testVmName, CancellationToken cancellationToken);
+
+    /// Shuts the guest down through its integration services, and fails rather than falling
+    /// back to cutting the power. Step 1 of a planned failover exists so the disks stop
+    /// changing in an orderly way; a forced power-off leaves the file system as it was mid
+    /// write, which is the data loss the planned sequence is chosen over the unplanned one to
+    /// avoid. A guest that cannot be asked politely is a refusal, not a reason to insist.
+    Task ShutDownVmAsync(string vmName, CancellationToken cancellationToken);
+
+    /// `Start-VMFailover -Prepare` on the primary: sends the last changes across and marks the
+    /// failover started. Reversible — `CancelFailoverAsync` on the same host is the way back,
+    /// and it is the only way back once this has run and a later step has failed.
+    Task PrepareFailoverAsync(string vmName, CancellationToken cancellationToken);
+
+    /// `Start-VMFailover` on the replica: brings the VM up on this host as the live copy.
+    Task StartFailoverAsync(string vmName, CancellationToken cancellationToken);
+
+    /// `Set-VMReplication -Reverse`: turns replication round so the old primary becomes the
+    /// replica. Applied once, by the planned sequence — a failback that reverses again inverts
+    /// the pair.
+    Task ReverseReplicationAsync(string vmName, CancellationToken cancellationToken);
+
+    /// Starts a real VM. Distinct from `StartTestVmAsync`, which names a test copy: the two
+    /// take different names and one of them is production.
+    Task StartVmAsync(string vmName, CancellationToken cancellationToken);
+
+    /// Cancels a failover. **Which of three things this does depends on the state of the VM it
+    /// is aimed at**, and one of them turns production off, so nothing calls it without
+    /// `StopFailoverIntent` having resolved the effect first. The port stays thin: it invokes,
+    /// it does not decide which situation it is in.
+    Task CancelFailoverAsync(string vmName, CancellationToken cancellationToken);
 }

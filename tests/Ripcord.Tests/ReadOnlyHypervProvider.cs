@@ -36,6 +36,24 @@ public abstract class ReadOnlyHypervProvider : IHypervProvider
         string testVmName, CancellationToken cancellationToken) =>
         Refuse<Heartbeat>();
 
+    public Task ShutDownVmAsync(string vmName, CancellationToken cancellationToken) =>
+        Refuse<object>();
+
+    public Task PrepareFailoverAsync(string vmName, CancellationToken cancellationToken) =>
+        Refuse<object>();
+
+    public Task StartFailoverAsync(string vmName, CancellationToken cancellationToken) =>
+        Refuse<object>();
+
+    public Task ReverseReplicationAsync(string vmName, CancellationToken cancellationToken) =>
+        Refuse<object>();
+
+    public Task StartVmAsync(string vmName, CancellationToken cancellationToken) =>
+        Refuse<object>();
+
+    public Task CancelFailoverAsync(string vmName, CancellationToken cancellationToken) =>
+        Refuse<object>();
+
     private static Task<T> Refuse<T>() =>
         throw new NotSupportedException("this double stands in for a read-only command");
 }

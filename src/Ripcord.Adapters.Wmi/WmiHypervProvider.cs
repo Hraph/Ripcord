@@ -111,6 +111,41 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
             },
             cancellationToken);
 
+    public Task ShutDownVmAsync(string vmName, CancellationToken cancellationToken) =>
+        this.OnVmAsync(vmName, WmiFailover.ShutDownGracefully, cancellationToken);
+
+    public Task PrepareFailoverAsync(string vmName, CancellationToken cancellationToken) =>
+        this.OnVmAsync(vmName, (s, vm, _, o) => WmiFailover.Prepare(s, vm, o), cancellationToken);
+
+    public Task StartFailoverAsync(string vmName, CancellationToken cancellationToken) =>
+        this.OnVmAsync(vmName, (s, vm, _, o) => WmiFailover.Failover(s, vm, o), cancellationToken);
+
+    public Task ReverseReplicationAsync(string vmName, CancellationToken cancellationToken) =>
+        this.OnVmAsync(vmName, (s, vm, _, o) => WmiFailover.Reverse(s, vm, o), cancellationToken);
+
+    public Task StartVmAsync(string vmName, CancellationToken cancellationToken) =>
+        this.OnVmAsync(vmName, (s, vm, _, o) => WmiFailover.Start(s, vm, o), cancellationToken);
+
+    public Task CancelFailoverAsync(string vmName, CancellationToken cancellationToken) =>
+        this.OnVmAsync(vmName, (s, vm, _, o) => WmiFailover.Cancel(s, vm, o), cancellationToken);
+
+    /// The six mutating failover verbs differ only in which CIM call they make against one
+    /// VM, so the lookup and the session live here rather than six times over.
+    private Task<bool> OnVmAsync(
+        string vmName,
+        Action<CimSession, CimInstance, string, CimOperationOptions> body,
+        CancellationToken cancellationToken) =>
+        this.OnHostAsync(
+            (session, options) =>
+            {
+                using CimInstance vm = Vm(session, vmName, options);
+
+                body(session, vm, vmName, options);
+
+                return true;
+            },
+            cancellationToken);
+
     /// One session and one set of options per operation, off the calling thread. MI is
     /// synchronous, so every verb on this port would otherwise open with the same four lines.
     private Task<T> OnHostAsync<T>(
