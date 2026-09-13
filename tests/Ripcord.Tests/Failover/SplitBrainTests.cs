@@ -128,6 +128,56 @@ public class SplitBrainTests
         Assert.Null(verdict.Evidence);
     }
 
-    private static VmReplicationState Claim(ReplicationRole role, ReplicationState state) =>
-        new(Vm, role, state, ReplicationHealth.Normal, null, null);
+    /// The second documented route, and the one the replication fields cannot see: the same VM
+    /// powered on independently on both hosts. Roles can look ordinary while this is true —
+    /// a replica left running after a cancelled failover is exactly that shape.
+    [Fact]
+    public void The_same_vm_running_on_both_hosts_is_suspected()
+    {
+        SplitBrain verdict = SplitBrain.Of(
+            Claim(ReplicationRole.Primary, ReplicationState.Replicating, VmPowerState.Running),
+            Claim(ReplicationRole.Replica, ReplicationState.Replicating, VmPowerState.Running));
+
+        Assert.Equal(SplitBrainVerdict.Suspected, verdict.Verdict);
+    }
+
+    /// The ordinary shape of a healthy pair: the replica exists and is switched off.
+    [Fact]
+    public void A_replica_that_is_off_is_not_suspected()
+    {
+        SplitBrain verdict = SplitBrain.Of(
+            Claim(ReplicationRole.Primary, ReplicationState.Replicating, VmPowerState.Running),
+            Claim(ReplicationRole.Replica, ReplicationState.Replicating, VmPowerState.Off));
+
+        Assert.Equal(SplitBrainVerdict.NotSuspected, verdict.Verdict);
+    }
+
+    /// A peer publishing an older wire format carries no power state. That must fall back to
+    /// the role reading rather than turn every pair indeterminate — the whole point of reading
+    /// old snapshots is that a host mid-update stays usable.
+    [Fact]
+    public void An_absent_power_state_falls_back_to_the_role_reading()
+    {
+        SplitBrain verdict = SplitBrain.Of(
+            Claim(ReplicationRole.Primary, ReplicationState.Replicating, null),
+            Claim(ReplicationRole.Replica, ReplicationState.Replicating, null));
+
+        Assert.Equal(SplitBrainVerdict.NotSuspected, verdict.Verdict);
+    }
+
+    /// One side reporting a power state and the other not is still not two running copies.
+    /// Only a positive reading on both sides is a claim.
+    [Fact]
+    public void One_known_running_copy_and_one_unknown_is_not_two_claimants()
+    {
+        SplitBrain verdict = SplitBrain.Of(
+            Claim(ReplicationRole.Primary, ReplicationState.Replicating, VmPowerState.Running),
+            Claim(ReplicationRole.Replica, ReplicationState.Replicating, null));
+
+        Assert.Equal(SplitBrainVerdict.NotSuspected, verdict.Verdict);
+    }
+
+    private static VmReplicationState Claim(
+        ReplicationRole role, ReplicationState state, VmPowerState? power = null) =>
+        new(Vm, role, state, ReplicationHealth.Normal, null, null, null, power);
 }

@@ -108,6 +108,70 @@ public class SnapshotWireFormatTests
         Assert.Equal(ReplicationRole.Primary, read.State.Vms[0].Role);
     }
 
+    /// The power state was added without moving the version, because the readable-versions
+    /// gate protects whoever holds the list: raising it would make a host that has not been
+    /// updated yet reject its peer's snapshot outright. A peer that predates the field simply
+    /// omits it.
+    ///
+    /// It must arrive absent, never as Off. "Not reported" and "positively switched off" are
+    /// opposite inputs to the split-brain reading, and a default here would let a silent peer
+    /// stand in as half the evidence for a conflict that is not happening.
+    [Fact]
+    public void A_payload_without_a_power_state_yields_null_rather_than_off()
+    {
+        string withoutPower = "{\"schema_version\":2,"
+            + "\"captured_at\":\"2026-09-13T14:00:00+00:00\","
+            + "\"host_name\":\"HV-PRIMARY-01\","
+            + "\"vms\":[{\"name\":\"VM-DC-01\",\"role\":1,\"state\":3,\"health\":1,"
+            + "\"last_replication_time\":\"2026-09-13T13:59:32+00:00\",\"pending_bytes\":0}]}";
+
+        HostSnapshot? read = SnapshotWireFormat.Read(withoutPower);
+
+        Assert.NotNull(read);
+        Assert.Null(read.State.Vms[0].PowerState);
+    }
+
+    /// A number this binary does not recognise is Unknown rather than whatever enum member
+    /// happens to sit at that ordinal — and still not Off.
+    [Fact]
+    public void An_unrecognised_power_state_is_unknown_rather_than_a_neighbouring_value()
+    {
+        string odd = "{\"schema_version\":2,"
+            + "\"captured_at\":\"2026-09-13T14:00:00+00:00\","
+            + "\"host_name\":\"HV-PRIMARY-01\","
+            + "\"vms\":[{\"name\":\"VM-DC-01\",\"role\":1,\"state\":3,\"health\":1,"
+            + "\"pending_bytes\":0,\"power_state\":4242}]}";
+
+        HostSnapshot? read = SnapshotWireFormat.Read(odd);
+
+        Assert.Equal(VmPowerState.Unknown, read!.State.Vms[0].PowerState);
+    }
+
+    [Fact]
+    public void A_power_state_survives_the_round_trip()
+    {
+        HostSnapshot original = new(
+            Now,
+            new HostState(
+                "HV-PRIMARY-01",
+                [
+                    new VmReplicationState(
+                        "VM-DC-01",
+                        ReplicationRole.Primary,
+                        ReplicationState.Replicating,
+                        ReplicationHealth.Normal,
+                        Now.AddSeconds(-20),
+                        0,
+                        null,
+                        VmPowerState.Running),
+                ],
+                HostReachability.Reachable()));
+
+        HostSnapshot? read = SnapshotWireFormat.Read(SnapshotWireFormat.Write(original));
+
+        Assert.Equal(VmPowerState.Running, read!.State.Vms[0].PowerState);
+    }
+
     /// Null facts are the degraded shape: a host that could not read its own memory settings
     /// must publish the gap, not a zero that reads as a VM needing no RAM.
     [Fact]

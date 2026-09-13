@@ -137,6 +137,17 @@ internal sealed record VmPayload
 
     public VmFactsPayload? Facts { get; init; }
 
+    /// Added after version 2 shipped, and deliberately **without** a version bump. The gate in
+    /// `ToSnapshot` protects the reader that holds the list, so raising the number would make
+    /// the not-yet-updated host reject its peer's snapshot entirely — the peer would read as
+    /// absent, not degraded, for the whole update window. Unknown JSON members are ignored by
+    /// default, so an optional field is already compatible in both directions; it is the
+    /// version number that would manufacture the incompatibility.
+    ///
+    /// Null means the peer never sent it. It must never arrive as Off: "not reported" and
+    /// "positively switched off" are opposite inputs to the split-brain reading.
+    public int? PowerState { get; init; }
+
     public static VmPayload From(VmReplicationState vm) => new()
     {
         Name = vm.Name,
@@ -146,6 +157,7 @@ internal sealed record VmPayload
         LastReplicationTime = vm.LastReplicationTime,
         PendingBytes = vm.PendingBytes,
         Facts = VmFactsPayload.From(vm.Facts),
+        PowerState = (int?)vm.PowerState,
     };
 
     /// Enums cross as numbers, and a number the other side does not know maps to its Unknown
@@ -160,7 +172,10 @@ internal sealed record VmPayload
                 Defined<ReplicationHealth>(this.Health, ReplicationHealth.Unknown),
                 this.LastReplicationTime,
                 this.PendingBytes,
-                this.Facts?.ToFacts());
+                this.Facts?.ToFacts(),
+                this.PowerState is { } power
+                    ? Defined(power, VmPowerState.Unknown)
+                    : null);
 
     private static T Defined<T>(int value, T fallback)
         where T : struct, Enum =>

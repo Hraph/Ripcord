@@ -24,4 +24,20 @@ public static class CimReplicationValues
         value is { } role && Enum.IsDefined((ReplicationRole)role)
             ? (ReplicationRole)role
             : ReplicationRole.Unknown;
+
+    /// The one lookup here that can return null, and deliberately so. The others answer a
+    /// question the host always has an answer to; this one answers "is the VM running", where
+    /// an absent `EnabledState` means nobody could see, and that is a third answer rather than
+    /// a reading.
+    ///
+    /// It matters because the alternatives are opposites. A failover sequence re-derives where
+    /// it has got to from whether the VM is off, and `SplitBrain` concludes a conflict from two
+    /// copies being on. Folding "could not see" into either would make the sequence step over
+    /// a shutdown that never happened, or invent a conflict out of a silent peer.
+    public static VmPowerState? Power(ushort? value) =>
+        value is not { } state
+            ? null
+            : Enum.IsDefined((VmPowerState)state)
+                ? (VmPowerState)state
+                : VmPowerState.Unknown;
 }

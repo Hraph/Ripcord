@@ -19,12 +19,13 @@ public enum SplitBrainVerdict
 /// this — both sides are writing, and whichever copy is discarded takes real work with it — so
 /// it gates every mutating operation rather than appearing as a finding to read later.
 ///
-/// Judged from replication role and state, on both hosts. It deliberately does **not** claim
-/// to detect every split brain there could be: a VM powered on independently on both hosts
-/// while replication says otherwise would need a power state, which the model does not carry
-/// (V36). What it detects is the two documented routes — both sides claiming primary, and a
-/// live original primary beside a target that has failed over — and the doc comment says so
-/// rather than letting the type's name imply more.
+/// Judged from replication role, replication state and power state, on both hosts. It covers
+/// the three documented routes: two copies powered on at once, both sides claiming primary,
+/// and a live original primary beside a target that has failed over.
+///
+/// It does not claim to detect every split brain there could be — a divergence that shows in
+/// none of those three readings is invisible to it — and saying so is better than letting the
+/// type's name imply more.
 ///
 /// The asymmetry that matters: a missed split brain destroys data, and a phantom one blocks
 /// the failover during an incident. So a claim needs a positive reading on **both** sides.
@@ -53,6 +54,21 @@ public sealed record SplitBrain(SplitBrainVerdict Verdict, string? Evidence)
                 SplitBrainVerdict.Indeterminate,
                 $"the source reports role {onSource.Role} and the target {onTarget.Role}; one "
                 + "of them is a value this binary could not map, so neither claim can be judged");
+        }
+
+        // The route the replication fields cannot see: two copies powered on at once. Roles can
+        // look entirely ordinary while this is true — a replica left running after a cancelled
+        // failover is exactly that shape.
+        //
+        // Both sides must positively report Running. A peer on an older wire format sends no
+        // power state at all, and an absent reading is not a reading of "off": inferring one
+        // here would turn a silent peer into half a split brain.
+        if (onSource.PowerState == VmPowerState.Running
+            && onTarget.PowerState == VmPowerState.Running)
+        {
+            return new SplitBrain(
+                SplitBrainVerdict.Suspected,
+                "this VM is powered on and running on both hosts at once");
         }
 
         if (onSource.Role == ReplicationRole.Primary && onTarget.Role == ReplicationRole.Primary)

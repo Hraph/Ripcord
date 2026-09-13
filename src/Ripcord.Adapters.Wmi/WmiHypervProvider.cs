@@ -20,7 +20,7 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
     /// Msvm_ComputerSystem holds the host as well as its VMs. The filtering rule is
     /// `CimTranslation.IsVirtualMachine`; nothing is discriminated here on a localized string.
     private const string ComputerSystemQuery =
-        "SELECT ElementName, InstallDate, ReplicationMode FROM Msvm_ComputerSystem";
+        "SELECT ElementName, InstallDate, ReplicationMode, EnabledState FROM Msvm_ComputerSystem";
 
     /// The switches are read once for the whole host: every adapter's binding is an object
     /// path carrying the switch's GUID, and resolving that per adapter would be one query per
@@ -136,7 +136,7 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
         foreach (CimInstance instance in session.QueryInstances(
             Namespace,
             "WQL",
-            "SELECT ElementName, InstallDate, ReplicationMode FROM Msvm_ComputerSystem "
+            "SELECT ElementName, InstallDate, ReplicationMode, EnabledState FROM Msvm_ComputerSystem "
                 + $"WHERE ElementName = '{escaped}'",
             options))
         {
@@ -202,7 +202,11 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
             CimReplicationValues.Health(CimValues.Number(relationship, "ReplicationHealth")),
             CimTranslation.Instant(CimValues.Instant(relationship, "LastReplicationTime")),
             ReadPendingBytes(session, vm, relationship, options),
-            WmiVmInventory.Read(session, vm, relationship, switches, options));
+            WmiVmInventory.Read(session, vm, relationship, switches, options),
+
+            // EnabledState is on the computer system, not the relationship: it describes the
+            // VM, and a replica that has never failed over still has one.
+            CimReplicationValues.Power(CimValues.Number(vm, "EnabledState")));
     }
 
     /// GUID to friendly name. `Msvm_VirtualEthernetSwitch.Name` is the GUID an adapter's

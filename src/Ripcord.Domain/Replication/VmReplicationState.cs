@@ -11,7 +11,8 @@ public sealed record VmReplicationState(
     ReplicationHealth Health,
     DateTimeOffset? LastReplicationTime,
     long? PendingBytes,
-    VmFacts? Facts = null)
+    VmFacts? Facts = null,
+    VmPowerState? PowerState = null)
 {
     /// Null means "never replicated", which must not render as a lag of zero.
     public TimeSpan? LagAt(DateTimeOffset now) => Elapsed.Between(LastReplicationTime, now);

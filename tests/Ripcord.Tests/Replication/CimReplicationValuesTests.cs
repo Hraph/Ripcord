@@ -88,4 +88,31 @@ public class CimReplicationValuesTests
     {
         Assert.Equal(ReplicationRole.Unknown, CimReplicationValues.Role(null));
     }
+
+    [Theory]
+    [InlineData(2, VmPowerState.Running)]
+    [InlineData(3, VmPowerState.Off)]
+    [InlineData(32_768, VmPowerState.Paused)]
+    [InlineData(32_769, VmPowerState.Saved)]
+    public void The_documented_enabled_states_are_named(ushort value, VmPowerState expected)
+    {
+        Assert.Equal(expected, CimReplicationValues.Power(value));
+    }
+
+    /// The only lookup here that returns null, and the distinction it draws is load-bearing.
+    /// A failover sequence re-derives its position from whether the VM is off, so "nobody
+    /// could see" answering as "it is off" would step over a shutdown that never happened.
+    [Fact]
+    public void A_missing_enabled_state_is_absent_rather_than_off()
+    {
+        Assert.Null(CimReplicationValues.Power(null));
+    }
+
+    /// Present but unrecognised is a reading, just not one this binary understands — so it is
+    /// Unknown rather than null, and still never Off.
+    [Fact]
+    public void An_unrecognised_enabled_state_is_unknown_rather_than_absent_or_off()
+    {
+        Assert.Equal(VmPowerState.Unknown, CimReplicationValues.Power(4242));
+    }
 }
