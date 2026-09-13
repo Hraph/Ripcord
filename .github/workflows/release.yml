@@ -34,6 +34,7 @@ jobs:
   # The version is worked out on Linux, where the text handling is, and handed to the Windows
   # job that produces the binary.
   version:
+    name: Work out the version
     runs-on: ubuntu-latest
 
     outputs:
@@ -42,7 +43,8 @@ jobs:
       level: ${{ steps.resolve.outputs.level }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out the repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -224,6 +226,7 @@ jobs:
           fi
 
   release:
+    name: Build and publish the release
     needs: version
 
     # The real target platform. The Windows projects do compile on Linux, but a release
@@ -236,21 +239,26 @@ jobs:
       TAG: ${{ needs.version.outputs.tag }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out the repository
+        uses: actions/checkout@v4
         with:
           # SourceLink needs the full history to stamp a commit into InformationalVersion,
           # and `ripcord version` is what tells an operator which binary is on which host.
           fetch-depth: 0
 
-      - uses: actions/setup-dotnet@v4
+      - name: Install the .NET SDK
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
 
       # The gate. A version does not make a broken build releasable, and the whole solution is
       # compiled here — not only the Linux filter — because the WMI adapter ships in this
       # binary and nothing else ever checks that it builds.
-      - run: dotnet build Ripcord.sln -c Release
-      - run: dotnet test Ripcord.Linux.slnf -c Release
+      - name: Compile every project, the WMI adapter included
+        run: dotnet build Ripcord.sln -c Release
+
+      - name: Run the tests
+        run: dotnet test Ripcord.Linux.slnf -c Release
 
       - name: Publish the single self-contained binary
         run: >

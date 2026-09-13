@@ -4,10 +4,14 @@ on: [push, pull_request]
 
 jobs:
   test:
+    name: Build and test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Install the .NET SDK
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
 
@@ -19,12 +23,17 @@ jobs:
       # commits and nothing noticed, because the Linux filter excludes the WMI project and
       # stayed green throughout. This line is what turns the written guarantee into a checked
       # one. It compiles the adapter; it does not pretend to test it.
-      - run: dotnet build Ripcord.sln -c Release
+      - name: Compile every project, the Windows ones included
+        run: dotnet build Ripcord.sln -c Release
 
-      - run: dotnet build Ripcord.Linux.slnf -c Release
-      - run: dotnet test Ripcord.Linux.slnf -c Release --logger trx
+      - name: Build the Linux surface
+        run: dotnet build Ripcord.Linux.slnf -c Release
 
-      - uses: actions/upload-artifact@v4
+      - name: Run the tests
+        run: dotnet test Ripcord.Linux.slnf -c Release --logger trx
+
+      - name: Keep the test results
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: test-results
@@ -33,7 +42,11 @@ jobs:
   # The Dockerfile is the documented local way to run the tests. Building it here keeps it
   # from rotting unnoticed.
   container:
+    name: Build the test container
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - run: docker build -t ripcord-tests .
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Build the image the Dockerfile describes
+        run: docker build -t ripcord-tests .
