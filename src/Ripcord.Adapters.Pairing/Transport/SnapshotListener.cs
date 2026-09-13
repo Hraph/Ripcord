@@ -26,8 +26,19 @@ public sealed class SnapshotListener(
     Func<X509Certificate2> localCertificate,
     PeerTrust trust,
     ISnapshotStore snapshotStore,
-    IClock clock) : IAsyncDisposable
+    IClock clock,
+    TimeSpan? connectionDeadline = null) : IAsyncDisposable
 {
+    /// How long one caller may hold the listener once it has connected. The design serves one
+    /// at a time, so a caller that connects and then stalls would otherwise deny the pair view
+    /// permanently.
+    ///
+    /// It starts when the connection arrives, not when the wait for one does: a deadline that
+    /// covered the idle wait would leave a connection arriving late in the window a fraction
+    /// of a second to complete a handshake, and refuse the real peer for arriving at the
+    /// wrong moment.
+    public static readonly TimeSpan DefaultConnectionDeadline = TimeSpan.FromSeconds(15);
+
     private TcpListener? listener;
 
     /// The port the listener actually bound, which is the requested one unless the caller
@@ -49,6 +60,13 @@ public sealed class SnapshotListener(
 
         using TcpClient client = await this.listener!
             .AcceptTcpClientAsync(cancellationToken).ConfigureAwait(false);
+
+        using CancellationTokenSource connection =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        connection.CancelAfter(connectionDeadline ?? DefaultConnectionDeadline);
+
+        CancellationToken deadline = connection.Token;
 
         string remote = (client.Client.RemoteEndPoint as IPEndPoint)?.Address.ToString() ?? "";
 
@@ -72,12 +90,14 @@ public sealed class SnapshotListener(
                     ClientCertificateRequired = true,
                     EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
                 },
-                cancellationToken).ConfigureAwait(false);
+                deadline).ConfigureAwait(false);
         }
         catch (Exception exception) when (
             exception is AuthenticationException or IOException or SocketException
-                or ObjectDisposedException)
+                or ObjectDisposedException or OperationCanceledException)
         {
+            // A caller that connected and then said nothing is refused like any other: the
+            // deadline is this host's answer, not an error to report upwards.
             return new ServedConnection(observed, remote, Served: false);
         }
 
@@ -102,11 +122,12 @@ public sealed class SnapshotListener(
 
         try
         {
-            await stream.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
-            await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            await stream.WriteAsync(payload, deadline).ConfigureAwait(false);
+            await stream.FlushAsync(deadline).ConfigureAwait(false);
         }
         catch (Exception exception) when (
-            exception is IOException or SocketException or ObjectDisposedException)
+            exception is IOException or SocketException or ObjectDisposedException
+                or OperationCanceledException)
         {
             // The caller hung up mid-write — a client that refused *our* certificate does
             // exactly this. It is not a reason to throw at whoever is running the listener.
@@ -133,11 +154,6 @@ public sealed class LoopingPeerListener(
     IClock clock,
     Action<ServedConnection>? observe = null) : IPeerListener
 {
-    /// One connection may not hold the listener for longer than this. The design serves one
-    /// at a time, so a caller that connects and then stalls would otherwise deny the pair view
-    /// permanently.
-    private static readonly TimeSpan ConnectionDeadline = TimeSpan.FromSeconds(15);
-
     public async Task RunAsync(
         ListenerSettings settings, PeerRules rules, CancellationToken cancellationToken)
     {
@@ -156,14 +172,12 @@ public sealed class LoopingPeerListener(
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            using CancellationTokenSource connection =
-                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            connection.CancelAfter(ConnectionDeadline);
-
             try
             {
+                // The wait for a connection is bounded by the service's own token only. The
+                // per-connection deadline starts inside, once there is a caller to hold it.
                 observe?.Invoke(await listener
-                    .ServeOneAsync(settings.SnapshotPath, rules, connection.Token)
+                    .ServeOneAsync(settings.SnapshotPath, rules, cancellationToken)
                     .ConfigureAwait(false));
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

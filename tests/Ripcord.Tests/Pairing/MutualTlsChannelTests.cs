@@ -167,6 +167,34 @@ public sealed class MutualTlsChannelTests : IDisposable
         Assert.Equal(ReachabilityKind.TimedOut, fetch.Reachability.Kind);
     }
 
+    /// The listener serves one caller at a time, so a caller that connects and then says
+    /// nothing would hold the pair view for as long as it liked. The deadline starts when the
+    /// connection arrives — a deadline covering the idle wait would refuse the real peer for
+    /// arriving late in the window.
+    [Fact]
+    public async Task A_caller_that_connects_and_then_says_nothing_is_let_go_of()
+    {
+        await using SnapshotListener listener = this.Listener(
+            new InMemorySnapshotStore(), connectionDeadline: TimeSpan.FromMilliseconds(250));
+
+        listener.Start(IPAddress.Loopback, 0);
+
+        Task<ServedConnection> serving = listener.ServeOneAsync(
+            "state.json", this.RulesFor("CN=HV-REPLICA-01", "127.0.0.1"), CancellationToken.None);
+
+        using System.Net.Sockets.TcpClient silent = new();
+        await silent.ConnectAsync(IPAddress.Loopback, listener.Port);
+
+        // Waited on with a bound of its own: a deadline that did not fire would otherwise
+        // hang the whole test run rather than fail this test.
+        Assert.Same(serving, await Task.WhenAny(serving, Task.Delay(TimeSpan.FromSeconds(10))));
+
+        ServedConnection served = await serving;
+
+        Assert.False(served.Served);
+        Assert.Equal(PeerVerdict.NoCertificate, served.Verdict);
+    }
+
     private async Task<PeerFetch> ExchangeAsync(
         HostSnapshot publish,
         X509Certificate2? clientCertificate = null,
@@ -215,12 +243,15 @@ public sealed class MutualTlsChannelTests : IDisposable
     }
 
     private SnapshotListener Listener(
-        InMemorySnapshotStore store, X509Certificate2? serverCertificate = null) =>
+        InMemorySnapshotStore store,
+        X509Certificate2? serverCertificate = null,
+        TimeSpan? connectionDeadline = null) =>
         new(
             () => serverCertificate ?? this.Issue(this.pairCa, "CN=HV-PRIMARY-01"),
             new PeerTrust([this.pairCa.RootCertificate]),
             store,
-            new FixedClock(Now));
+            new FixedClock(Now),
+            connectionDeadline);
 
     private MutualTlsPeerChannel Channel(X509Certificate2? clientCertificate = null) =>
         new(
