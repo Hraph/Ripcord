@@ -174,6 +174,41 @@ Describe 'the DER signature reader' {
     }
 }
 
+Describe 'where a release is asked for' {
+    <#
+        The route that was wrong, pinned so it cannot come back. `github.com/repositories/{id}`
+        is not a path GitHub serves — it answers 404 for everything under it, so an installer
+        built on it could never download anything. The numeric id belongs to the API.
+    #>
+    It 'asks the API, by the repository id' {
+        Get-ReleaseApiUri |
+            Should -Be 'https://api.github.com/repositories/1367653231/releases/latest'
+    }
+
+    It 'asks for a named tag when one was given' {
+        Get-ReleaseApiUri -Tag 'v0.1.0' |
+            Should -Be 'https://api.github.com/repositories/1367653231/releases/tags/v0.1.0'
+    }
+
+    It 'never addresses the web host by id' {
+        foreach ($uri in @((Get-ReleaseApiUri), (Get-ReleaseApiUri -Tag 'v1.2.3'))) {
+            $uri | Should -Not -BeLike 'https://github.com/repositories/*'
+        }
+    }
+
+    It 'carries the repository id the binary carries' {
+        $program = Get-Content -LiteralPath (
+            Join-Path $script:RepositoryRoot 'src/Ripcord.Host.Windows/Program.cs') -Raw
+
+        # Written 1_367_653_231 there and 1367653231 here; the same number either way, and the
+        # day one moves without the other the installer would fetch a stranger's releases.
+        $declared = [regex]::Match($program, 'RepositoryId\s*=\s*([0-9_]+)')
+
+        $declared.Success | Should -BeTrue
+        $declared.Groups[1].Value.Replace('_', '') | Should -Be "$script:RepositoryId"
+    }
+}
+
 Describe 'the published checksum' {
     BeforeAll {
         $script:Directory = Join-Path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString('N'))

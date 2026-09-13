@@ -165,8 +165,16 @@ function ConvertFrom-DerSignature {
         Stop-Install 'the signature uses a DER length form this script does not read'
     }
 
+    $end = $position + $length
+
     $r = Read-DerInteger -Der $Der -Position ([ref] $position)
     $s = Read-DerInteger -Der $Der -Position ([ref] $position)
+
+    # The two integers are the whole sequence. Anything after them is a file that is not what
+    # it says it is, and reading past what the header declared is how a parser accepts one.
+    if ($position -ne $end) {
+        Stop-Install 'the signature holds more than the two integers it declared'
+    }
 
     # Cast back to a byte array: concatenating two of them gives an object array, and CNG
     # wants sixty-four bytes rather than sixty-four boxed ones.
@@ -243,7 +251,9 @@ function Test-ReleaseSignature {
         Stop-Install 'the release carries no signature; an absent proof is a failed proof'
     }
 
-    if ($PSVersionTable.PSVersion.Major -ge 7) {
+    # 7.1, not 7: ImportFromPem arrived with .NET 5, and PowerShell 7.0 is on .NET Core 3.1
+    # without it. A stray 7.0 must take the other path rather than fail on a missing method.
+    if ($PSVersionTable.PSVersion -ge [version] '7.1') {
         $key = [System.Security.Cryptography.ECDsa]::Create()
 
         try {
@@ -357,14 +367,57 @@ function Assert-Release {
     Write-Step 'signature verified against the key this script carries'
 }
 
-function Get-ReleaseUri {
-    param([Parameter(Mandatory)][string] $Asset)
+<#
+    Where to ask what a release consists of.
 
-    if ($Version) {
-        return "https://github.com/repositories/$script:RepositoryId/releases/download/$Version/$Asset"
+    The numeric id is an API route, not a web one: `api.github.com/repositories/{id}` resolves,
+    and `github.com/repositories/{id}` has never existed and answers 404 for everything under
+    it. So the metadata is read from the API, by id, and each file is fetched from the URL that
+    answer names.
+
+    The pinning is unchanged by that, and arguably firmer: the id alone decides whose release
+    is read, and the download address is whatever that repository reports. The owner and the
+    name are never typed here.
+#>
+function Get-ReleaseApiUri {
+    param([string] $Tag)
+
+    $releases = "https://api.github.com/repositories/$script:RepositoryId/releases"
+
+    if ($Tag) {
+        return "$releases/tags/$Tag"
     }
 
-    "https://github.com/repositories/$script:RepositoryId/releases/latest/download/$Asset"
+    "$releases/latest"
+}
+
+function Get-ReleaseAssets {
+    param([string] $Tag)
+
+    $uri = Get-ReleaseApiUri -Tag $Tag
+
+    # The API refuses a request with no user agent, and answers an older shape without the
+    # version header.
+    $headers = @{
+        'User-Agent' = 'ripcord-install'
+        'Accept' = 'application/vnd.github+json'
+        'X-GitHub-Api-Version' = '2022-11-28'
+    }
+
+    try {
+        $release = Invoke-RestMethod -UseBasicParsing -Uri $uri -Headers $headers
+    }
+    catch {
+        Stop-Install "could not read the release from $uri : $($_.Exception.Message)"
+    }
+
+    $assets = @{}
+
+    foreach ($asset in $release.assets) {
+        $assets[$asset.name] = $asset.browser_download_url
+    }
+
+    $assets
 }
 
 function Save-Release {
@@ -376,8 +429,14 @@ function Save-Release {
 
     New-Item -ItemType Directory -Force -Path $Directory | Out-Null
 
+    $assets = Get-ReleaseAssets -Tag $Version
+
     foreach ($asset in @($script:ExeName, $script:ChecksumName, $script:SignatureName)) {
-        $uri = Get-ReleaseUri -Asset $asset
+        if (-not $assets.ContainsKey($asset)) {
+            Stop-Install "the release carries no $asset; it is not one this script can install"
+        }
+
+        $uri = $assets[$asset]
         Write-Step "fetching $asset"
 
         try {
@@ -515,9 +574,14 @@ function Add-DashboardShortcut {
 }
 
 function Assert-Windows {
-    # $IsWindows exists on PowerShell 6 and later; on 5.1 there is no other platform to be on.
-    if ($PSVersionTable.PSVersion.Major -ge 6 -and -not $IsWindows) {
-        Stop-Install 'Ripcord runs on Windows: this installs a win-x64 binary and a Windows service'
+    # $IsWindows exists on PowerShell 6 and later; on 5.1 there is no other platform to be on,
+    # and under strict mode reading it there would throw. PowerShell's -and does short-circuit,
+    # so one condition would have been safe — nested because a guard whose safety depends on
+    # the order of its operands is a guard waiting for somebody to reorder it.
+    if ($PSVersionTable.PSVersion.Major -ge 6) {
+        if (-not $IsWindows) {
+            Stop-Install 'Ripcord runs on Windows: this installs a win-x64 binary and a Windows service'
+        }
     }
 }
 
