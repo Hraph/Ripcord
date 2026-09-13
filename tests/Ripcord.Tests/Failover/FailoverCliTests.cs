@@ -300,19 +300,20 @@ public class FailoverCliTests
         StringWriter error = new();
 
         RipcordCli cli = new(
-            new StubConfigStore(),
-            provider ?? new FakeHypervProvider(FakeScenarios.Healthy(Now)),
-            FakeHostSystemProvider.Target(),
-            FakeCertificateProvider.Valid(ValidDocument.LocalThumbprint, "CN=HV-REPLICA-01"),
-            peerChannel ?? FakePeerChannel.Absent(),
-            new InMemorySnapshotStore(),
-            new NoOpDeploymentExecutor(),
-            new NoOpPeerListener(),
-            new InMemoryAuditLog(),
-            new StubNotifier(),
-            new MemoryAlertStateStore(),
-            StubReleaseFeed.Unreachable(),
-            new FixedClock(Now),
+            new RipcordPorts(
+                new StubConfigStore(),
+                provider ?? new FakeHypervProvider(FakeScenarios.Healthy(Now)),
+                FakeHostSystemProvider.Target(),
+                FakeCertificateProvider.Valid(ValidDocument.LocalThumbprint, "CN=HV-REPLICA-01"),
+                peerChannel ?? FakePeerChannel.Absent(),
+                new InMemorySnapshotStore(),
+                new NoOpDeploymentExecutor(),
+                new NoOpPeerListener(),
+                new InMemoryAuditLog(),
+                new StubNotifier(),
+                new MemoryAlertStateStore(),
+                StubReleaseFeed.Unreachable(),
+                new FixedClock(Now)),
             new CliEnvironment(
                 FakeScenarios.LocalHostName,
                 @"C:\ProgramData\Ripcord\ripcord.yaml",

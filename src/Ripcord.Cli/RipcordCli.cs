@@ -42,23 +42,27 @@ public sealed record CliEnvironment(
     /// the test host happened to stamp.
     BuildIdentity? Build = null);
 
+/// Every port the command surface reaches the machine through. Grouped rather than listed one
+/// by one, because each milestone adds another and a composition root nobody can read is a
+/// composition root nobody checks.
+public sealed record RipcordPorts(
+    IConfigStore ConfigStore,
+    IHypervProvider Provider,
+    IHostSystemProvider HostSystem,
+    ICertificateProvider Certificates,
+    IPeerChannel PeerChannel,
+    ISnapshotStore SnapshotStore,
+    IDeploymentExecutor DeploymentExecutor,
+    IPeerListener PeerListener,
+    IAuditLog Audit,
+    INotifier Notifier,
+    IAlertStateStore AlertState,
+    IReleaseFeed ReleaseFeed,
+    IClock Clock);
+
 /// Argument parsing and console rendering. No decision lives here: the exit code comes from
 /// the use case, the layout from StatusRenderer.
-public sealed class RipcordCli(
-    IConfigStore configStore,
-    IHypervProvider provider,
-    IHostSystemProvider hostSystemProvider,
-    ICertificateProvider certificateProvider,
-    IPeerChannel peerChannel,
-    ISnapshotStore snapshotStore,
-    IDeploymentExecutor deploymentExecutor,
-    IPeerListener peerListener,
-    IAuditLog audit,
-    INotifier notifier,
-    IAlertStateStore alertState,
-    IReleaseFeed releaseFeed,
-    IClock clock,
-    CliEnvironment environment)
+public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 {
     /// Typed in full, not "y": this creates a Windows service and opens an inbound port on a
     /// host that may run a domain controller. A keystroke is not a decision.
@@ -148,7 +152,7 @@ public sealed class RipcordCli(
             return ExitCode.InvalidConfiguration;
         }
 
-        StatusQuery query = new(configStore, this.Pair());
+        StatusQuery query = new(ports.ConfigStore, this.Pair());
 
         StatusOutcome outcome = await query
             .ExecuteAsync(new StatusRequest(path, environment.MachineName), cancellationToken)
@@ -164,7 +168,7 @@ public sealed class RipcordCli(
         if (outcome.Rendered is { } rendered)
         {
             output.Write(StatusRenderer.Render(
-                rendered.View, rendered.Configuration.Peer.OfflineAfter, clock.UtcNow));
+                rendered.View, rendered.Configuration.Peer.OfflineAfter, ports.Clock.UtcNow));
             return outcome.Code;
         }
 
@@ -186,7 +190,7 @@ public sealed class RipcordCli(
             return ExitCode.InvalidConfiguration;
         }
 
-        CheckQuery query = new(configStore, this.Pair(), clock);
+        CheckQuery query = new(ports.ConfigStore, this.Pair(), ports.Clock);
 
         CheckOutcome outcome = await query
             .ExecuteAsync(
@@ -236,7 +240,7 @@ public sealed class RipcordCli(
             return;
         }
 
-        AlertDispatch dispatch = new(alertState, notifier, clock);
+        AlertDispatch dispatch = new(ports.AlertState, ports.Notifier, ports.Clock);
 
         AlertOutcome outcome = await dispatch
             .ExecuteAsync(report, configuration.Alerting, dryRun, cancellationToken)
@@ -260,7 +264,7 @@ public sealed class RipcordCli(
             return ExitCode.InvalidConfiguration;
         }
 
-        UpdateQuery query = new(configStore, releaseFeed);
+        UpdateQuery query = new(ports.ConfigStore, ports.ReleaseFeed);
 
         UpdateOutcome outcome = await query
             .ExecuteAsync(
@@ -300,7 +304,7 @@ public sealed class RipcordCli(
         }
 
         ConfigurationValidation validation = ConfigurationGate.Open(
-            configStore,
+            ports.ConfigStore,
             options.ConfigurationPath ?? environment.DefaultConfigurationPath,
             environment.MachineName);
 
@@ -319,7 +323,7 @@ public sealed class RipcordCli(
             return ExitCode.Success;
         }
 
-        await peerListener
+        await ports.PeerListener
             .RunAsync(configuration.Listener, endpoint.Rules, cancellationToken)
             .ConfigureAwait(false);
 
@@ -336,7 +340,7 @@ public sealed class RipcordCli(
             return ExitCode.InvalidConfiguration;
         }
 
-        ListenerDeployment deployment = new(configStore, deploymentExecutor);
+        ListenerDeployment deployment = new(ports.ConfigStore, ports.DeploymentExecutor);
 
         DeploymentOutcome outcome = deployment.Plan(new DeploymentRequest(
             options.ConfigurationPath ?? environment.DefaultConfigurationPath,
@@ -410,7 +414,7 @@ public sealed class RipcordCli(
         }
 
         SweepReport sweep = await new FailoverSweepQuery(
-                configStore, this.Pair(), provider, audit, clock, FailoverTiming.Default)
+                ports.ConfigStore, this.Pair(), ports.Provider, ports.Audit, ports.Clock, FailoverTiming.Default)
             .ExecuteAsync(
                 new SweepCommand(
                     options.ConfigurationPath ?? environment.DefaultConfigurationPath,
@@ -472,7 +476,7 @@ public sealed class RipcordCli(
         }
 
         FenceOutcome outcome = await new FenceQuery(
-                configStore, this.Pair(), provider, audit, clock)
+                ports.ConfigStore, this.Pair(), ports.Provider, ports.Audit, ports.Clock)
             .ExecuteAsync(
                 new FenceCommand(
                     options.ConfigurationPath ?? environment.DefaultConfigurationPath,
@@ -491,7 +495,7 @@ public sealed class RipcordCli(
             return outcome.Code;
         }
 
-        output.Write(FenceRenderer.Render(outcome, clock.UtcNow));
+        output.Write(FenceRenderer.Render(outcome, ports.Clock.UtcNow));
         return outcome.Code;
     }
 
@@ -783,7 +787,7 @@ public sealed class RipcordCli(
         }
 
         TestFailoverQuery query = new(
-            configStore, this.Pair(), provider, clock, TestFailoverTiming.Default);
+            ports.ConfigStore, this.Pair(), ports.Provider, ports.Clock, TestFailoverTiming.Default);
 
         TestFailoverOutcome outcome = await query
             .ExecuteAsync(
@@ -890,10 +894,10 @@ public sealed class RipcordCli(
 
     private PairReader Pair() =>
         new(
-            new LocalStateReader(provider, hostSystemProvider, certificateProvider),
-            peerChannel,
-            snapshotStore,
-            clock,
+            new LocalStateReader(ports.Provider, ports.HostSystem, ports.Certificates),
+            ports.PeerChannel,
+            ports.SnapshotStore,
+            ports.Clock,
             this.LocalBuild);
 
     /// What this binary is, for the snapshot it publishes and for the skew check that reads the

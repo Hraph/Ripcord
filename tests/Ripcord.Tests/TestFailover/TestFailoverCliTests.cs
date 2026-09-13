@@ -232,19 +232,20 @@ public class TestFailoverCliTests
         StringWriter error = new();
 
         RipcordCli cli = new(
-            configStore ?? new StubConfigStore(),
-            provider ?? new FakeHypervProvider(FakeScenarios.Healthy(Now)),
-            FakeHostSystemProvider.Target(),
-            FakeCertificateProvider.Valid(ValidDocument.LocalThumbprint, "CN=HV-REPLICA-01"),
-            peerChannel ?? FakePeerChannel.Absent(),
-            new InMemorySnapshotStore(),
-            new NoOpDeploymentExecutor(),
-            new NoOpPeerListener(),
-            new InMemoryAuditLog(),
-            new StubNotifier(),
-            new MemoryAlertStateStore(),
-            StubReleaseFeed.Unreachable(),
-            new FixedClock(Now),
+            new RipcordPorts(
+                configStore ?? new StubConfigStore(),
+                provider ?? new FakeHypervProvider(FakeScenarios.Healthy(Now)),
+                FakeHostSystemProvider.Target(),
+                FakeCertificateProvider.Valid(ValidDocument.LocalThumbprint, "CN=HV-REPLICA-01"),
+                peerChannel ?? FakePeerChannel.Absent(),
+                new InMemorySnapshotStore(),
+                new NoOpDeploymentExecutor(),
+                new NoOpPeerListener(),
+                new InMemoryAuditLog(),
+                new StubNotifier(),
+                new MemoryAlertStateStore(),
+                StubReleaseFeed.Unreachable(),
+                new FixedClock(Now)),
             new CliEnvironment(
                 machineName,
                 @"C:\ProgramData\Ripcord\ripcord.yaml",

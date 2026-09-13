@@ -497,20 +497,21 @@ public class RipcordCliTests
         StringWriter error = new();
 
         RipcordCli cli = new(
-            configStore ?? new RecordingConfigStore(),
-            provider ?? new FakeHypervProvider(FakeScenarios.Healthy(Now)),
-            FakeHostSystemProvider.Target(),
-            FakeCertificateProvider.Valid(
-                Tests.Configuration.ValidDocument.LocalThumbprint, "CN=HV-REPLICA-01"),
-            FakePeerChannel.Absent(),
-            new InMemorySnapshotStore(),
-            deploymentExecutor ?? new FakeDeploymentExecutor(),
-            new NoOpPeerListener(),
-            new InMemoryAuditLog(),
-            notifier ?? new StubNotifier(),
-            alertState ?? new MemoryAlertStateStore(),
-            releaseFeed ?? StubReleaseFeed.Unreachable(),
-            new FixedClock(Now),
+            new RipcordPorts(
+                configStore ?? new RecordingConfigStore(),
+                provider ?? new FakeHypervProvider(FakeScenarios.Healthy(Now)),
+                FakeHostSystemProvider.Target(),
+                FakeCertificateProvider.Valid(
+                    Tests.Configuration.ValidDocument.LocalThumbprint, "CN=HV-REPLICA-01"),
+                FakePeerChannel.Absent(),
+                new InMemorySnapshotStore(),
+                deploymentExecutor ?? new FakeDeploymentExecutor(),
+                new NoOpPeerListener(),
+                new InMemoryAuditLog(),
+                notifier ?? new StubNotifier(),
+                alertState ?? new MemoryAlertStateStore(),
+                releaseFeed ?? StubReleaseFeed.Unreachable(),
+                new FixedClock(Now)),
             new CliEnvironment(
                 machineName, DefaultConfigPath, BinaryPath, new StringReader(typed ?? "")));
 

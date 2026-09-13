@@ -49,28 +49,30 @@ internal static class Program
         MachineCertificateStore certificates = new();
 
         RipcordCli cli = new(
-            new YamlConfigStore(),
-            new WmiHypervProvider(Environment.MachineName, WmiTimeout),
-            new WmiHostSystemProvider(WmiTimeout),
-            certificates,
-            new MutualTlsPeerChannel(
-                MachineCertificateStore.WithPrivateKey, PeerTrust.MachineStore, clock),
-            snapshotStore,
-            new WindowsDeploymentExecutor(),
-            new LoopingPeerListener(
-                MachineCertificateStore.WithPrivateKey,
-                PeerTrust.MachineStore,
+            new RipcordPorts(
+                new YamlConfigStore(),
+                new WmiHypervProvider(Environment.MachineName, WmiTimeout),
+                new WmiHostSystemProvider(WmiTimeout),
+                certificates,
+                new MutualTlsPeerChannel(
+                    MachineCertificateStore.WithPrivateKey, PeerTrust.MachineStore, clock),
                 snapshotStore,
-                clock,
-                Report),
-            new JsonLinesAuditLog(
-                Path.Combine(AppContext.BaseDirectory, "audit.jsonl")),
-            new TransportNotifier(new EnvironmentSecretStore(), TransportNotifier.DefaultTimeout),
-            new FileAlertStateStore(
-                Path.Combine(AppContext.BaseDirectory, "alert-state.json")),
-            new GitHubReleaseFeed(
-                RepositoryId, $"ripcord/{BuildInfo.VersionWithCommit}", HttpTimeout),
-            clock,
+                new WindowsDeploymentExecutor(),
+                new LoopingPeerListener(
+                    MachineCertificateStore.WithPrivateKey,
+                    PeerTrust.MachineStore,
+                    snapshotStore,
+                    clock,
+                    Report),
+                new JsonLinesAuditLog(
+                    Path.Combine(AppContext.BaseDirectory, "audit.jsonl")),
+                new TransportNotifier(
+                    new EnvironmentSecretStore(), TransportNotifier.DefaultTimeout),
+                new FileAlertStateStore(
+                    Path.Combine(AppContext.BaseDirectory, "alert-state.json")),
+                new GitHubReleaseFeed(
+                    RepositoryId, $"ripcord/{BuildInfo.VersionWithCommit}", HttpTimeout),
+                clock),
             new CliEnvironment(
                 Environment.MachineName,
                 defaultConfigPath,
