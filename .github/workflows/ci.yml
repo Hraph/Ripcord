@@ -14,6 +14,7 @@ jobs:
   test:
     name: Build and test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Check out the repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -54,6 +55,9 @@ jobs:
   installer:
     name: Verify the installer
     runs-on: windows-latest
+    # Nothing here should take five minutes. Without a bound, a step that stops to ask a
+    # question on a runner with no keyboard waits six hours before anybody is told.
+    timeout-minutes: 15
     steps:
       - name: Check out the repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -80,10 +84,30 @@ jobs:
         env:
           RIPCORD_SIGNATURE_VECTORS: ${{ runner.temp }}/vectors
         run: |
+          # Windows PowerShell draws a progress bar even with nowhere to draw it, and on a
+          # module download that costs minutes rather than seconds. It is most of why this
+          # step used to sit silent long enough to look wedged.
+          $ProgressPreference = 'SilentlyContinue'
+
           [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-          Install-PackageProvider -Name NuGet -Force -Scope CurrentUser | Out-Null
-          Install-Module Pester -MinimumVersion 5.5.0 -Force -SkipPublisherCheck -Scope CurrentUser
+
+          Write-Host 'installing Pester from the PowerShell Gallery'
+
+          # Trusted first, and -Confirm:$false after. An untrusted repository asks before it
+          # installs, and a question asked where there is no keyboard is the one way this step
+          # can genuinely hang rather than merely be slow.
+          Install-PackageProvider -Name NuGet -Force -Scope CurrentUser -Confirm:$false | Out-Null
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+
+          Install-Module Pester -MinimumVersion 5.5.0 -Force -SkipPublisherCheck `
+            -Scope CurrentUser -AllowClobber -Confirm:$false
+
           Import-Module Pester -MinimumVersion 5.5.0
+
+          # Which Pester actually loaded: 5.1 ships 3.4.0 in System32 and it wins on load
+          # order more often than anyone expects.
+          Write-Host "Pester $((Get-Module Pester).Version) under $($PSVersionTable.PSVersion)"
+
           Invoke-Pester -CI -Output Detailed tests/install/Install.Tests.ps1
 
   # The Dockerfile is the documented local way to run the tests. Building it here keeps it
@@ -91,6 +115,7 @@ jobs:
   container:
     name: Build the test container
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Check out the repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
