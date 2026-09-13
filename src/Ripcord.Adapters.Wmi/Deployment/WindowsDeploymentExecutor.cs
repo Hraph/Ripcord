@@ -121,10 +121,13 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
 
     /// The service account's access is what matters, and only Windows can answer that. The
     /// file being absent is not the same as being unreadable, but it needs the same step.
+    ///
+    /// What the answer means is AccessControl's: an entry denying the account also names it,
+    /// and a substring search would read that as access the service does not have.
     private static bool SnapshotReadable(string snapshotPath) =>
         File.Exists(snapshotPath)
-        && Run("icacls", $"\"{snapshotPath}\"").Output
-            .Contains(DeploymentPlan.ServiceAccount, StringComparison.OrdinalIgnoreCase);
+        && AccessControl.GrantsRead(
+            Run("icacls", $"\"{snapshotPath}\"").Output, DeploymentPlan.ServiceAccount);
 
     /// `netsh`'s field labels are localised too, so an unparseable rule is reported as not
     /// matching rather than as matching. That costs one redundant rule rewrite per run on a
