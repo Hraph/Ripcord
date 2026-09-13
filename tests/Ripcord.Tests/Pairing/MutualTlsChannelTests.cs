@@ -167,6 +167,33 @@ public sealed class MutualTlsChannelTests : IDisposable
         Assert.Equal(ReachabilityKind.TimedOut, fetch.Reachability.Kind);
     }
 
+    /// The ordering the deadline depends on: it must start when the connection arrives, not
+    /// when the wait for one does. Nobody connects until well past the deadline here, and the
+    /// exchange that follows still has to complete — under a deadline that covered the idle
+    /// wait, the accept itself would have been cancelled long before this client dialled.
+    [Fact]
+    public async Task A_caller_arriving_long_after_the_deadline_would_have_elapsed_is_served()
+    {
+        InMemorySnapshotStore store = new();
+        store.Write("state.json", FakeScenarios.PeerSnapshot(Now.AddMinutes(-2)));
+
+        await using SnapshotListener listener = this.Listener(
+            store, connectionDeadline: TimeSpan.FromMilliseconds(300));
+
+        listener.Start(IPAddress.Loopback, 0);
+
+        Task<ServedConnection> serving = listener.ServeOneAsync(
+            "state.json", this.RulesFor("CN=HV-REPLICA-01", "127.0.0.1"), CancellationToken.None);
+
+        await Task.Delay(TimeSpan.FromMilliseconds(750));
+
+        PeerFetch fetch = await this.Channel()
+            .FetchAsync(this.EndpointFor(listener.Port), CancellationToken.None);
+
+        Assert.NotNull(fetch.Snapshot);
+        Assert.True((await serving).Served);
+    }
+
     /// The listener serves one caller at a time, so a caller that connects and then says
     /// nothing would hold the pair view for as long as it liked. The deadline starts when the
     /// connection arrives — a deadline covering the idle wait would refuse the real peer for

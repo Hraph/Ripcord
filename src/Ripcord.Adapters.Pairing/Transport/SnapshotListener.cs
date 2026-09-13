@@ -92,6 +92,12 @@ public sealed class SnapshotListener(
                 },
                 deadline).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The service is stopping. Reporting that as a refused caller would put a line in
+            // the log blaming whoever happened to be connected at the time.
+            throw;
+        }
         catch (Exception exception) when (
             exception is AuthenticationException or IOException or SocketException
                 or ObjectDisposedException or OperationCanceledException)
@@ -124,6 +130,10 @@ public sealed class SnapshotListener(
         {
             await stream.WriteAsync(payload, deadline).ConfigureAwait(false);
             await stream.FlushAsync(deadline).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception exception) when (
             exception is IOException or SocketException or ObjectDisposedException
