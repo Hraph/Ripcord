@@ -779,9 +779,9 @@ function Invoke-Install {
             Write-Step "wrote a starting ripcord.yaml for the $chosen host"
         }
 
-        Write-Warning (
-            "$configuration is a template, not a configuration. It names no peer and no VM, "
-            + 'and every command refuses until you fill it in.')
+        # The operator is told twice on purpose: once here, and once by every command that
+        # refuses until the file is filled in.
+        Write-Warning "$configuration is a template: it names no peer and no VM, and every command refuses until you fill it in."
     }
 
     Add-ToMachinePath -Directory $Path
