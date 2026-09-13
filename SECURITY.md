@@ -51,6 +51,24 @@ of them is a report about the deployment rather than about the tool.
   and this control does not stop them — it stops a replaced asset and a tampered download. The
   trade is recorded rather than implied.
 
+- **The installer verifies what it installs; nothing verifies the installer.** `install.ps1`
+  carries the same public key that is compiled into the binary, because a first install has no
+  binary to verify with. It checks the SHA-256 and the detached signature before anything
+  lands, and there is no switch to skip that.
+
+  The gap is where the key comes from. Piped straight into a shell —
+  `irm ... | iex` — the script and the key it trusts arrive together from the same place, so
+  whoever can change one can change both: that install is protected against a swapped release
+  asset and a tampered download, and not against the repository itself. Reading the script
+  first, or fetching it once with `-Prepare` and copying that folder to the hosts, is what
+  turns the embedded key into a trust root that was pinned at a moment somebody chose. The
+  offline path is the arrangement these two hosts are meant to run in anyway, and it is the one
+  worth using.
+
+  Once a host holds a verified binary, that binary's own key takes over and the installer is out
+  of the picture: further releases go through `ripcord update`, and the installer refuses a host
+  that already has one rather than quietly reinstalling over it.
+
 ## Verifying a release
 
 The published binary is not code-signed. Each release ships `ripcord.exe.sha256`; check it

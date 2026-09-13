@@ -32,11 +32,11 @@ path; the copy by hand is still supported and is what a host with no outbound ac
 1. `ripcord status`, then `ripcord check` — start from a healthy pair. If you do not, you will
    not be able to tell afterwards which problem you caused.
 2. `ripcord update --dry-run` — read the plan and the consequence it prints.
-3. `Stop-Service ripcord-listener`, so the file is not held open.
+3. `Stop-Service ripcord`, so the file is not held open.
 4. `ripcord update`, and type the node name. It downloads, verifies the signature against the
    key compiled into the running binary, and refuses without touching anything if it does not
    verify.
-5. `Start-Service ripcord-listener`, then `ripcord version` — the new binary runs from here, not
+5. `Start-Service ripcord`, then `ripcord version` — the new binary runs from here, not
    from the command that installed it.
 6. Move to the other host and repeat.
 
@@ -49,10 +49,10 @@ path; the copy by hand is still supported and is what a host with no outbound ac
    signature against `ripcord.exe.sig` — the commands are under
    [The release signing key](#the-release-signing-key).
 4. Stop the listener service, so the file is not in use:
-   `Stop-Service ripcord-listener`
+   `Stop-Service ripcord`
 5. Replace `ripcord.exe`. The configuration lives beside the binary and is not touched —
    updating Ripcord is replacing one file.
-6. `Start-Service ripcord-listener`
+6. `Start-Service ripcord`
 7. `ripcord version` — confirm the new version and commit hash.
 8. Move to the other host and repeat from step 3.
 
@@ -149,10 +149,14 @@ cannot be installed — the workflow fails rather than warns.
 - **The same bytes** are the repository secret `RIPCORD_SIGNING_KEY`. The workflow writes it to
   a temporary file rather than passing it as an argument, signs, verifies what it just wrote,
   and deletes the file in the same step.
-- **Public half**: the `ReleaseSigningKey` constant in `src/Ripcord.Host.Windows/Program.cs`.
-  Compiled in, never read from `ripcord.yaml`, for the same reason the repository is addressed
-  by numeric id: an attacker who can edit the configuration must not be able to change what the
-  host accepts as genuine.
+- **Public half, twice**: the `ReleaseSigningKey` constant in
+  `src/Ripcord.Host.Windows/Program.cs`, and the same PEM block in `install.ps1`. Two copies
+  because they answer at different moments — the binary verifies its own replacement, and the
+  installer has no binary yet to verify the first one with. Neither is read from
+  `ripcord.yaml`, for the same reason the repository is addressed by numeric id: an attacker
+  who can edit the configuration must not be able to change what the host accepts as genuine.
+  `tests/install/Install.Tests.ps1` asserts the two copies match, so they cannot drift
+  silently.
 
 Signing by hand, to check a build or to sign one the workflow could not:
 
@@ -166,7 +170,8 @@ openssl dgst -sha256 -verify pub.pem -signature ripcord.exe.sig ripcord.exe
 
 **Rotating the key is a manual distribution, once.** A release signed with a new key can only be
 installed by a binary that already carries its public half, so the changeover is: generate, edit
-the constant, cut a release, and copy that one binary to both hosts by hand. Every host still on
-the old build will refuse the new releases until it is replaced — which is the pinning working,
-and the reason to keep the private half safe rather than plan on rotating it.
+**both** constants — `Program.cs` and `install.ps1`, which CI will fail on if only one moves —
+cut a release, and copy that one binary to both hosts by hand. Every host still on the old build
+will refuse the new releases until it is replaced, which is the pinning working and the reason
+to keep the private half safe rather than plan on rotating it.
 
