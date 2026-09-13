@@ -1,6 +1,7 @@
 using Ripcord.Application.Checks;
 using Ripcord.Application.Deployment;
 using Ripcord.Application.Status;
+using Ripcord.Application.TestFailover;
 using Ripcord.Application;
 using Ripcord.Cli.Rendering;
 using Ripcord.Domain.Deployment;
@@ -76,6 +77,10 @@ public sealed class RipcordCli(
 
             case "check":
                 return await this.CheckAsync(args[1..], output, error, cancellationToken)
+                    .ConfigureAwait(false);
+
+            case "test-failover":
+                return await this.TestFailoverAsync(args[1..], output, error, cancellationToken)
                     .ConfigureAwait(false);
 
             case "serve":
@@ -234,7 +239,10 @@ public sealed class RipcordCli(
             return ExitCode.Success;
         }
 
-        if (!this.Confirmed(output, error))
+        if (!this.Confirmed(
+            output,
+            error,
+            "This creates a Windows service and opens an inbound port on this host."))
         {
             return ExitCode.InvalidConfiguration;
         }
@@ -246,6 +254,129 @@ public sealed class RipcordCli(
         return result.Succeeded ? ExitCode.Success : ExitCode.LocalAccessFailure;
     }
 
+    /// Mutating, so it obeys both rules: `--dry-run` shows the whole plan and stops, and
+    /// without it nothing is created until the operator types the node name. A test failover
+    /// creates and destroys a real VM on this host — a keystroke is not a decision.
+    private async Task<ExitCode> TestFailoverAsync(
+        string[] args, TextWriter output, TextWriter error, CancellationToken cancellationToken)
+    {
+        if (!TryReadTestFailoverOptions(args, out TestFailoverOptions options, out string? optionError))
+        {
+            error.WriteLine($"ripcord: {optionError}");
+            WriteUsage(error);
+            return ExitCode.InvalidConfiguration;
+        }
+
+        if (!options.DryRun && !this.Confirmed(
+            output,
+            error,
+            "This creates a test VM on this host and destroys it again when the test ends."))
+        {
+            return ExitCode.Refused;
+        }
+
+        TestFailoverQuery query = new(
+            configStore, this.Pair(), provider, clock, TestFailoverTiming.Default);
+
+        TestFailoverOutcome outcome = await query
+            .ExecuteAsync(
+                new TestFailoverRequest(
+                    options.ConfigurationPath ?? environment.DefaultConfigurationPath,
+                    environment.MachineName,
+                    options.VmNames,
+                    options.All,
+                    options.DryRun),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (outcome.Report is { } report)
+        {
+            output.Write(TestFailoverRenderer.Render(
+                report, outcome.Configuration?.Replication.TestFailoverSwitch));
+            return outcome.Code;
+        }
+
+        if (outcome.Code == ExitCode.Refused)
+        {
+            error.WriteLine($"ripcord: refused, nothing was changed: {outcome.FailureMessage}");
+            return outcome.Code;
+        }
+
+        WriteFailure(error, new StatusOutcome(
+            outcome.Code, null, outcome.Errors, outcome.FailureMessage, []));
+
+        return outcome.Code;
+    }
+
+    private readonly record struct TestFailoverOptions(
+        string? ConfigurationPath, IReadOnlyList<string> VmNames, bool All, bool DryRun);
+
+    /// `--vm` may be repeated. Neither `--vm` nor `--all` is refused rather than defaulted:
+    /// a mutating command with no subject must not guess which VMs were meant.
+    private static bool TryReadTestFailoverOptions(
+        string[] args, out TestFailoverOptions options, out string? error)
+    {
+        string? path = null;
+        List<string> vmNames = [];
+        bool all = false;
+        bool dryRun = false;
+        error = null;
+        options = default;
+
+        for (int index = 0; index < args.Length; index++)
+        {
+            switch (args[index])
+            {
+                case "--dry-run":
+                    dryRun = true;
+                    break;
+
+                case "--all":
+                    all = true;
+                    break;
+
+                case "--vm" when index + 1 < args.Length:
+                    vmNames.Add(args[++index]);
+                    break;
+
+                case "--vm":
+                    error = "--vm needs a VM name.";
+                    return false;
+
+                case "--config" when index + 1 < args.Length && path is null:
+                    path = args[++index];
+                    break;
+
+                case "--config" when path is not null:
+                    error = "--config given more than once.";
+                    return false;
+
+                case "--config":
+                    error = "--config needs a path.";
+                    return false;
+
+                default:
+                    error = $"unexpected argument '{args[index]}'.";
+                    return false;
+            }
+        }
+
+        if (all && vmNames.Count > 0)
+        {
+            error = "--all and --vm cannot be combined.";
+            return false;
+        }
+
+        if (!all && vmNames.Count == 0)
+        {
+            error = "name the VMs with --vm, or test every one with --all.";
+            return false;
+        }
+
+        options = new TestFailoverOptions(path, vmNames, all, dryRun);
+        return true;
+    }
+
     private PairReader Pair() =>
         new(
             new LocalStateReader(provider, hostSystemProvider, certificateProvider),
@@ -253,10 +384,9 @@ public sealed class RipcordCli(
             snapshotStore,
             clock);
 
-    private bool Confirmed(TextWriter output, TextWriter error)
+    private bool Confirmed(TextWriter output, TextWriter error, string consequence)
     {
-        output.WriteLine(
-            "  This creates a Windows service and opens an inbound port on this host.");
+        output.WriteLine($"  {consequence}");
         output.Write($"  {ConfirmationPrompt}");
 
         string? typed = environment.ConfirmationReader?.ReadLine();
@@ -402,11 +532,16 @@ public sealed class RipcordCli(
         writer.WriteLine("  ripcord check [--config <path>]    would a failover work right now");
         writer.WriteLine("  ripcord deploy-listener [--dry-run] [--remove]");
         writer.WriteLine("                                     install or remove the pair listener");
+        writer.WriteLine("  ripcord test-failover (--vm <name> | --all) [--dry-run]");
+        writer.WriteLine("                                     boot a replica in isolation, then destroy it");
         writer.WriteLine("  ripcord serve [--config <path>]    run the read-only pair listener");
         writer.WriteLine("  ripcord version                    version and commit hash");
         writer.WriteLine();
         writer.WriteLine("Exit codes: 0 success (an unreachable peer included), "
-            + "1 a critical rule is violated,");
-        writer.WriteLine("            2 bad configuration, 3 local access failure.");
+            + "1 a critical rule is violated");
+        writer.WriteLine("            or a test failover did not come up, "
+            + "2 bad configuration,");
+        writer.WriteLine("            3 local access failure, "
+            + "4 refused or interrupted - nothing changed.");
     }
 }

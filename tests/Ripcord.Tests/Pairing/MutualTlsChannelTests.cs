@@ -270,10 +270,6 @@ public sealed class MutualTlsChannelTests : IDisposable
         this.strangerCa.Dispose();
     }
 
-    private sealed class FixedClock(DateTimeOffset now) : IClock
-    {
-        public DateTimeOffset UtcNow => now;
-    }
 
     /// Accepts a connection and then says nothing at all, which is what a wedged listener
     /// looks like from the other side.

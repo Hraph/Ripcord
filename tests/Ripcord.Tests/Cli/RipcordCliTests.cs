@@ -390,17 +390,7 @@ public class RipcordCliTests
             this.applied.Add(change.Action);
     }
 
-    private sealed class NoOpPeerListener : IPeerListener
-    {
-        public Task RunAsync(
-            ListenerSettings settings, PeerRules rules, CancellationToken cancellationToken) =>
-            Task.CompletedTask;
-    }
 
-    private sealed class FixedClock(DateTimeOffset now) : IClock
-    {
-        public DateTimeOffset UtcNow => now;
-    }
 
     /// Returns a document the validator accepts, and remembers which path was asked for.
     private sealed class RecordingConfigStore(bool listenerEnabled = true) : IConfigStore

@@ -245,10 +245,6 @@ public class StatusQueryTests
         public ConfigurationRead Read(string path) => read;
     }
 
-    private sealed class FixedClock(DateTimeOffset now) : IClock
-    {
-        public DateTimeOffset UtcNow => now;
-    }
 
     private sealed class ThrowingPeerChannel : IPeerChannel
     {
