@@ -7,6 +7,7 @@
       "src\\Ripcord.Adapters.Fake\\Ripcord.Adapters.Fake.csproj",
       "src\\Ripcord.Adapters.Notify\\Ripcord.Adapters.Notify.csproj",
       "src\\Ripcord.Adapters.Pairing\\Ripcord.Adapters.Pairing.csproj",
+      "src\\Ripcord.Adapters.Update\\Ripcord.Adapters.Update.csproj",
       "src\\Ripcord.Adapters.Yaml\\Ripcord.Adapters.Yaml.csproj",
       "src\\Ripcord.Application\\Ripcord.Application.csproj",
       "src\\Ripcord.Cli\\Ripcord.Cli.csproj",

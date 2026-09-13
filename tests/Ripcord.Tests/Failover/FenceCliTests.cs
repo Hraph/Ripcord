@@ -156,6 +156,8 @@ public class FenceCliTests
                 new StubNotifier(),
                 new MemoryAlertStateStore(),
                 StubReleaseFeed.Unreachable(),
+                new NoReleaseSource(),
+                new NoBinarySwap(),
                 new FixedClock(Now)),
             new CliEnvironment(
                 FakeScenarios.LocalHostName,

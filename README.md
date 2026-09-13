@@ -22,11 +22,13 @@ file written in calm conditions.
 
 ## Project state
 
-**Milestone 0 shipped. Milestones 1, 1b, 2, 3, 4, most of 4B and 5 built, awaiting validation on
-the real hosts.** `status`, `check` (with `--notify`), `test-failover`, `failover` in both
-scenarios, `failback`, `fence`, `check-update`, `version`, `serve` and `deploy-listener` are
-implemented and covered by tests that run on Linux — including the mTLS handshake end to end, with generated certificates and real
-sockets, and a case table per check rule.
+**Milestone 0 shipped. Milestones 1, 1b, 2, 3, 4, most of 4B, 5 and 7 built, awaiting validation
+on the real hosts.** `status`, `check` (with `--notify`), `test-failover`, `failover` in both
+scenarios, `failback`, `fence`, `check-update`, `update`, `dashboard`, `version`, `serve` and
+`deploy-listener` are implemented and covered by tests that run on Linux — including the mTLS
+handshake end to end with generated certificates and real sockets, the read-only page served
+over a real loopback socket, release signatures verified against a real generated key pair, and
+a case table per check rule.
 
 `reprotect` is **not** built. It re-establishes replication onto the returning host, and the
 `Set-VMReplication -AsReplica -AllowedPrimaryServer` step it turns on is the one no GUI offers

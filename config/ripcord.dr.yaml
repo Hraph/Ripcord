@@ -116,11 +116,20 @@ storage:
 #   webhook:
 #     url: "https://hooks.example.net/ripcord"
 
-# Whether this host may ask GitHub whether a newer release exists. Off, and meant to stay off
-# on a host with no outbound access. Nothing downloads and nothing installs: the command
-# reports a version number and stops there.
+# Whether this host may ask GitHub whether a newer release exists, and whether it may act on
+# the answer. Both off, and meant to stay off on a host with no outbound access.
+#
+# Two switches, because they buy different things. `check` risks a wrong version number on a
+# console. `install` lets a published release replace the binary this host runs its failovers
+# with — only if its signature verifies against the key compiled into that binary, and only
+# after somebody types the node name, but that is the line it crosses. `install` without
+# `check` is refused by name.
+#
+# Updating one host makes the pair disagree, and a failover spanning both is refused while it
+# does. Update both, one after the other, and never during an incident.
 # updates:
 #   check: true
+#   install: true
 
 # The read-only page of `ripcord dashboard`, served on 127.0.0.1 and nowhere else. Off, and
 # meant to stay off: a disaster recovery tool that opens a listening socket nobody asked for

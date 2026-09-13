@@ -33,6 +33,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ripcord.Adapters.Notify", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ripcord.Adapters.Dashboard", "src\Ripcord.Adapters.Dashboard\Ripcord.Adapters.Dashboard.csproj", "{0DACFC62-C4D4-4DFD-8993-458CE4DA10CD}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ripcord.Adapters.Update", "src\Ripcord.Adapters.Update\Ripcord.Adapters.Update.csproj", "{9875413B-6969-40D1-89F1-72ABAC3C8354}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -199,6 +201,18 @@ Global
 		{0DACFC62-C4D4-4DFD-8993-458CE4DA10CD}.Release|x64.Build.0 = Release|Any CPU
 		{0DACFC62-C4D4-4DFD-8993-458CE4DA10CD}.Release|x86.ActiveCfg = Release|Any CPU
 		{0DACFC62-C4D4-4DFD-8993-458CE4DA10CD}.Release|x86.Build.0 = Release|Any CPU
+		{9875413B-6969-40D1-89F1-72ABAC3C8354}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9875413B-6969-40D1-89F1-72ABAC3C8354}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9875413B-6969-40D1-89F1-72ABAC3C8354}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{9875413B-6969-40D1-89F1-72ABAC3C8354}.Debug|x64.Build.0 = Debug|Any CPU
+		{9875413B-6969-40D1-89F1-72ABAC3C8354}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{9875413B-6969-40D1-89F1-72ABAC3C8354}.Debug|x86.Build.0 = Debug|Any CPU
+		{9875413B-6969-40D1-89F1-72ABAC3C8354}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9875413B-6969-40D1-89F1-72ABAC3C8354}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9875413B-6969-40D1-89F1-72ABAC3C8354}.Release|x64.ActiveCfg = Release|Any CPU
+		{9875413B-6969-40D1-89F1-72ABAC3C8354}.Release|x64.Build.0 = Release|Any CPU
+		{9875413B-6969-40D1-89F1-72ABAC3C8354}.Release|x86.ActiveCfg = Release|Any CPU
+		{9875413B-6969-40D1-89F1-72ABAC3C8354}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -217,5 +231,6 @@ Global
 		{040561A2-7B87-4D6C-814B-3BCB554BCD8F} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{5A269D74-50AA-4DD0-B1B5-77C27AFA6EE4} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{0DACFC62-C4D4-4DFD-8993-458CE4DA10CD} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{9875413B-6969-40D1-89F1-72ABAC3C8354} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

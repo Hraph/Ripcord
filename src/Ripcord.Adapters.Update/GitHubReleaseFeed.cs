@@ -3,7 +3,7 @@ using System.Text.Json;
 using Ripcord.Domain.Updates;
 using Ripcord.Ports.Updates;
 
-namespace Ripcord.Adapters.Notify;
+namespace Ripcord.Adapters.Update;
 
 /// The latest published release, read from the GitHub API. It reads a version string and
 /// stops there: nothing downloads, nothing installs, so the worst this can produce is a wrong

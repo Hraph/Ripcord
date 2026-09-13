@@ -3,7 +3,9 @@ using Ripcord.Domain.Deployment;
 using Ripcord.Domain.Pairing;
 using Ripcord.Domain.Dashboard;
 using Ripcord.Ports.Dashboard;
+using Ripcord.Domain.Updates;
 using Ripcord.Ports.Deployment;
+using Ripcord.Ports.Updates;
 using Ripcord.Ports.Pairing;
 using Ripcord.Ports;
 
@@ -63,4 +65,23 @@ public sealed class NoOpDashboardServer : IDashboardServer
         Func<CancellationToken, Task<string>> page,
         CancellationToken cancellationToken) =>
         Task.CompletedTask;
+}
+
+/// For the commands that never update but have to be handed something.
+public sealed class NoReleaseSource : IReleaseSource
+{
+    public Task<FetchedRelease> FetchAsync(string version, CancellationToken cancellationToken) =>
+        Task.FromResult(FetchedRelease.Failed("no release source is wired"));
+}
+
+public sealed class NoBinarySwap : IBinarySwap
+{
+    public StagedBinaries Observe(string binaryPath) => new(false, false);
+
+    public void Apply(UpdateStep move, StagedRelease release, CancellationToken cancellationToken) =>
+        throw new InvalidOperationException("this test was not expecting a binary to move");
+
+    public void Restore(string binaryPath)
+    {
+    }
 }

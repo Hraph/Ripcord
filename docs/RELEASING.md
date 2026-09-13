@@ -19,12 +19,30 @@ The consequence is blunt and worth stating plainly: **between the first host and
 pair cannot be moved electively.** Update when nothing is wrong, never during an incident, and do
 not stop halfway.
 
-Order, on each host in turn:
+There are two ways to do it. `ripcord update` verifies the signature itself and is the shorter
+path; the copy by hand is still supported and is what a host with no outbound access does.
+
+### With `ripcord update`, on each host in turn
+
+1. `ripcord status`, then `ripcord check` — start from a healthy pair. If you do not, you will
+   not be able to tell afterwards which problem you caused.
+2. `ripcord update --dry-run` — read the plan and the consequence it prints.
+3. `Stop-Service ripcord-listener`, so the file is not held open.
+4. `ripcord update`, and type the node name. It downloads, verifies the signature against the
+   key compiled into the running binary, and refuses without touching anything if it does not
+   verify.
+5. `Start-Service ripcord-listener`, then `ripcord version` — the new binary runs from here, not
+   from the command that installed it.
+6. Move to the other host and repeat.
+
+### By hand, on each host in turn
 
 1. `ripcord status` — confirm the pair is healthy and the peer is answering. Do not start from
    a degraded pair; you will not be able to tell afterwards which problem you caused.
 2. `ripcord check` — no criticals. Same reason.
-3. Verify the checksum of the new binary against the `.sha256` published beside it.
+3. Verify the checksum of the new binary against the `.sha256` published beside it, and the
+   signature against `ripcord.exe.sig` — the commands are under
+   [The release signing key](#the-release-signing-key).
 4. Stop the listener service, so the file is not in use:
    `Stop-Service ripcord-listener`
 5. Replace `ripcord.exe`. The configuration lives beside the binary and is not touched —
@@ -105,11 +123,45 @@ dotnet publish src/Ripcord.Host.Windows/Ripcord.Host.Windows.csproj \
 
 ### What is deliberately not here
 
-- **No Authenticode signing.** It needs a paid certificate. The SHA-256 stands in until then,
-  and the gap is stated in the release notes rather than left for someone to discover.
-- **No auto-update**, permanently. A binary that updated itself, with Hyper-V privileges, on both
-  hosts, from the internet, is a supply chain that bypasses every control the rest of this tool
-  is built around. These hosts should have no outbound access; fully offline operation must stay
-  possible.
-- **No `check-update`.** The specification's opt-in version check is a new command rather than
-  release plumbing, and belongs to a later milestone.
+- **No Authenticode signing.** It needs a paid certificate. The detached signature below and the
+  SHA-256 stand in, and the gap is stated in the release notes rather than left for someone to
+  discover.
+- **No unattended update.** `ripcord update` exists and is documented above, but it is never a
+  scheduled task: it is off unless the configuration says otherwise, and it replaces the binary
+  only after somebody types the node name. Updating one host makes the pair unfailoverable until
+  the other follows, which is not a thing to discover from a log the next morning.
+- **No update of the peer from here.** Ripcord drives only the host it is run on (decision D49).
+  The command names the host to run next; it does not reach across.
+
+## The release signing key
+
+Every release carries `ripcord.exe.sig`, a detached ECDSA P-256 signature over the binary. It is
+what `ripcord update` checks before it installs anything, and a release published without it
+cannot be installed — the workflow fails rather than warns.
+
+- **Private half**: `.claude/release-signing-key.pkcs8.pem`, PKCS#8. Gitignored twice over, by
+  the `.claude/` rule and by the `*.pem` rule. Keep an offline copy; it is not recoverable.
+- **The same bytes** are the repository secret `RIPCORD_SIGNING_KEY`. The workflow writes it to
+  a temporary file rather than passing it as an argument, signs, verifies what it just wrote,
+  and deletes the file in the same step.
+- **Public half**: the `ReleaseSigningKey` constant in `src/Ripcord.Host.Windows/Program.cs`.
+  Compiled in, never read from `ripcord.yaml`, for the same reason the repository is addressed
+  by numeric id: an attacker who can edit the configuration must not be able to change what the
+  host accepts as genuine.
+
+Signing by hand, to check a build or to sign one the workflow could not:
+
+```
+openssl dgst -sha256 -sign .claude/release-signing-key.pkcs8.pem \
+  -out ripcord.exe.sig ripcord.exe
+
+openssl pkey -in .claude/release-signing-key.pkcs8.pem -pubout -out pub.pem
+openssl dgst -sha256 -verify pub.pem -signature ripcord.exe.sig ripcord.exe
+```
+
+**Rotating the key is a manual distribution, once.** A release signed with a new key can only be
+installed by a binary that already carries its public half, so the changeover is: generate, edit
+the constant, cut a release, and copy that one binary to both hosts by hand. Every host still on
+the old build will refuse the new releases until it is replaced — which is the pinning working,
+and the reason to keep the private half safe rather than plan on rotating it.
+

@@ -3,6 +3,7 @@ using Ripcord.Adapters.Pairing.Transport;
 using Ripcord.Adapters.Audit;
 using Ripcord.Adapters.Dashboard;
 using Ripcord.Adapters.Notify;
+using Ripcord.Adapters.Update;
 using Ripcord.Adapters.Wmi;
 using Ripcord.Adapters.Wmi.Deployment;
 using Ripcord.Adapters.Yaml;
@@ -25,9 +26,27 @@ internal static class Program
     /// stops failing and starts answering with a different repository's releases.
     private const long RepositoryId = 1_367_653_231;
 
+    /// The public half of the key every release is signed with. Compiled in, never read from
+    /// `ripcord.yaml`: an attacker who can edit the configuration must not be able to change
+    /// what this host will accept as a genuine binary. Same reasoning as the numeric
+    /// repository id above — the trust root is pinned at build time or it is not pinned.
+    ///
+    /// Rotating it means a release signed with the new key can only be installed by a binary
+    /// that already carries it, so the changeover is one manual copy, once.
+    private const string ReleaseSigningKey = """
+        -----BEGIN PUBLIC KEY-----
+        MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEepeb3PCHe0otFYoD2YDBS7FjGnlk
+        hKtNTfhtSKbZ8GLsgKneO9F4/y8FpyoBjkWNwiZ73dKqs/0FXheRtBM9NA==
+        -----END PUBLIC KEY-----
+        """;
+
     /// Short enough that `check-update` on a host with no outbound access fails rather than
     /// hangs, which is the normal case on both of them.
     private static readonly TimeSpan HttpTimeout = TimeSpan.FromSeconds(15);
+
+    /// A release is tens of megabytes, so it gets its own budget rather than the one sized
+    /// for a JSON answer.
+    private static readonly TimeSpan DownloadTimeout = TimeSpan.FromMinutes(10);
 
     /// Never silent: every connection the listener handles says who called and what was
     /// decided. `ripcord serve` is run by hand to verify the exit criterion, and a refusal
@@ -74,13 +93,21 @@ internal static class Program
                     Path.Combine(AppContext.BaseDirectory, "alert-state.json")),
                 new GitHubReleaseFeed(
                     RepositoryId, $"ripcord/{BuildInfo.VersionWithCommit}", HttpTimeout),
+                new HttpReleaseSource(
+                    RepositoryId,
+                    $"ripcord/{BuildInfo.VersionWithCommit}",
+                    DownloadTimeout,
+                    HttpReleaseSource.DefaultMaximumBytes),
+                new FileBinarySwap(),
                 clock),
             new CliEnvironment(
                 Environment.MachineName,
                 defaultConfigPath,
                 binaryPath,
                 Console.In,
-                Environment.UserName));
+                Environment.UserName,
+                null,
+                ReleaseSigningKey));
 
         using CancellationTokenSource cancellation = new();
         Console.CancelKeyPress += (_, eventArgs) =>

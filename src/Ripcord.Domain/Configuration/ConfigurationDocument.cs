@@ -47,6 +47,10 @@ public sealed class DashboardDocument
 public sealed class UpdatesDocument
 {
     public bool Check { get; set; }
+
+    /// Whether this host may replace its own binary. Separate from `Check` because looking is
+    /// not installing, and the two are worth being able to say apart.
+    public bool Install { get; set; }
 }
 
 public sealed class AlertingDocument

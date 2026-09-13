@@ -42,6 +42,28 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 - `dashboard.port` and `dashboard.refresh_sec` in `ripcord.yaml`. There is deliberately no
   address key: the page is bound to the loopback interface by construction.
 
+- `ripcord update` — installs a newer published release on the host it is run on. Off unless
+  `updates.install` says so, which is a second switch beside `updates.check`: permission to look
+  is not permission to replace the binary this host runs its failovers with. It asks for the
+  node name, `--dry-run` prints the plan and stops, and it is never unattended.
+
+  It refuses any release whose detached ECDSA signature does not verify against a public key
+  compiled into the running binary — absent, malformed, signed by anybody else, or a host
+  carrying no key at all are all refusals, taken before anything on the host is moved. The
+  running binary is then set aside and kept; if the last move fails it goes back, and only if
+  that fails too does the command exit 5 and print the renames to type.
+- `updates.install` in `ripcord.yaml`. `install` without `check` is refused by the validator.
+- Releases now carry `ripcord.exe.sig` beside the `.exe` and the `.sha256`.
+
+### Changed
+
+- **Ripcord can now update itself, which earlier releases said it never would.** `RELEASING.md`,
+  `RELEASE_NOTES.md`, `SECURITY.md` and milestone 5 are rewritten rather than left contradicting
+  the code. The objection that produced that rule has not gone away; what changed is that the
+  install path now verifies a signature against a pinned key instead of trusting the release
+  page. The signing key lives in the release workflow's secrets, so an account with write access
+  to the repository can still sign — stated in `SECURITY.md` rather than implied.
+
 ### Notes
 
 - Milestone 7 was gated on an evaluation of Windows Admin Center, recorded in

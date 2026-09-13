@@ -35,3 +35,12 @@ ripcord.yaml
 # The source specification, which names the real hosts. It is ignored by the global gitignore
 # on the machine it was written on; stated here too, so the protection travels with the clone.
 .claude/
+
+# The release signing key. The public half is compiled into the binary and is meant to be
+# read by anyone; the private half signs what two Hyper-V hosts will install, and belongs in
+# `.claude/` and in the CI secret, nowhere else. Ignored by extension as well as by directory,
+# so a key dropped in the wrong place is still caught — the same belt-and-braces the source
+# specification got after the audit.
+*.pem
+*.key
+*.pfx

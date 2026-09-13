@@ -282,15 +282,60 @@ jobs:
           -p:Version=${{ env.VERSION }}
           -o publish
 
-      # No Authenticode signature yet — that needs a paid certificate. Until then a checksum
-      # is the only way an operator can tell that the file on the host is the file that was
-      # built here, so it ships with the release rather than being available on request.
+      # Still no Authenticode signature — that needs a paid certificate. The checksum detects
+      # corruption of a file copied by hand; the detached signature in the next step is what
+      # proves who built it, and is what `ripcord update` checks before installing anything.
       - name: Checksum
         shell: pwsh
         run: |
           $hash = (Get-FileHash publish/ripcord.exe -Algorithm SHA256).Hash.ToLower()
           "$hash  ripcord.exe" | Out-File -Encoding ascii publish/ripcord.exe.sha256
           Write-Host $hash
+
+      # The signature `ripcord update` checks before it installs anything. ECDSA P-256 over
+      # SHA-256, in DER — the format `openssl dgst -sign` writes and the format
+      # `ReleaseSignature` names explicitly, because .NET's own default is the other one and a
+      # mismatch would refuse every genuine release.
+      #
+      # The key is written to a file and deleted in the same step, so it is never an argument
+      # and never reaches a process listing. The public half is compiled into the binary.
+      #
+      # A release published without this file cannot be installed by `ripcord update` — that
+      # is the gate working, so the step fails the build rather than warning.
+      - name: Sign the binary
+        shell: pwsh
+        env:
+          SIGNING_KEY: ${{ secrets.RIPCORD_SIGNING_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SIGNING_KEY)) {
+            throw 'RIPCORD_SIGNING_KEY is not set: this release could not be installed'
+          }
+
+          $key = Join-Path ([System.IO.Path]::GetTempPath()) 'ripcord-signing.pem'
+          $pub = Join-Path ([System.IO.Path]::GetTempPath()) 'ripcord-signing.pub.pem'
+
+          try {
+            # Written to a file rather than passed as an argument: an argument reaches the
+            # process listing, and this key signs what two Hyper-V hosts will install.
+            [System.IO.File]::WriteAllText($key, $env:SIGNING_KEY)
+
+            & openssl dgst -sha256 -sign $key -out publish/ripcord.exe.sig publish/ripcord.exe
+            if ($LASTEXITCODE -ne 0) { throw 'openssl could not sign the binary' }
+
+            # Verified here, against the public half of the same key. A release this workflow
+            # could not prove genuine must not reach the release page, because the next thing
+            # that checks it is a host that refuses to install and nobody is watching.
+            & openssl pkey -in $key -pubout -out $pub
+            if ($LASTEXITCODE -ne 0) { throw 'openssl could not derive the public key' }
+
+            & openssl dgst -sha256 -verify $pub -signature publish/ripcord.exe.sig publish/ripcord.exe
+            if ($LASTEXITCODE -ne 0) { throw 'the signature this workflow just wrote does not verify' }
+          }
+          finally {
+            Remove-Item $key, $pub -Force -ErrorAction SilentlyContinue
+          }
+
+          Write-Host "signed: $((Get-Item publish/ripcord.exe.sig).Length) bytes"
 
       # The release page has to say what is in this release *and* how to put it on a pair that
       # cannot be failed over halfway through. The first comes from CHANGELOG.md; the second is
@@ -335,6 +380,7 @@ jobs:
           path: |
             publish/ripcord.exe
             publish/ripcord.exe.sha256
+            publish/ripcord.exe.sig
             release-notes.md
 
       # `--target` creates the tag at this commit as part of creating the release, so the tag
@@ -348,7 +394,7 @@ jobs:
         run: |
           $arguments = @(
             'release', 'create', $env:TAG,
-            'publish/ripcord.exe', 'publish/ripcord.exe.sha256',
+            'publish/ripcord.exe', 'publish/ripcord.exe.sha256', 'publish/ripcord.exe.sig',
             '--title', "ripcord $env:VERSION",
             '--notes-file', 'release-notes.md'
           )
