@@ -471,12 +471,15 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             return ExitCode.Success;
         }
 
+        // Refused, like every other declined confirmation: an operator who typed the wrong
+        // thing and a configuration that cannot be read are different answers, and a caller
+        // reading the exit code has no other way to tell them apart.
         if (!this.Confirmed(
             output,
             error,
             "This creates a Windows service and opens an inbound port on this host."))
         {
-            return ExitCode.InvalidConfiguration;
+            return ExitCode.Refused;
         }
 
         DeploymentResult result = deployment.Apply(plan, desired);

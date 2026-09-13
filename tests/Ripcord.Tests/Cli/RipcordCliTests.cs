@@ -319,7 +319,7 @@ public class RipcordCliTests
         CliRun run = await Run(
             ["deploy-listener"], deploymentExecutor: executor, typed: "yes");
 
-        Assert.NotEqual(ExitCode.Success, run.Code);
+        Assert.Equal(ExitCode.Refused, run.Code);
         Assert.Empty(executor.Applied);
         Assert.Contains("nothing was changed", run.Error, StringComparison.OrdinalIgnoreCase);
     }
