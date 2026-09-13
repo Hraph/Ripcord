@@ -102,11 +102,16 @@ public sealed record DeploymentResult(
 {
     public bool Succeeded => this.Failed is null;
 
-    /// A failure with nothing applied is a host that was not touched: the tool could not do
-    /// its work, and the infrastructure is where it was. A failure with a step behind it is
-    /// the other thing entirely — the service exists and the port does not, or the firewall
-    /// rule was deleted and its replacement never landed. That is exit code 5, the one an
-    /// operator must not walk away from, and the renderer says so in the same breath.
+    /// A failure with a step behind it is the case exit code 5 exists for: the service exists
+    /// and the port does not, or the firewall rule was deleted and its replacement never
+    /// landed. An operator must not walk away from that, and the renderer says so in the same
+    /// breath.
+    ///
+    /// A failure with nothing applied is 3, not 4. Code 4 says a human or a precondition
+    /// stopped the run deliberately; `sc.exe` refusing for want of privilege is the tool
+    /// failing to do its work, and a scheduled caller reading 4 would file it as "somebody
+    /// declined" and never look. "Nothing was changed" is said in the text, where it does not
+    /// have to carry two meanings at once.
     public ExitCode Code =>
         this.Failed is null
             ? ExitCode.Success
