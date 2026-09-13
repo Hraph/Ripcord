@@ -108,6 +108,31 @@ Describe 'the release signature' {
     }
 }
 
+Describe 'the way an operator actually runs this' {
+    <#
+        `irm ... | iex` is the command in the README, and it does not run the script the way
+        dot-sourcing or `-File` does: the param block is bound in the **caller's** scope, so
+        every validation attribute has to be satisfiable by that parameter's default. A
+        [ValidateSet] that does not admit the empty string is not, and PowerShell then refuses
+        to attach it — the script dies before its first line with "the attribute cannot be
+        added because variable Role with value would no longer be valid".
+
+        This is what that failure looks like from here, and it is only reachable through the
+        param block; every other test in this file dot-sources the script and never sees it.
+    #>
+    It 'binds its parameters when the script is run through Invoke-Expression' {
+        $text = Get-Content -LiteralPath (
+            Join-Path $script:RepositoryRoot 'install.ps1') -Raw
+
+        $block = [regex]::Match($text, '(?ms)^\[CmdletBinding\(\)\]\s*^param\(.*?^\)').Value
+
+        $block | Should -Not -BeNullOrEmpty
+
+        # In a child scope, so the parameters it declares do not land in the test's own.
+        { & { Invoke-Expression $args[0] } $block } | Should -Not -Throw
+    }
+}
+
 Describe 'the key this script carries' {
     It 'is the one compiled into the binary' {
         $inProgram = Get-Content -LiteralPath (

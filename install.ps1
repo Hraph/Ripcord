@@ -31,7 +31,14 @@
 param(
     # Which sample configuration to place beside the binary. Asked for if omitted and the host
     # has none.
-    [ValidateSet('primary', 'dr')]
+    #
+    # The empty string is in the set on purpose, and removing it breaks the one command this
+    # script is mostly going to be run by. `irm ... | iex` binds this param block in the
+    # caller's scope, where `$Role` gets the default empty string and every validation
+    # attribute has to be satisfiable by it — otherwise PowerShell refuses to attach the
+    # attribute at all and the whole script dies before its first line, with "the attribute
+    # cannot be added because variable Role with value would no longer be valid".
+    [ValidateSet('primary', 'dr', '')]
     [string] $Role,
 
     [string] $Path = "$env:ProgramFiles\Ripcord",
