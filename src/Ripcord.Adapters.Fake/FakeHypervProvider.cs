@@ -1,5 +1,6 @@
 using Ripcord.Domain.Inventory;
 using Ripcord.Domain.Replication;
+using Ripcord.Domain.TestFailover;
 using Ripcord.Domain.Pairing;
 using Ripcord.Ports.Pairing;
 using Ripcord.Ports.Replication;
@@ -36,6 +37,109 @@ public sealed class FakeHypervProvider : IHypervProvider
         this.localFailure is null
             ? Task.FromResult(this.local)
             : Task.FromException<HostState>(this.localFailure);
+
+    /// Every call the sequence made, in order. The cleanup guarantee is an ordering claim —
+    /// "stop ran, even though start threw" — and an ordering claim needs an ordered record.
+    public List<string> Calls { get; } = [];
+
+    /// The host's switches. The isolated one is Private, because that is what makes it
+    /// isolated; a test that wants an external one says so.
+    public IReadOnlyList<HostSwitch> Switches { get; set; } =
+    [
+        new HostSwitch(FakeScenarios.TestSwitch, SwitchConnectivity.Private),
+        new HostSwitch(FakeScenarios.ProductionSwitch, SwitchConnectivity.External),
+    ];
+
+    /// Test VMs already on the host when the run starts — the residue of an interrupted one.
+    public List<TestVm> ExistingTestVms { get; } = [];
+
+    /// What the test VM looks like once created. Defaults to isolated on the test switch,
+    /// which is what a correctly configured host produces.
+    public Func<string, TestVm> TestVmFactory { get; set; } =
+        name => new TestVm(
+            name + " (test copy)",
+            null,
+            [new VirtualAdapter(
+                "Network Adapter", FakeScenarios.TestSwitch, true, "00-15-5D-01-02-01", false, null)]);
+
+    public Exception? AttachFailure { get; set; }
+
+    public Exception? CreateFailure { get; set; }
+
+    public Exception? StartVmFailure { get; set; }
+
+    public Exception? StopFailure { get; set; }
+
+    /// Read in order, the last one repeating. `[NoContact, NoContact, Ok]` is a VM that took
+    /// three polls to come up; `[NoContact]` alone never comes up at all.
+    public List<Heartbeat> Heartbeats { get; } = [Heartbeat.Ok];
+
+    private int heartbeatReads;
+
+    public Task<IReadOnlyList<HostSwitch>> GetSwitchesAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        this.Calls.Add("switches");
+        return Task.FromResult(this.Switches);
+    }
+
+    public Task<IReadOnlyList<TestVm>> GetTestVmsAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        this.Calls.Add("test-vms");
+        return Task.FromResult<IReadOnlyList<TestVm>>([.. this.ExistingTestVms]);
+    }
+
+    public Task AttachTestNetworkAsync(
+        string vmName, string? switchName, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        this.Calls.Add($"attach:{vmName}:{switchName ?? "(none)"}");
+        return this.AttachFailure is null
+            ? Task.CompletedTask
+            : Task.FromException(this.AttachFailure);
+    }
+
+    public Task<TestVm> StartTestFailoverAsync(string vmName, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        this.Calls.Add($"create:{vmName}");
+        return this.CreateFailure is null
+            ? Task.FromResult(this.TestVmFactory(vmName))
+            : Task.FromException<TestVm>(this.CreateFailure);
+    }
+
+    /// Deliberately does not observe the token: it is the compensating action, and
+    /// Compensation hands it one of its own precisely so a cancelled run still cleans up.
+    public Task StopTestFailoverAsync(string vmName, CancellationToken cancellationToken)
+    {
+        this.Calls.Add($"stop:{vmName}");
+        return this.StopFailure is null
+            ? Task.CompletedTask
+            : Task.FromException(this.StopFailure);
+    }
+
+    public Task StartTestVmAsync(string testVmName, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        this.Calls.Add($"start:{testVmName}");
+        return this.StartVmFailure is null
+            ? Task.CompletedTask
+            : Task.FromException(this.StartVmFailure);
+    }
+
+    public Task<Heartbeat> ReadHeartbeatAsync(
+        string testVmName, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        this.Calls.Add($"heartbeat:{testVmName}");
+
+        Heartbeat heartbeat = this.Heartbeats[
+            Math.Min(this.heartbeatReads, this.Heartbeats.Count - 1)];
+
+        this.heartbeatReads++;
+        return Task.FromResult(heartbeat);
+    }
 }
 
 /// The other host, scripted. Every reachability the rendering must tell apart has a factory
@@ -81,6 +185,8 @@ public sealed class InMemorySnapshotStore : ISnapshotStore
 public static class FakeScenarios
 {
     public const string LocalHostName = "HV-REPLICA-01";
+    public const string TestSwitch = "vSwitch-ISOLATED";
+    public const string ProductionSwitch = "vSwitch-PROD";
     public const string PeerHostName = "HV-PRIMARY-01";
     public const string SwitchName = "vSwitch-PROD";
     public const int VlanId = 10;

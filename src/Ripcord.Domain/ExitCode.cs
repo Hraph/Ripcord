@@ -9,4 +9,8 @@ public enum ExitCode
     CriticalFinding = 1,
     InvalidConfiguration = 2,
     LocalAccessFailure = 3,
+
+    /// Nothing was changed: a precondition refused, or the operator interrupted the run.
+    /// That is what separates it from a failure part-way through.
+    Refused = 4,
 }

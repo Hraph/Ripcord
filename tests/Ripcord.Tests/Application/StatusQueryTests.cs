@@ -2,7 +2,9 @@ using Ripcord.Adapters.Fake;
 using Ripcord.Application.Status;
 using Ripcord.Application;
 using Ripcord.Domain.Configuration;
+using Ripcord.Domain.Inventory;
 using Ripcord.Domain.Replication;
+using Ripcord.Domain.TestFailover;
 using Ripcord.Domain;
 using Ripcord.Ports.Configuration;
 using Ripcord.Ports.Replication;
@@ -263,11 +265,11 @@ public class StatusQueryTests
         public HostSnapshot? Read(string path) => null;
     }
 
-    private sealed class RecordingHypervProvider(HostState local) : IHypervProvider
+    private sealed class RecordingHypervProvider(HostState local) : ReadOnlyHypervProvider
     {
         public bool WasAsked { get; private set; }
 
-        public Task<HostState> GetLocalStateAsync(CancellationToken cancellationToken)
+        public override Task<HostState> GetLocalStateAsync(CancellationToken cancellationToken)
         {
             this.WasAsked = true;
             return Task.FromResult(local);

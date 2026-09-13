@@ -368,12 +368,11 @@ public class RipcordCliTests
 
     private sealed record CliRun(ExitCode Code, string Output, string Error);
 
-    private sealed class CancellingProvider : IHypervProvider
+    private sealed class CancellingProvider : ReadOnlyHypervProvider
     {
-        public Task<HostState> GetLocalStateAsync(CancellationToken cancellationToken) =>
+        public override Task<HostState> GetLocalStateAsync(CancellationToken cancellationToken) =>
             Task.FromCanceled<HostState>(
                 cancellationToken.IsCancellationRequested ? cancellationToken : new(true));
-
     }
 
     /// Reports a bare host, and records what it was asked to change.
