@@ -9,6 +9,7 @@ using Ripcord.Domain.Deployment;
 using Ripcord.Domain.Pairing;
 using Ripcord.Ports.Deployment;
 using Ripcord.Domain.Checks;
+using Ripcord.Domain.Failover;
 using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Replication;
 using Ripcord.Domain;
@@ -287,67 +288,118 @@ public sealed class RipcordCli(
 
         // Rule 3, and the sharpest case of it in the whole tool: this shuts production down and
         // moves it to the other host. A keystroke is not a decision.
-        if (!options.DryRun && !this.Confirmed(
-            output,
-            error,
-            $"This shuts down '{options.VmName}' and fails it over to the other host."))
+        if (!options.DryRun && !this.Confirmed(output, error, Impact(options)))
         {
             return ExitCode.Refused;
         }
 
-        FailoverOutcome outcome = await new FailoverQuery(
+        SweepReport sweep = await new FailoverSweepQuery(
                 configStore, this.Pair(), provider, audit, clock, FailoverTiming.Default)
             .ExecuteAsync(
-                new FailoverCommand(
+                new SweepCommand(
                     options.ConfigurationPath ?? environment.DefaultConfigurationPath,
                     environment.MachineName,
-                    options.VmName!,
+                    options.Scenario,
+                    options.Scope,
                     options.DryRun,
                     environment.UserName,
                     this.LocalBuild),
                 cancellationToken)
             .ConfigureAwait(false);
 
+        // Printed before the runs, not after: a VM left out of a sweep is something the
+        // operator has to know about while they still have the screen in front of them.
+        foreach (SweepExclusion excluded in sweep.Excluded)
+        {
+            error.WriteLine($"ripcord: {excluded.VmName} was left out — {excluded.Reason}");
+        }
+
+        foreach (SweptVm swept in sweep.Ran)
+        {
+            WriteVmOutcome(swept, output, error);
+        }
+
+        foreach (string skipped in sweep.NotAttempted)
+        {
+            error.WriteLine($"ripcord: {skipped} was not attempted; the sweep stopped first");
+        }
+
+        if (sweep.Ran.Count == 0)
+        {
+            WriteFailure(error, new StatusOutcome(
+                sweep.Code, null, sweep.Errors, sweep.FailureMessage, []));
+        }
+
+        return sweep.Code;
+    }
+
+    private static void WriteVmOutcome(SweptVm swept, TextWriter output, TextWriter error)
+    {
+        FailoverOutcome outcome = swept.Outcome;
+
         if (outcome.Report is { } report)
         {
-            output.Write(FailoverRenderer.Render(report, clock.UtcNow));
-            return outcome.Code;
+            output.Write(FailoverRenderer.Render(report, DateTimeOffset.UtcNow));
+            return;
         }
 
         if (outcome.Code == ExitCode.Refused)
         {
-            error.WriteLine($"ripcord: refused, nothing was changed: {outcome.FailureMessage}");
+            error.WriteLine(
+                $"ripcord: {swept.VmName} refused, nothing was changed: {outcome.FailureMessage}");
 
             foreach (Finding finding in outcome.Refusal?.Unevaluated ?? [])
             {
                 error.WriteLine($"  {finding.Rule.Id}: {finding.Observed}");
             }
 
-            return outcome.Code;
+            return;
         }
 
         WriteFailure(error, new StatusOutcome(
             outcome.Code, null, outcome.Errors, outcome.FailureMessage, []));
+    }
 
-        return outcome.Code;
+    /// What the operator is agreeing to, in the words of the scenario they typed. A planned
+    /// failover sends the last changes across before it moves; an unplanned one cannot, so
+    /// everything written since the last replication cycle is gone — and printing the planned
+    /// wording here would conceal the cost of the command being confirmed.
+    private static string Impact(FailoverOptions options)
+    {
+        string subject = options.Scope.NamedVms.Count > 0
+            ? $"'{string.Join("', '", options.Scope.NamedVms)}'"
+            : options.Scope.Priority is { } tier
+                ? $"every {tier} VM"
+                : "every VM in this configuration";
+
+        return options.Scenario == FailoverOperation.UnplannedFailover
+            ? $"This brings {subject} up on this host from the last replicated point. "
+                + "Everything written since the last replication is lost."
+            : $"This shuts down {subject} and fails it over to the other host.";
     }
 
     private sealed record FailoverOptions(
-        string? ConfigurationPath, string? VmName, bool DryRun);
+        string? ConfigurationPath, SweepScope Scope, FailoverOperation Scenario, bool DryRun);
 
     /// `--scenario` is required rather than defaulted. Planned and unplanned are different
     /// operations with different consequences, and a default would let the wrong one run
     /// because nobody typed the word.
+    ///
+    /// So is the scope: exactly one of `--vm`, `--all` and `--priority`. Neither a VM nor a
+    /// sweep is a missing argument, not a failover of everything.
     private static bool TryReadFailoverOptions(
         string[] args, out FailoverOptions options, out string? error)
     {
         string? path = null;
-        string? vmName = null;
+        List<string> vmNames = [];
         string? scenario = null;
+        string? priority = null;
+        bool all = false;
         bool dryRun = false;
 
         error = null;
-        options = new FailoverOptions(null, null, false);
+        options = new FailoverOptions(
+            null, SweepScope.Named([]), FailoverOperation.PlannedFailover, false);
 
         for (int index = 0; index < args.Length; index++)
         {
@@ -357,12 +409,24 @@ public sealed class RipcordCli(
                     dryRun = true;
                     break;
 
+                case "--all":
+                    all = true;
+                    break;
+
                 case "--vm" when index + 1 < args.Length:
-                    vmName = args[++index];
+                    vmNames.Add(args[++index]);
                     break;
 
                 case "--vm":
                     error = "--vm needs a VM name.";
+                    return false;
+
+                case "--priority" when index + 1 < args.Length:
+                    priority = args[++index];
+                    break;
+
+                case "--priority":
+                    error = "--priority needs a tier.";
                     return false;
 
                 case "--scenario" when index + 1 < args.Length:
@@ -391,19 +455,89 @@ public sealed class RipcordCli(
             return false;
         }
 
-        if (scenario != "planned")
+        if (!TryReadScenario(scenario, out FailoverOperation operation))
         {
-            error = $"--scenario '{scenario}' is not available yet; only 'planned' is.";
+            error = $"--scenario '{scenario}' is not one this binary runs; "
+                + "use planned or unplanned.";
             return false;
         }
 
-        if (string.IsNullOrWhiteSpace(vmName))
+        if (!TryReadScope(vmNames, all, priority, out SweepScope scope, out error))
         {
-            error = "--vm is required.";
             return false;
         }
 
-        options = new FailoverOptions(path, vmName, dryRun);
+        options = new FailoverOptions(path, scope, operation, dryRun);
+        return true;
+    }
+
+    private static bool TryReadScenario(string written, out FailoverOperation operation)
+    {
+        operation = FailoverOperation.PlannedFailover;
+
+        switch (written)
+        {
+            case "planned":
+                return true;
+
+            case "unplanned":
+                operation = FailoverOperation.UnplannedFailover;
+                return true;
+
+            default:
+                return false;
+        }
+    }
+
+    /// Exactly one form. `--all --vm VM-DC-01` has no reading that is obviously right, and a
+    /// tool that guesses at one moves production on the guess.
+    private static bool TryReadScope(
+        List<string> vmNames,
+        bool all,
+        string? priority,
+        out SweepScope scope,
+        out string? error)
+    {
+        scope = SweepScope.Named([]);
+        error = null;
+
+        int forms = (vmNames.Count > 0 ? 1 : 0) + (all ? 1 : 0) + (priority is null ? 0 : 1);
+
+        if (forms == 0)
+        {
+            error = "one of --vm, --all or --priority is required.";
+            return false;
+        }
+
+        if (forms > 1)
+        {
+            error = "--vm, --all and --priority are alternatives; use one.";
+            return false;
+        }
+
+        if (all)
+        {
+            scope = SweepScope.All;
+            return true;
+        }
+
+        if (priority is not null)
+        {
+            // By name, never by ordinal, for the same reason the configuration reads it that
+            // way: Enum.TryParse would read "1" as P2 and sweep the second tier.
+            if (!Enum.GetNames<VmPriority>().Contains(priority, StringComparer.OrdinalIgnoreCase)
+                || !Enum.TryParse(priority, ignoreCase: true, out VmPriority tier))
+            {
+                error = $"--priority '{priority}' is not a declared tier; "
+                    + "use one of " + string.Join(", ", Enum.GetNames<VmPriority>()) + ".";
+                return false;
+            }
+
+            scope = SweepScope.OfPriority(tier);
+            return true;
+        }
+
+        scope = SweepScope.Named(vmNames);
         return true;
     }
 
@@ -706,8 +840,10 @@ public sealed class RipcordCli(
         writer.WriteLine("  ripcord test-failover (--vm <name> | --all) [--dry-run]");
         writer.WriteLine("                        [--unattended]");
         writer.WriteLine("                                     boot a replica in isolation, then destroy it");
-        writer.WriteLine("  ripcord failover --scenario planned --vm <name> [--dry-run]");
+        writer.WriteLine(
+            "  ripcord failover --scenario planned|unplanned --vm <name> [--dry-run]");
         writer.WriteLine("                                     move a VM to the other host");
+        writer.WriteLine("                                     --all or --priority P1 sweeps");
         writer.WriteLine("  ripcord serve [--config <path>]    run the read-only pair listener");
         writer.WriteLine("  ripcord version                    version and commit hash");
         writer.WriteLine();

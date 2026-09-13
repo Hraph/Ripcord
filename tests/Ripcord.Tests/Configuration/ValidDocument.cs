@@ -47,7 +47,15 @@ internal static class ValidDocument
         [
             new VmDocument { Name = "VM-DC-01", Priority = "P1", IsDomainController = true },
             new VmDocument { Name = "VM-LEGACY-01", Priority = "P1" },
-            new VmDocument { Name = "VM-BACKUP-01", Priority = "P2", HasPassthroughDisk = true },
+            // `manual` as in the shipped configuration (decision D19): it stays replicated and
+            // checkable, and no sweep picks it up.
+            new VmDocument
+            {
+                Name = "VM-BACKUP-01",
+                Priority = "P2",
+                HasPassthroughDisk = true,
+                Failover = "manual",
+            },
         ],
     };
 }

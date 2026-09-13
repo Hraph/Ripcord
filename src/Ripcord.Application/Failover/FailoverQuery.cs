@@ -15,6 +15,7 @@ public sealed record FailoverCommand(
     string ConfigurationPath,
     string MachineName,
     string VmName,
+    FailoverOperation Scenario,
     bool DryRun,
     string User,
     BuildIdentity LocalBuild);
@@ -86,14 +87,20 @@ public sealed class FailoverQuery(
                 null);
         }
 
-        // Before anything else about this VM. The sequences are encoded in the binary and span
-        // two hosts, so a pair running two versions would execute half a sequence written by
-        // each — and the plan this run would print is itself the wrong plan. It blocks the dry
-        // run too, deliberately: a plan produced by a binary that will not be executing the
-        // other half is worse than no plan, because it reads as one.
+        FailoverPlan plan = PlanFor(report, command.VmName, command.Scenario);
+
+        // Before anything else about this VM, and only for a sequence that needs both hosts:
+        // those are encoded in the binary, so a pair running two versions would execute half a
+        // sequence written by each — and the plan this run would print is itself the wrong
+        // plan. It blocks the dry run too, deliberately: a plan produced by a binary that will
+        // not be executing the other half is worse than no plan, because it reads as one.
+        //
+        // An unplanned failover runs entirely here, so there is no half for the other binary to
+        // execute. Refusing it for want of a version string the dead host never published would
+        // fail at the one thing this tool exists for.
         VersionSkew skew = VersionSkew.Between(command.LocalBuild, view.PeerBuild);
 
-        if (skew.Verdict != VersionSkewVerdict.Same)
+        if (plan.SpansTwoHosts && skew.Verdict != VersionSkewVerdict.Same)
         {
             return new FailoverOutcome(
                 ExitCode.Refused, null, null, configuration, [],
@@ -101,17 +108,14 @@ public sealed class FailoverQuery(
         }
 
         FailoverRefusal refusal =
-            FailoverPrecondition.Evaluate(
-                report, FailoverOperation.PlannedFailover, command.VmName);
+            FailoverPrecondition.Evaluate(report, command.Scenario, command.VmName);
 
         if (refusal.Refuses)
         {
             return new FailoverOutcome(
-                ExitCode.Refused, null, PlanFor(report, command.VmName), configuration, [],
-                "the preconditions for a planned failover are not met", refusal);
+                ExitCode.Refused, null, plan, configuration, [],
+                "the preconditions for this failover are not met", refusal);
         }
-
-        FailoverPlan plan = PlanFor(report, command.VmName);
 
         VmReplicationState? onSource = Find(SourceOf(view, report), command.VmName);
         VmReplicationState? onTarget = Find(TargetOf(view, report), command.VmName);
@@ -145,8 +149,11 @@ public sealed class FailoverQuery(
 
     /// The plan is built from the report's own idea of which host is which, so the sequence and
     /// the rules cannot disagree about the direction of the pair.
-    private static FailoverPlan PlanFor(CheckReport report, string vmName) =>
-        FailoverPlan.Planned(vmName, report.SourceHostName, report.TargetHostName);
+    private static FailoverPlan PlanFor(
+        CheckReport report, string vmName, FailoverOperation scenario) =>
+        scenario == FailoverOperation.UnplannedFailover
+            ? FailoverPlan.Unplanned(vmName, report.SourceHostName, report.TargetHostName)
+            : FailoverPlan.Planned(vmName, report.SourceHostName, report.TargetHostName);
 
     /// "Source" means the host that normally holds the primary copies, which is not necessarily
     /// the local one — `CheckSubject` already settled that from `replication.expected_role`, and

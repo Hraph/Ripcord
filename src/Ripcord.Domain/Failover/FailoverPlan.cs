@@ -82,6 +82,15 @@ public sealed record FailoverPlan(
         ],
         FailoverOperation.UnplannedFailover);
 
+    /// Whether carrying this plan out needs both hosts. An unplanned failover runs entirely on
+    /// the replica, and a sequence confined to one host cannot be executed half by each
+    /// binary — which is what the version gate exists to prevent.
+    public bool SpansTwoHosts =>
+        this.Steps
+            .Select(step => step.HostName)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count() > 1;
+
     public bool Equals(FailoverPlan? other) =>
         other is not null
         && this.VmName == other.VmName

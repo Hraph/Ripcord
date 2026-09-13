@@ -13,7 +13,9 @@ public class FailoverPolicyValidationTests
     {
         RipcordConfiguration configuration = Configurations.Create();
 
-        Assert.All(configuration.Vms, vm => Assert.Equal(FailoverPolicy.Auto, vm.Failover));
+        Assert.All(
+            configuration.Vms.Where(vm => vm.Name != "VM-BACKUP-01"),
+            vm => Assert.Equal(FailoverPolicy.Auto, vm.Failover));
     }
 
     [Theory]

@@ -3,6 +3,7 @@ using Ripcord.Application;
 using Ripcord.Application.Failover;
 using Ripcord.Domain;
 using Ripcord.Domain.Checks;
+using Ripcord.Domain.Failover;
 using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Pairing;
 using Ripcord.Domain.Replication;
@@ -124,6 +125,69 @@ public class FailoverQueryTests
         Assert.NotNull(outcome.Report);
     }
 
+    /// The scenario the whole milestone exists for. The peer is gone, so nothing about it can
+    /// be read — and the run still has to happen, on this host, with what is here.
+    [Fact]
+    public async Task An_unplanned_failover_proceeds_with_no_peer_at_all()
+    {
+        FakeHypervProvider provider = new(FakeScenarios.Healthy(Now));
+
+        FailoverOutcome outcome = await Run(
+            "VM-DC-01",
+            provider: provider,
+            peer: FakePeerChannel.Absent(),
+            scenario: FailoverOperation.UnplannedFailover);
+
+        Assert.Equal(ExitCode.Success, outcome.Code);
+        Assert.NotEmpty(provider.Calls);
+    }
+
+    /// The version gate is what the planned path refuses on when the peer says nothing. Here
+    /// it must not fire: the whole plan runs on this host, so there is no sequence for two
+    /// binaries to execute half of each — and refusing for want of a version string would fail
+    /// at the one thing the tool exists for.
+    [Fact]
+    public async Task An_unplanned_failover_is_not_refused_for_an_uncomparable_version()
+    {
+        FailoverOutcome outcome = await Run(
+            "VM-DC-01",
+            peerPublishesBuild: false,
+            scenario: FailoverOperation.UnplannedFailover);
+
+        Assert.NotEqual(ExitCode.Refused, outcome.Code);
+    }
+
+    /// The same absent peer that refuses a planned failover — several cross-host rules cannot
+    /// be evaluated — must not refuse an unplanned one. Every unknown there is an unknown about
+    /// a machine nobody can consult, and refusing leaves production down to protect it from
+    /// booting imperfectly.
+    [Fact]
+    public async Task An_unplanned_failover_proceeds_past_the_unknowns_a_planned_one_stops_for()
+    {
+        FailoverOutcome outcome = await Run(
+            "VM-DC-01",
+            peer: FakePeerChannel.Absent(),
+            scenario: FailoverOperation.UnplannedFailover);
+
+        Assert.NotEqual(ExitCode.Refused, outcome.Code);
+        Assert.NotEmpty(outcome.Refusal!.Proceeded);
+    }
+
+    /// And the plan it builds is the unplanned one — three steps on this host, nothing asked
+    /// of the host that is gone.
+    [Fact]
+    public async Task An_unplanned_failover_builds_the_unplanned_plan()
+    {
+        FailoverOutcome outcome = await Run(
+            "VM-DC-01",
+            dryRun: true,
+            peer: FakePeerChannel.Absent(),
+            scenario: FailoverOperation.UnplannedFailover);
+
+        Assert.Equal(FailoverOperation.UnplannedFailover, outcome.Plan!.Operation);
+        Assert.Equal(3, outcome.Plan.Steps.Count);
+    }
+
     /// Seen from the primary, the peer is the side holding the replicas. Answering with the
     /// primary's own scenario would make the progress read steps 1 to 4 as already done.
     private static FakePeerChannel Replicas() =>
@@ -151,7 +215,8 @@ public class FailoverQueryTests
         bool peerPublishesBuild = true,
         string machineName = FakeScenarios.LocalHostName,
         string expectedRole = "replica",
-        bool dryRun = false)
+        bool dryRun = false,
+        FailoverOperation scenario = FailoverOperation.PlannedFailover)
     {
         InMemorySnapshotStore store = snapshots ?? new InMemorySnapshotStore();
 
@@ -179,7 +244,8 @@ public class FailoverQueryTests
                 new FixedClock(Now),
                 FailoverTiming.ForTests)
             .ExecuteAsync(
-                new FailoverCommand("ripcord.yaml", machineName, vmName, dryRun, "RH", Build),
+                new FailoverCommand(
+                    "ripcord.yaml", machineName, vmName, scenario, dryRun, "RH", Build),
                 CancellationToken.None);
     }
 

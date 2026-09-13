@@ -38,10 +38,85 @@ public class FailoverCliTests
     public async Task An_unimplemented_scenario_is_refused_by_name()
     {
         CliRun run = await Run(
-            ["failover", "--scenario", "unplanned", "--vm", "VM-DC-01", "--dry-run"]);
+            ["failover", "--scenario", "sideways", "--vm", "VM-DC-01", "--dry-run"]);
 
         Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
-        Assert.Contains("unplanned", run.Error, StringComparison.Ordinal);
+        Assert.Contains("sideways", run.Error, StringComparison.Ordinal);
+    }
+
+    /// The unplanned plan runs entirely here, and the dry run says so — three steps, all on
+    /// this host, none of them waiting on the machine that is gone.
+    [Fact]
+    public async Task An_unplanned_dry_run_prints_a_plan_confined_to_this_host()
+    {
+        CliRun run = await Run(
+            ["failover", "--scenario", "unplanned", "--vm", "VM-DC-01", "--dry-run"],
+            typed: null);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.DoesNotContain(FakeScenarios.PeerHostName, run.Output, StringComparison.Ordinal);
+    }
+
+    /// The confirmation prompt is where the operator learns what they are about to lose.
+    /// A planned failover sends the last changes across first; an unplanned one cannot, so
+    /// everything written since the last replication cycle is gone. Printing the planned
+    /// wording here would be the tool concealing the cost of the command being typed.
+    [Fact]
+    public async Task The_unplanned_confirmation_names_the_data_that_will_be_lost()
+    {
+        CliRun run = await Run(
+            ["failover", "--scenario", "unplanned", "--vm", "VM-DC-01"],
+            typed: "not-the-node");
+
+        Assert.Equal(ExitCode.Refused, run.Code);
+        Assert.Contains("lost", run.Output, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// One form at a time. `--all --vm VM-DC-01` has no reading that is obviously right, and
+    /// guessing at one moves production.
+    [Fact]
+    public async Task Naming_a_vm_and_sweeping_at_once_is_refused()
+    {
+        CliRun run = await Run(
+            ["failover", "--scenario", "unplanned", "--all", "--vm", "VM-DC-01", "--dry-run"]);
+
+        Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
+    }
+
+    /// A sweep fails the machines over in priority order, and says which it left out. D19's
+    /// backup VM is `failover: manual` and must not be in the list.
+    [Fact]
+    public async Task A_sweep_takes_the_auto_vms_in_priority_order_and_names_the_excluded_one()
+    {
+        CliRun run = await Run(
+            ["failover", "--scenario", "unplanned", "--all", "--dry-run"], typed: null);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Contains("VM-DC-01", run.Output, StringComparison.Ordinal);
+
+        // The exclusion is a note, like the degradations `status` prints: it belongs next to
+        // the run rather than inside the plan, and it must be said out loud either way.
+        Assert.Contains("VM-BACKUP-01", run.Error, StringComparison.Ordinal);
+        Assert.Contains("manual", run.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task A_priority_sweep_is_refused_when_the_tier_is_not_a_declared_one()
+    {
+        CliRun run = await Run(
+            ["failover", "--scenario", "unplanned", "--priority", "P9", "--dry-run"]);
+
+        Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
+        Assert.Contains("P9", run.Error, StringComparison.Ordinal);
+    }
+
+    /// Neither a VM nor a sweep is not a failover of everything. It is a missing argument.
+    [Fact]
+    public async Task A_failover_with_no_vm_and_no_sweep_is_refused()
+    {
+        CliRun run = await Run(["failover", "--scenario", "unplanned", "--dry-run"]);
+
+        Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
     }
 
     [Fact]
