@@ -23,11 +23,22 @@ file written in calm conditions.
 
 ## Project state
 
-**Milestone 0 shipped. Milestones 1, 1b and 2 built, awaiting validation on the real hosts.**
-`status`, `check`, `version`, `serve` and `deploy-listener` are implemented and covered by
-tests that run on Linux — including the mTLS handshake end to end, with generated certificates
-and real sockets, and a case table per check rule. The WMI adapters are written but have never
-run on a Hyper-V host, so nothing here is proven against real infrastructure yet.
+**Milestone 0 shipped. Milestones 1, 1b, 2, 3 and 4 built, awaiting validation on the real
+hosts.** `status`, `check`, `test-failover`, `failover --scenario planned`, `version`, `serve`
+and `deploy-listener` are implemented and covered by tests that run on Linux — including the
+mTLS handshake end to end, with generated certificates and real sockets, and a case table per
+check rule.
+
+**Nothing here has run on a Hyper-V host.** The WMI adapters are written blind from the
+Microsoft reference, and a round of checking names against that reference found four that did
+not exist — including one whose absence meant a critical rule had never fired at all. Treat the
+adapters as unverified until the lab says otherwise; the outstanding facts are listed as V-items
+in [`docs/TRACKING.md`](docs/TRACKING.md).
+
+One limitation worth knowing before reading further: **a planned failover cannot yet cross from
+the primary to the replica.** `Start-VMFailover -Prepare` leaves no state this binary can name,
+so the replica cannot observe that the primary's half has run, and refuses rather than assuming.
+It is question Q5, and it is pinned by a test rather than left silent.
 
 Progress and decisions: [`docs/TRACKING.md`](docs/TRACKING.md).
 Per-milestone detail: [`docs/milestones/`](docs/milestones/).
@@ -119,6 +130,10 @@ The machine names, addresses and thumbprints throughout this repository are pseu
 ```
 ripcord status [--config <path>]              read both sides of the pair
 ripcord check [--config <path>]               would a failover work right now
+ripcord test-failover (--vm <name> | --all) [--dry-run] [--unattended]
+                                              boot a replica in isolation, then destroy it
+ripcord failover --scenario planned --vm <name> [--dry-run]
+                                              move a VM to the other host
 ripcord serve [--config <path>]               run the read-only pair listener
 ripcord deploy-listener [--dry-run] [--remove]  install or remove that listener
 ripcord version                               version and commit hash
@@ -129,6 +144,14 @@ and applies only the difference, so re-running it on a correct host does nothing
 binary or a changed port becomes an update, and `--remove` is the same list read backwards.
 Nothing mutating happens without `--dry-run` first showing the plan and the operator then
 typing the node name.
+
+`failover` drives **only the host it is run on**. Each invocation carries out the steps the plan
+assigns to this machine, then names the other host and prints the exact command to type there.
+That is a deliberate refusal to build a channel that mutates the peer: in an unplanned failover
+the primary is dead by definition, so a cross-host execution path is unavailable in precisely the
+case the tool exists for. Where the sequence has got to is re-derived from what both hosts
+report, never from a stored position, so running it twice is safe and running it on the wrong
+host is refused rather than obeyed.
 
 The pair channel carries one thing in one direction: this host's published state. It has no
 verb, no parameter and no request body, so there is nothing to abuse — and the service that
