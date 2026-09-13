@@ -391,6 +391,26 @@ function Get-ReleaseApiUri {
     "$releases/latest"
 }
 
+<#
+    Where one file of a release lives, by its own numeric id.
+
+    The metadata answer also carries a `browser_download_url`, and following it would work.
+    Nothing here follows it: an address taken out of a response body is a class of problem
+    rather than an instance of one, and both numbers this needs — the repository and the asset
+    — are already in hand. So the name of the repository is never typed, never followed, and
+    never able to go stale.
+#>
+function Get-ReleaseAssetUri {
+    param([Parameter(Mandatory)][long] $AssetId)
+
+    "https://api.github.com/repositories/$script:RepositoryId/releases/assets/$AssetId"
+}
+
+<#
+    The files a release publishes, as name to id. A PowerShell hash table matches its keys
+    case-insensitively, which is what is wanted here: a release publishing `Ripcord.exe` is
+    publishing the file this script is looking for.
+#>
 function Get-ReleaseAssets {
     param([string] $Tag)
 
@@ -413,8 +433,9 @@ function Get-ReleaseAssets {
 
     $assets = @{}
 
+    # The id and the name, and nothing else the body offered.
     foreach ($asset in $release.assets) {
-        $assets[$asset.name] = $asset.browser_download_url
+        $assets[$asset.name] = [long] $asset.id
     }
 
     $assets
@@ -436,11 +457,15 @@ function Save-Release {
             Stop-Install "the release carries no $asset; it is not one this script can install"
         }
 
-        $uri = $assets[$asset]
+        $uri = Get-ReleaseAssetUri -AssetId $assets[$asset]
         Write-Step "fetching $asset"
 
         try {
-            Invoke-WebRequest -UseBasicParsing -Uri $uri -OutFile (Join-Path $Directory $asset)
+            # Without this header the API answers with JSON describing the asset rather than
+            # the asset, which would arrive as a file that is not a binary and fail its
+            # checksum with no hint as to why.
+            Invoke-WebRequest -UseBasicParsing -Uri $uri -OutFile (Join-Path $Directory $asset) `
+                -Headers @{ 'User-Agent' = 'ripcord-install'; 'Accept' = 'application/octet-stream' }
         }
         catch {
             Stop-Install "could not fetch $asset from $uri : $($_.Exception.Message)"

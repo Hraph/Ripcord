@@ -190,9 +190,26 @@ Describe 'where a release is asked for' {
             Should -Be 'https://api.github.com/repositories/1367653231/releases/tags/v0.1.0'
     }
 
-    It 'never addresses the web host by id' {
-        foreach ($uri in @((Get-ReleaseApiUri), (Get-ReleaseApiUri -Tag 'v1.2.3'))) {
-            $uri | Should -Not -BeLike 'https://github.com/repositories/*'
+    It 'fetches a file by its own id, not by an address the answer offered' {
+        Get-ReleaseAssetUri -AssetId 542974244 |
+            Should -Be 'https://api.github.com/repositories/1367653231/releases/assets/542974244'
+    }
+
+    <#
+        Every address this script builds is two numbers and a host. The repository is never
+        named, so it cannot be renamed out from under the installer and the old name cannot be
+        recreated by somebody else — which is the whole reason for the id.
+    #>
+    It 'names no repository in any address it builds' {
+        $addresses = @(
+            (Get-ReleaseApiUri),
+            (Get-ReleaseApiUri -Tag 'v1.2.3'),
+            (Get-ReleaseAssetUri -AssetId 1))
+
+        foreach ($address in $addresses) {
+            $address | Should -Not -BeLike 'https://github.com/repositories/*'
+            $address | Should -Not -Match 'ripcord'
+            $address | Should -BeLike 'https://api.github.com/repositories/1367653231/*'
         }
     }
 
