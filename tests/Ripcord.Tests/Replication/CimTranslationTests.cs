@@ -37,6 +37,12 @@ public class CimTranslationTests
         Assert.Equal("VM-DC-01", CimTranslation.VmName("VM-DC-01"));
     }
 
+    /// A name read from the local host is printed on the same terminal as the peer's, so it
+    /// is cleaned on the same terms.
+    [Fact]
+    public void A_control_character_in_a_local_vm_name_does_not_reach_the_console() =>
+        Assert.Equal("VM-DC-01?[2K", CimTranslation.VmName("VM-DC-01\u001b[2K"));
+
     /// MI hands back CIM_DATETIME as a DateTime whose kind it sets. Utc and Local convert
     /// themselves; Unspecified is the host's own wall clock, since the value came from that
     /// host's Hyper-V. Assumed, not verified — see V22.

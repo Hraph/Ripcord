@@ -22,8 +22,11 @@ public static class CimTranslation
         || !instanceId.Contains(@"\HVR\", StringComparison.OrdinalIgnoreCase)
         || instanceId.EndsWith(@"\HVR\0", StringComparison.OrdinalIgnoreCase);
 
+    /// Cleaned on the way in, like the names that arrive from the peer: a VM name is printed
+    /// on a terminal read under pressure, and an escape sequence in one can rewrite the line
+    /// above it.
     public static string VmName(string? elementName) =>
-        string.IsNullOrWhiteSpace(elementName) ? "(unnamed)" : elementName;
+        string.IsNullOrWhiteSpace(elementName) ? "(unnamed)" : Printable.Of(elementName);
 
     /// MI hands back CIM_DATETIME as a DateTime whose kind it sets. Unspecified is read as the
     /// host's own wall clock, since the value came from that host's Hyper-V. Assumed, not
