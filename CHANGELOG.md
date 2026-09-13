@@ -9,77 +9,47 @@ half-updated pair depends on.
 
 A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binary.
 
-## Unreleased
+## 0.2.0 — 2026-09-14
 
 ### Added
 
-- `install.ps1` — the first install, in one line:
-  `irm https://raw.githubusercontent.com/Hraph/Ripcord/main/install.ps1 | iex`. It checks the
-  SHA-256 and verifies the release signature against a key written into the script before
-  anything lands, and installs nothing if either fails. `-Prepare` and `-FromPath` split that
-  in two for a host with no outbound access: download and verify on a machine that has some,
-  copy the folder, verify again on the host. It refuses a host that already has a binary —
-  that host wants `ripcord update`.
+- `install.ps1` leaves a `ripcord.yaml` behind on a host that had none and no sample to copy
+  from — and writes it so that it **does not validate**. Every field the machine can answer is
+  filled in; every field only the operator can answer is blank, and the validator refuses each
+  by name. A default that loaded cleanly would describe a pair that does not exist, and
+  `ripcord status` would then answer confidently about the wrong peer.
 
-### Security
+### Fixed
 
-- Anything a host names — a VM, a switch, an adapter, the other host itself — is stripped of
-  control characters before it reaches a console or a mail header. A name carrying an ANSI
-  escape could otherwise repaint the verdict an operator is reading during an incident.
-- SMTP credentials on a connection that never starts TLS are refused by the configuration
-  validator rather than sent in the clear.
-- A mail the framework refuses to build is a failed delivery, not an exception out of
-  `ripcord check`.
-- The release workflow no longer substitutes its inputs into a shell script, and its token is
-  read-only except on the job that publishes. Third-party actions are pinned to a commit.
-- `SECURITY.md` states how to report a vulnerability and what the tool assumes.
-
-### Changed
-
-- A deployment that fails part-way exits **5** (the host is between two states) rather than 3,
-  and says "nothing was changed" instead when the first step failed. A declined confirmation
-  exits **4**, like every other declined confirmation.
-- The peer's address is compared as an address, so a peer arriving over IPv6 from its own
-  address is still the peer.
-
-### Added
-
-- `ripcord dashboard` — the read-only page of milestone 7, served on `127.0.0.1` only and off
-  unless `dashboard.enabled` says otherwise. It runs the same `check` the console does and lays
-  its answer out in a browser: one reading per refresh, taken from the pair the findings were
-  judged from. One self-contained document, no script and nothing fetched from anywhere, so it
-  renders on a host with no outbound access. A reading that failed becomes a page saying so.
-- `dashboard.port` and `dashboard.refresh_sec` in `ripcord.yaml`. There is deliberately no
-  address key: the page is bound to the loopback interface by construction.
-
-- `ripcord update` — installs a newer published release on the host it is run on. Off unless
-  `updates.install` says so, which is a second switch beside `updates.check`: permission to look
-  is not permission to replace the binary this host runs its failovers with. It asks for the
-  node name, `--dry-run` prints the plan and stops, and it is never unattended.
-
-  It refuses any release whose detached ECDSA signature does not verify against a public key
-  compiled into the running binary — absent, malformed, signed by anybody else, or a host
-  carrying no key at all are all refusals, taken before anything on the host is moved. The
-  running binary is then set aside and kept; if the last move fails it goes back, and only if
-  that fails too does the command exit 5 and print the renames to type.
-- `updates.install` in `ripcord.yaml`. `install` without `check` is refused by the validator.
-- Releases now carry `ripcord.exe.sig` beside the `.exe` and the `.sha256`.
+- **`ripcord update` could not download a release, on any host.** The address was built as
+  `github.com/repositories/{id}/releases/download/…`, and that is not a route: the numeric
+  repository id is an API path and has never been a web one, so every download answered 404.
+  The API is asked instead, by id, for the release carrying the tag, and each file is then
+  fetched by its own asset id — so no address arriving in a response body is followed, and the
+  repository name is never typed at all. It failed safely, as a refusal rather than a wrong
+  binary, but it could not have worked. `install.ps1` had the same address and the same fix.
+- **`install.ps1` died before its first line when run the way the README says to run it.**
+  `irm … | iex` binds the param block in the caller's scope, where `$Role` takes its empty
+  default and a `[ValidateSet]` that does not admit the empty string cannot be attached at all.
+  Twenty-one green tests and a green CI job said nothing about it, because every one of them
+  dot-sources the script rather than piping it.
 
 ### Changed
 
-- **Ripcord can now update itself, which earlier releases said it never would.** `RELEASING.md`,
-  `RELEASE_NOTES.md`, `SECURITY.md` and milestone 5 are rewritten rather than left contradicting
-  the code. The objection that produced that rule has not gone away; what changed is that the
-  install path now verifies a signature against a pinned key instead of trusting the release
-  page. The signing key lives in the release workflow's secrets, so an account with write access
-  to the repository can still sign — stated in `SECURITY.md` rather than implied.
+- Every CI and release job is bounded by `timeout-minutes`. There were none, so a step that
+  stopped to ask a question on a runner with no keyboard would have waited six hours before
+  anybody was told — including on the workflow that ends by publishing a binary two hosts are
+  pointed at.
+- The Windows PowerShell 5.1 installer job no longer spends minutes drawing a progress bar
+  nobody can see, trusts the gallery before installing from it so nothing can stop to ask, and
+  says which Pester actually loaded: 5.1 ships 3.4.0 in `System32` and it wins load order more
+  often than anyone expects.
 
 ### Notes
 
-- Milestone 7 was gated on an evaluation of Windows Admin Center, recorded in
-  `docs/milestones/milestone-7.md`. WAC is supported and its Virtualization Mode does cover
-  Hyper-V Replica, but it is still public preview, it assumes live connectivity to both hosts,
-  and it has no equivalent of the pre-failover check. The milestone proceeds.
+- The names the release workflow publishes are now compared against the names a host goes
+  looking for. A rename there would have broken `ripcord update` and `install.ps1` together,
+  silently, and only at the next release.
 
 ## 0.1.0 — 2026-09-13
 
@@ -114,6 +84,58 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 - `ripcord check-update` — reports that a newer release exists and nothing more. Off unless
   `updates.check` switches it on, and it addresses the repository by numeric id rather than by
   `owner/name`.
+- `install.ps1` — the first install, in one line:
+  `irm https://raw.githubusercontent.com/Hraph/Ripcord/main/install.ps1 | iex`. It checks the
+  SHA-256 and verifies the release signature against a key written into the script before
+  anything lands, and installs nothing if either fails. `-Prepare` and `-FromPath` split that
+  in two for a host with no outbound access: download and verify on a machine that has some,
+  copy the folder, verify again on the host. It refuses a host that already has a binary —
+  that host wants `ripcord update`.
+- `ripcord dashboard` — the read-only page of milestone 7, served on `127.0.0.1` only and off
+  unless `dashboard.enabled` says otherwise. It runs the same `check` the console does and lays
+  its answer out in a browser: one reading per refresh, taken from the pair the findings were
+  judged from. One self-contained document, no script and nothing fetched from anywhere, so it
+  renders on a host with no outbound access. A reading that failed becomes a page saying so.
+- `dashboard.port` and `dashboard.refresh_sec` in `ripcord.yaml`. There is deliberately no
+  address key: the page is bound to the loopback interface by construction.
+- `ripcord update` — installs a newer published release on the host it is run on. Off unless
+  `updates.install` says so, which is a second switch beside `updates.check`: permission to look
+  is not permission to replace the binary this host runs its failovers with. It asks for the
+  node name, `--dry-run` prints the plan and stops, and it is never unattended.
+  It refuses any release whose detached ECDSA signature does not verify against a public key
+  compiled into the running binary — absent, malformed, signed by anybody else, or a host
+  carrying no key at all are all refusals, taken before anything on the host is moved. The
+  running binary is then set aside and kept; if the last move fails it goes back, and only if
+  that fails too does the command exit 5 and print the renames to type.
+- `updates.install` in `ripcord.yaml`. `install` without `check` is refused by the validator.
+- Releases now carry `ripcord.exe.sig` beside the `.exe` and the `.sha256`.
+
+### Changed
+
+- A deployment that fails part-way exits **5** (the host is between two states) rather than 3,
+  and says "nothing was changed" instead when the first step failed. A declined confirmation
+  exits **4**, like every other declined confirmation.
+- The peer's address is compared as an address, so a peer arriving over IPv6 from its own
+  address is still the peer.
+- **Ripcord can now update itself, which earlier releases said it never would.** `RELEASING.md`,
+  `RELEASE_NOTES.md`, `SECURITY.md` and milestone 5 are rewritten rather than left contradicting
+  the code. The objection that produced that rule has not gone away; what changed is that the
+  install path now verifies a signature against a pinned key instead of trusting the release
+  page. The signing key lives in the release workflow's secrets, so an account with write access
+  to the repository can still sign — stated in `SECURITY.md` rather than implied.
+
+### Security
+
+- Anything a host names — a VM, a switch, an adapter, the other host itself — is stripped of
+  control characters before it reaches a console or a mail header. A name carrying an ANSI
+  escape could otherwise repaint the verdict an operator is reading during an incident.
+- SMTP credentials on a connection that never starts TLS are refused by the configuration
+  validator rather than sent in the clear.
+- A mail the framework refuses to build is a failed delivery, not an exception out of
+  `ripcord check`.
+- The release workflow no longer substitutes its inputs into a shell script, and its token is
+  read-only except on the job that publishes. Third-party actions are pinned to a commit.
+- `SECURITY.md` states how to report a vulnerability and what the tool assumes.
 
 ### Known limitations
 
@@ -127,3 +149,10 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
   failure mode is a pair that looks protected and is not.
 - Every CIM name in the failover adapter is unverified on real hardware (V37), and the fence's
   own write is unverified too (V43).
+
+### Notes
+
+- Milestone 7 was gated on an evaluation of Windows Admin Center, recorded in
+  `docs/milestones/milestone-7.md`. WAC is supported and its Virtualization Mode does cover
+  Hyper-V Replica, but it is still public preview, it assumes live connectivity to both hosts,
+  and it has no equivalent of the pre-failover check. The milestone proceeds.
