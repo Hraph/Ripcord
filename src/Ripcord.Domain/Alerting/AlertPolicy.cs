@@ -125,7 +125,12 @@ public static class AlertPolicy
                 "already notified, and nothing new since");
         }
 
-        DateTimeOffset raisedAt = request.Previous.HeldSince ?? request.Now;
+        // Only when what was held was a finding. A recovery waiting out the same window also
+        // carries a HeldSince, and dating a new problem from the moment the last one cleared
+        // would understate how long it has been broken.
+        DateTimeOffset raisedAt = request.Previous.Fingerprint.Length > 0
+            ? request.Previous.HeldSince ?? request.Now
+            : request.Now;
 
         // The threshold is a delivery interval, not a licence to ignore the window: a repeat
         // coming due at 3 a.m. waits for the morning like anything else.

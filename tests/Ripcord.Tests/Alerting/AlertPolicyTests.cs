@@ -177,6 +177,26 @@ public class AlertPolicyTests
         Assert.Contains("2 critical findings", delivered.Notification!.Subject);
     }
 
+    /// A recovery waiting out the window also carries a held instant. A fresh finding after
+    /// it is dated from now, not from the moment the last one cleared.
+    [Fact]
+    public void A_finding_appearing_after_a_held_recovery_is_dated_from_now()
+    {
+        AlertState notified = Decide(Reports.WithSwitchMismatch(), AlertState.Clear, Noon).State;
+        AlertState heldRecovery = Decide(Reports.Clean(), notified, Midnight).State;
+
+        AlertDecision delivered = Decide(
+            Reports.WithSwitchMismatchAndInvertedDirection(),
+            Decide(Reports.WithSwitchMismatchAndInvertedDirection(), heldRecovery, Midnight.AddHours(3)).State,
+            Midnight.AddHours(7));
+
+        Assert.Equal(AlertAction.Send, delivered.Action);
+        Assert.Contains(
+            $"raised at {Midnight.AddHours(3):yyyy-MM-dd HH:mm}",
+            delivered.Notification!.Body,
+            StringComparison.Ordinal);
+    }
+
     /// The threshold is a delivery interval, not a decision to skip the window: a repeat that
     /// comes due at 3 a.m. waits for the morning like any other.
     [Fact]
