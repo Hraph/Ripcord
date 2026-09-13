@@ -47,7 +47,7 @@ jobs:
 
     steps:
       - name: Check out the repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
@@ -254,14 +254,14 @@ jobs:
 
     steps:
       - name: Check out the repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # SourceLink needs the full history to stamp a commit into InformationalVersion,
           # and `ripcord version` is what tells an operator which binary is on which host.
           fetch-depth: 0
 
       - name: Install the .NET SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '10.0.x'
 
@@ -329,7 +329,7 @@ jobs:
 
       - name: Keep the unpublished binary as an artefact
         if: inputs.dry_run
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ripcord-${{ env.VERSION }}-dry-run
           path: |

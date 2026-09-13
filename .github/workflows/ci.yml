@@ -6,16 +6,20 @@ on: [push, pull_request]
 permissions:
   contents: read
 
+# Third-party actions are pinned to a commit, with the version in the comment. A tag can be
+# moved; a commit cannot, and these run with a token in a workflow that builds the binary two
+# hosts are pointed at. Updating one means reading what changed, which is the point.
+
 jobs:
   test:
     name: Build and test
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install the .NET SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '10.0.x'
 
@@ -37,7 +41,7 @@ jobs:
         run: dotnet test Ripcord.Linux.slnf -c Release --logger trx
 
       - name: Keep the test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: test-results
@@ -50,7 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Build the image the Dockerfile describes
         run: docker build -t ripcord-tests .
