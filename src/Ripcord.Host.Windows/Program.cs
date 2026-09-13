@@ -19,6 +19,15 @@ internal static class Program
     /// command someone is running during an incident.
     private static readonly TimeSpan WmiTimeout = TimeSpan.FromSeconds(30);
 
+    /// The GitHub repository, by numeric id. Never `Hraph/Ripcord`: a rename leaves a redirect
+    /// that HttpClient follows, and the day somebody recreates the abandoned name that URL
+    /// stops failing and starts answering with a different repository's releases.
+    private const long RepositoryId = 1_367_653_231;
+
+    /// Short enough that `check-update` on a host with no outbound access fails rather than
+    /// hangs, which is the normal case on both of them.
+    private static readonly TimeSpan HttpTimeout = TimeSpan.FromSeconds(15);
+
     /// Never silent: every connection the listener handles says who called and what was
     /// decided. `ripcord serve` is run by hand to verify the exit criterion, and a refusal
     /// nobody can see is a refusal nobody can trust.
@@ -59,6 +68,8 @@ internal static class Program
             new TransportNotifier(new EnvironmentSecretStore(), TransportNotifier.DefaultTimeout),
             new FileAlertStateStore(
                 Path.Combine(AppContext.BaseDirectory, "alert-state.json")),
+            new GitHubReleaseFeed(
+                RepositoryId, $"ripcord/{BuildInfo.VersionWithCommit}", HttpTimeout),
             clock,
             new CliEnvironment(
                 Environment.MachineName,

@@ -1,5 +1,6 @@
 using Ripcord.Domain.Alerting;
 using Ripcord.Domain.Checks;
+using Ripcord.Domain.Updates;
 
 namespace Ripcord.Domain.Configuration;
 
@@ -55,6 +56,11 @@ public static class ConfigurationValidator
         ReplicationSettings? replication = ValidateReplication(document.Replication, errors);
         StorageSettings? storage = ValidateStorage(document.Storage, errors);
         AlertingSettings? alerting = ValidateAlerting(document.Alerting, errors);
+
+        // Nothing to validate: one switch, off unless the file says otherwise.
+        UpdateSettings updates = document.Updates is { } asked
+            ? new UpdateSettings(asked.Check)
+            : UpdateSettings.Disabled();
         IReadOnlyList<VmSettings> vms = ValidateVms(document.Vms, errors);
 
         IReadOnlyList<Acknowledgement> acknowledgements =
@@ -73,7 +79,8 @@ public static class ConfigurationValidator
             || alerting is null
             ? ConfigurationValidation.Invalid(errors)
             : ConfigurationValidation.Valid(new RipcordConfiguration(
-                node, peer, listener, replication, storage, alerting, vms, acknowledgements));
+                node, peer, listener, replication, storage, alerting, updates, vms,
+                acknowledgements));
     }
 
     /// Authorising a VM to be tested with no human present is the one place the typed

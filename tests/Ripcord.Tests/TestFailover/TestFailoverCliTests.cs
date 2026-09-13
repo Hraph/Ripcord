@@ -9,6 +9,7 @@ using Ripcord.Ports;
 using Ripcord.Tests.Configuration;
 
 using Ripcord.Tests.Alerting;
+using Ripcord.Tests.Updates;
 
 namespace Ripcord.Tests.TestFailover;
 
@@ -242,6 +243,7 @@ public class TestFailoverCliTests
             new InMemoryAuditLog(),
             new StubNotifier(),
             new MemoryAlertStateStore(),
+            StubReleaseFeed.Unreachable(),
             new FixedClock(Now),
             new CliEnvironment(
                 machineName,

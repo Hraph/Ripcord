@@ -1,6 +1,7 @@
 using Ripcord.Adapters.Fake;
 using Ripcord.Domain.Alerting;
 using Ripcord.Tests.Alerting;
+using Ripcord.Tests.Updates;
 using Ripcord.Cli;
 using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Replication;
@@ -12,6 +13,7 @@ using Ripcord.Ports;
 using Ripcord.Domain.Pairing;
 using Ripcord.Ports.Deployment;
 using Ripcord.Ports.Alerting;
+using Ripcord.Ports.Updates;
 using Ripcord.Ports.Pairing;
 
 namespace Ripcord.Tests.Cli;
@@ -428,6 +430,57 @@ public class RipcordCliTests
 
     private const string BinaryPath = "/opt/ripcord/ripcord";
 
+    /// Off unless the configuration switches it on, and loud about it: a host somebody
+    /// believes is checking for updates and silently is not is the worse of the two failures.
+    [Fact]
+    public async Task Check_update_refuses_on_a_host_that_did_not_ask_for_it()
+    {
+        CliRun run = await Run(["check-update"]);
+
+        Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
+        Assert.Contains("switched off", run.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Check_update_reports_a_newer_release()
+    {
+        CliRun run = await Run(
+            ["check-update"],
+            configStore: new RecordingConfigStore(updates: true),
+            releaseFeed: StubReleaseFeed.Publishing("99.0.0"));
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Contains("An update is available", run.Output, StringComparison.Ordinal);
+        Assert.Contains("99.0.0", run.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Check_update_on_the_current_release_says_so_and_exits_zero()
+    {
+        CliRun run = await Run(
+            ["check-update"],
+            configStore: new RecordingConfigStore(updates: true),
+            releaseFeed: StubReleaseFeed.Publishing(BuildInfo.Version));
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Contains("the latest release", run.Output, StringComparison.Ordinal);
+    }
+
+    /// A host with no outbound access is the design. It must say it could not look, and it
+    /// must never say it is up to date.
+    [Fact]
+    public async Task Check_update_that_cannot_reach_github_says_so_rather_than_guessing()
+    {
+        CliRun run = await Run(
+            ["check-update"],
+            configStore: new RecordingConfigStore(updates: true),
+            releaseFeed: StubReleaseFeed.Unreachable());
+
+        Assert.Equal(ExitCode.LocalAccessFailure, run.Code);
+        Assert.Contains("could not be resolved", run.Error, StringComparison.Ordinal);
+        Assert.Empty(run.Output);
+    }
+
     private static async Task<CliRun> Run(
         string[] args,
         string machineName = FakeScenarios.LocalHostName,
@@ -437,6 +490,7 @@ public class RipcordCliTests
         string? typed = null,
         INotifier? notifier = null,
         IAlertStateStore? alertState = null,
+        IReleaseFeed? releaseFeed = null,
         CancellationToken cancellationToken = default)
     {
         StringWriter output = new();
@@ -455,6 +509,7 @@ public class RipcordCliTests
             new InMemoryAuditLog(),
             notifier ?? new StubNotifier(),
             alertState ?? new MemoryAlertStateStore(),
+            releaseFeed ?? StubReleaseFeed.Unreachable(),
             new FixedClock(Now),
             new CliEnvironment(
                 machineName, DefaultConfigPath, BinaryPath, new StringReader(typed ?? "")));
@@ -491,8 +546,8 @@ public class RipcordCliTests
 
 
     /// Returns a document the validator accepts, and remembers which path was asked for.
-    private sealed class RecordingConfigStore(bool listenerEnabled = true, bool alerting = false)
-        : IConfigStore
+    private sealed class RecordingConfigStore(
+        bool listenerEnabled = true, bool alerting = false, bool updates = false) : IConfigStore
     {
         public string? RequestedPath { get; private set; }
 
@@ -515,6 +570,11 @@ public class RipcordCliTests
                         To = ["ops@example.net"],
                     },
                 };
+            }
+
+            if (updates)
+            {
+                document.Updates = new UpdatesDocument { Check = true };
             }
 
             return ConfigurationRead.Succeeded(document);

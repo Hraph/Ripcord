@@ -25,6 +25,14 @@ public sealed class ConfigurationDocument
     /// Absent on a host that notifies nobody, which is the default: these two machines are
     /// meant to have no outbound access at all.
     public AlertingDocument? Alerting { get; set; }
+
+    public UpdatesDocument? Updates { get; set; }
+}
+
+/// Absent on every host that has no outbound access, which is both of them by design.
+public sealed class UpdatesDocument
+{
+    public bool Check { get; set; }
 }
 
 public sealed class AlertingDocument

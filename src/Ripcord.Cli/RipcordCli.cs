@@ -1,5 +1,6 @@
 using Ripcord.Application.Alerting;
 using Ripcord.Application.Checks;
+using Ripcord.Application.Updates;
 using Ripcord.Application.Deployment;
 using Ripcord.Application.Failover;
 using Ripcord.Application.Status;
@@ -11,6 +12,7 @@ using Ripcord.Domain.Pairing;
 using Ripcord.Ports.Deployment;
 using Ripcord.Domain.Checks;
 using Ripcord.Domain.Failover;
+using Ripcord.Domain.Updates;
 using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Replication;
 using Ripcord.Domain;
@@ -20,6 +22,7 @@ using Ripcord.Ports.Pairing;
 using Ripcord.Ports.Alerting;
 using Ripcord.Ports.Audit;
 using Ripcord.Ports.Replication;
+using Ripcord.Ports.Updates;
 using Ripcord.Ports;
 
 namespace Ripcord.Cli;
@@ -53,6 +56,7 @@ public sealed class RipcordCli(
     IAuditLog audit,
     INotifier notifier,
     IAlertStateStore alertState,
+    IReleaseFeed releaseFeed,
     IClock clock,
     CliEnvironment environment)
 {
@@ -119,6 +123,10 @@ public sealed class RipcordCli(
 
             case "deploy-listener":
                 return this.DeployListener(args[1..], output, error);
+
+            case "check-update":
+                return await this.CheckUpdateAsync(args[1..], output, error, cancellationToken)
+                    .ConfigureAwait(false);
 
             case "version":
                 output.WriteLine($"ripcord {BuildInfo.VersionWithCommit}");
@@ -238,6 +246,46 @@ public sealed class RipcordCli(
         {
             error.WriteLine($"ripcord: {note}");
         }
+    }
+
+    /// Reports that a newer release exists, and nothing more: download and install stay
+    /// manual, with the signature verified by hand. Switched off unless the configuration
+    /// says otherwise — a host with no outbound access is the design, not a limitation.
+    private async Task<ExitCode> CheckUpdateAsync(
+        string[] args, TextWriter output, TextWriter error, CancellationToken cancellationToken)
+    {
+        if (!TryReadConfigurationPath(args, out string path, out string? optionError))
+        {
+            error.WriteLine($"ripcord: {optionError}");
+            return ExitCode.InvalidConfiguration;
+        }
+
+        UpdateQuery query = new(configStore, releaseFeed);
+
+        UpdateOutcome outcome = await query
+            .ExecuteAsync(
+                new UpdateCheckOptions(
+                    path, environment.MachineName, this.LocalBuild.Version),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (outcome.Code == ExitCode.Success && outcome.Status is { } status)
+        {
+            output.WriteLine(status.Verdict == UpdateVerdict.UpdateAvailable
+                ? $"An update is available: {status.Explanation}."
+                : $"{status.Explanation}.");
+
+            return outcome.Code;
+        }
+
+        WriteFailure(error, new StatusOutcome(
+            outcome.Code,
+            null,
+            outcome.Errors,
+            outcome.FailureMessage ?? outcome.Status?.Explanation,
+            []));
+
+        return outcome.Code;
     }
 
     /// The service entry point. It serves the published snapshot and nothing else — it never
@@ -1075,6 +1123,9 @@ public sealed class RipcordCli(
         writer.WriteLine("                                     themselves — run it first when a");
         writer.WriteLine("                                     failed-over host comes back");
         writer.WriteLine("  ripcord serve [--config <path>]    run the read-only pair listener");
+        writer.WriteLine("  ripcord check-update               is a newer release published");
+        writer.WriteLine("                                     (off unless the configuration");
+        writer.WriteLine("                                     switches it on)");
         writer.WriteLine("  ripcord version                    version and commit hash");
         writer.WriteLine();
         writer.WriteLine("Exit codes: 0 success (an unreachable peer included), "

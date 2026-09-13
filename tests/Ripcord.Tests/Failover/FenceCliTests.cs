@@ -10,6 +10,7 @@ using Ripcord.Ports.Replication;
 using Ripcord.Tests.Configuration;
 
 using Ripcord.Tests.Alerting;
+using Ripcord.Tests.Updates;
 
 namespace Ripcord.Tests.Failover;
 
@@ -151,6 +152,7 @@ public class FenceCliTests
             new InMemoryAuditLog(),
             new StubNotifier(),
             new MemoryAlertStateStore(),
+            StubReleaseFeed.Unreachable(),
             new FixedClock(Now),
             new CliEnvironment(
                 FakeScenarios.LocalHostName,
