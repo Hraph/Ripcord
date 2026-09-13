@@ -20,9 +20,32 @@ public class TestFailoverRendererTests
             NotIsolated("VM-BACKUP-01")),
             "vSwitch-ISOLATED");
 
+        // Split on '\n', not on Environment.NewLine: `Layout.Rendered` normalises every block
+        // to one line ending whatever the host, so splitting on the *host's* ending makes the
+        // whole output one line on Windows and this assertion pass by measuring nothing.
+        string[] lines = rendered.Split('\n');
+
+        // One "line" means the split found no ending, and the assertion below would then be
+        // measuring the whole block rather than a line.
+        Assert.True(lines.Length > 1, "the rendered block was not split into lines");
+
         Assert.All(
-            rendered.Split(Environment.NewLine),
+            lines,
             line => Assert.True(line.Length <= 75, $"too wide ({line.Length}): {line}"));
+    }
+
+
+    /// The Windows release job renders on a host whose line ending is CRLF. `Layout.Rendered`
+    /// normalises it away, and this is what notices if a renderer ever stops going through it:
+    /// a stray carriage return is a 76th column on a 75-column layout, and invisible in a diff.
+    [Fact]
+    public void Nothing_rendered_carries_the_hosts_own_line_ending()
+    {
+        Assert.DoesNotContain(
+            '\r',
+            TestFailoverRenderer.Render(
+                Report(Result("VM-DC-01", TestFailoverStatus.Booted, TimeSpan.FromSeconds(42))),
+                "vSwitch-ISOLATED"));
     }
 
     /// The distinction the whole heartbeat treatment exists for. A guest with no integration

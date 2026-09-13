@@ -18,12 +18,34 @@ public class CheckRendererTests
     {
         foreach (string rendered in new[] { Render(Broken()), Render(Pairs.Healthy(Now)) })
         {
+            // Split on '\n', not on Environment.NewLine: `Layout.Rendered` normalises every
+            // block to one line ending whatever the host, so splitting on the *host's* ending
+            // makes the whole output a single line on Windows — where this assertion then
+            // measures nothing at all.
+            string[] lines = rendered.Split('\n');
+
+            // One "line" means the split found no ending and this assertion is about to
+            // measure the whole block instead of a line, which is how it passed on Linux
+            // while failing on Windows.
+            Assert.True(lines.Length > 1, "the rendered block was not split into lines");
+
             Assert.All(
-                rendered.Split(Environment.NewLine),
+                lines,
                 line => Assert.True(
                     line.Length <= CheckRenderer.Width,
                     $"{line.Length} characters: {line}"));
         }
+    }
+
+
+    /// The Windows release job renders on a host whose line ending is CRLF. `Layout.Rendered`
+    /// normalises it away, and this is what notices if a renderer ever stops going through it:
+    /// a stray carriage return is a 76th column on a 75-column layout, and invisible in a diff.
+    [Fact]
+    public void Nothing_rendered_carries_the_hosts_own_line_ending()
+    {
+        Assert.DoesNotContain('\r', Render(Broken()));
+        Assert.DoesNotContain('\r', Render(Pairs.Healthy(Now)));
     }
 
     /// A 1024×768 KVM in a server room is not a UTF-8 terminal, and colour is never the sole
