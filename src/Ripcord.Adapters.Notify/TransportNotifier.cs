@@ -57,7 +57,7 @@ public sealed class TransportNotifier(ISecretStore secrets, TimeSpan timeout) : 
 
         if (settings.Webhook is { } webhook)
         {
-            await PostAsync(webhook, notification, delivered, failed, cancellationToken)
+            await this.PostAsync(webhook, notification, delivered, failed, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -124,7 +124,7 @@ public sealed class TransportNotifier(ISecretStore secrets, TimeSpan timeout) : 
         return new NetworkCredential(smtp.Username, password);
     }
 
-    private static async Task PostAsync(
+    private async Task PostAsync(
         WebhookSettings webhook,
         Notification notification,
         List<string> delivered,
@@ -135,7 +135,7 @@ public sealed class TransportNotifier(ISecretStore secrets, TimeSpan timeout) : 
 
         try
         {
-            using HttpClient client = new() { Timeout = TransportNotifier.DefaultTimeout };
+            using HttpClient client = new() { Timeout = timeout };
 
             using StringContent content = new(
                 JsonSerializer.Serialize(new
