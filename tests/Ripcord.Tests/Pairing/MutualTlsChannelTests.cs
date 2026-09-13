@@ -176,9 +176,13 @@ public sealed class MutualTlsChannelTests : IDisposable
     {
         using TcpSilence silent = new();
 
+        // A second, not the 250 ms this was written with. The budget covers connecting and a
+        // handshake attempt as well as the wait, and on a loaded machine 250 ms expired before
+        // the connection was made — a red run that means nothing, on a suite that gates a
+        // release. A test nobody trusts is re-run rather than read.
         PeerEndpoint endpoint = this.EndpointFor(silent.Port) with
         {
-            Timeout = TimeSpan.FromMilliseconds(250),
+            Timeout = TimeSpan.FromSeconds(1),
         };
 
         PeerFetch fetch = await this.Channel().FetchAsync(endpoint, CancellationToken.None);
