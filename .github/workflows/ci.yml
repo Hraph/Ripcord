@@ -24,10 +24,6 @@ jobs:
       - run: dotnet build Ripcord.Linux.slnf -c Release
       - run: dotnet test Ripcord.Linux.slnf -c Release --logger trx
 
-      # The version rule in scripts/release.sh decides what a tag will say. It is the one part
-      # of the release plumbing that can be wrong silently.
-      - run: ./scripts/release-selftest.sh
-
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -1,8 +1,29 @@
 name: release
 
-# Tags only, never a branch push. A release is a deliberate act: the version comes from the
-# tag, so there is no path by which merging something publishes a binary.
+# Two ways in, and they end at the same place.
+#
+#   workflow_dispatch — the usual one. It reads the conventional commits since the last tag,
+#                       works out the version, and creates the tag as part of the release.
+#   push of a v* tag  — the escape hatch, for a tag cut by hand.
+#
+# Both are deliberate acts. Nothing here fires on a merge, so there is no path by which
+# merging something publishes a binary.
+#
+# The tag is created by `gh release create --target`, at the end, rather than pushed from a
+# job. That is not a style choice: a tag pushed with GITHUB_TOKEN does not trigger another
+# workflow, so a "tag" job pushing to a "release" job would silently never build anything.
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (blank: work it out from the commits)'
+        required: false
+        type: string
+      dry_run:
+        description: 'Work it all out and build it, but publish nothing'
+        required: false
+        default: true
+        type: boolean
   push:
     tags: ['v*']
 
@@ -10,11 +31,209 @@ permissions:
   contents: write
 
 jobs:
+  # The version is worked out on Linux, where the text handling is, and handed to the Windows
+  # job that produces the binary.
+  version:
+    runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      level: ${{ steps.resolve.outputs.level }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # A release is cut from main. workflow_dispatch can be aimed at any branch, and a
+      # binary built from a feature branch is one nobody can check out afterwards.
+      - name: Refuse anything but main
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+        run: |
+          echo "releases are cut from main; this run is on ${GITHUB_REF#refs/heads/}" >&2
+          exit 1
+
+      - name: Work out the version
+        id: resolve
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # The tag is the version. Nothing is derived.
+            tag='${{ github.ref_name }}'
+            version="${tag#v}"
+            level="from the tag"
+          else
+            last_tag="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n 1)"
+
+            if [ -n "$last_tag" ]; then
+              base="${last_tag#v}"
+              range="$last_tag..HEAD"
+            else
+              base="0.0.0"
+              range="HEAD"
+            fi
+
+            if [ -z "$(git log --format=%H "$range")" ]; then
+              echo "nothing has been committed since $last_tag" >&2
+              exit 1
+            fi
+
+            # feat -> minor, fix and perf -> patch, a `!` or a BREAKING CHANGE footer -> major.
+            # Everything else releases nothing on its own, so a run of docs commits is refused
+            # rather than tagged as a patch that changed no behaviour.
+            #
+            # Commit bodies contain blank lines, so the log is read as records separated by
+            # RS (0x1e) rather than split on newlines — a footer stays part of its own commit.
+            level="$(
+              git log --format="%s%n%b$(printf '\036')" "$range" | awk '
+                BEGIN { RS = "\036"; major = 0; minor = 0; patch = 0 }
+                {
+                  record = $0
+                  sub(/^\n+/, "", record)
+                  newline = index(record, "\n")
+                  subject = (newline > 0) ? substr(record, 1, newline - 1) : record
+
+                  if (subject == "") next
+                  if (subject ~ /^[a-z]+(\([^)]*\))?!:/) { major = 1; next }
+                  if (record ~ /(^|\n)BREAKING[ -]CHANGE:/) { major = 1; next }
+                  if (subject ~ /^feat(\([^)]*\))?:/) { minor = 1; next }
+                  if (subject ~ /^(fix|perf)(\([^)]*\))?:/) { patch = 1; next }
+                }
+                END {
+                  if (major) print "major"
+                  else if (minor) print "minor"
+                  else if (patch) print "patch"
+                  else print "none"
+                }
+              '
+            )"
+
+            IFS=. read -r major minor patch <<<"$base"
+
+            case "$level" in
+              # Semantic versioning's own rule for initial development: while the major is 0,
+              # nothing is promised, so a breaking change moves the minor. Reaching 1.0.0 is a
+              # decision, not an arithmetic result, so it takes an explicit version input.
+              major) if [ "$major" -eq 0 ]; then
+                       version="0.$((minor + 1)).0"
+                     else
+                       version="$((major + 1)).0.0"
+                     fi ;;
+              minor) version="$major.$((minor + 1)).0" ;;
+              patch) version="$major.$minor.$((patch + 1))" ;;
+              *)     version="" ;;
+            esac
+
+            if [ -n "${{ inputs.version }}" ]; then
+              version='${{ inputs.version }}'
+              level="given: $level implied"
+            elif [ -z "$version" ]; then
+              echo "nothing since ${last_tag:-the first commit} changes behaviour:" >&2
+              echo "no feat, fix or perf commit, and no breaking change." >&2
+              echo "Give a version explicitly if you mean to release anyway." >&2
+              exit 1
+            fi
+
+            tag="v$version"
+          fi
+
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "'$tag' is not vMAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
+
+          if [ "${{ github.event_name }}" != "push" ] \
+            && git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "$tag already exists" >&2
+            exit 1
+          fi
+
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "level=$level"
+          } >> "$GITHUB_OUTPUT"
+
+      # What the version was worked out from, in the run's own summary — the reasoning has to
+      # be visible to whoever pressed the button, not buried in a log.
+      - name: Say what is in it
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+          LEVEL: ${{ steps.resolve.outputs.level }}
+        run: |
+          set -euo pipefail
+
+          last_tag="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n 1)"
+          range="${last_tag:+$last_tag..}HEAD"
+
+          {
+            echo "## ripcord $VERSION ($LEVEL)"
+            echo
+            echo "Since ${last_tag:-the first commit}:"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          section() {
+            local title="$1" pattern="$2" lines
+            lines="$(git log --format='%s' "$range" | grep -E "$pattern" || true)"
+            [ -n "$lines" ] || return 0
+            printf '\n### %s\n\n' "$title" >> "$GITHUB_STEP_SUMMARY"
+            printf '%s\n' "$lines" | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY"
+          }
+
+          section 'Breaking' '^[a-z]+(\([^)]*\))?!:'
+          section 'Features' '^feat(\([^)]*\))?:'
+          section 'Fixes' '^(fix|perf)(\([^)]*\))?:'
+          section 'Everything else' '^(docs|test|refactor|chore|ci|build|style)(\([^)]*\))?:'
+
+          # Conventional Commits are mandatory in this project, so a subject that does not
+          # parse is not a style preference — it is a change the version could not be derived
+          # from, and the number above may be wrong because of it.
+          unconventional="$(
+            git log --format='%s' "$range" \
+              | grep -Ev '^(feat|fix|docs|refactor|test|chore|ci|build|perf|style)(\([^)]*\))?!?: ' \
+              || true
+          )"
+
+          if [ -n "$unconventional" ]; then
+            printf '\n### Not conventional commits — not weighed\n\n' >> "$GITHUB_STEP_SUMMARY"
+            printf '%s\n' "$unconventional" | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # The gate that keeps the hand-written part honest, and it runs before anything is built.
+      #
+      # CHANGELOG.md is read by somebody about to update a pair they cannot fail over halfway
+      # through: it says what a release means for them and what in it is still unverified.
+      # A list of commit subjects cannot say that, which is why the changelog is written rather
+      # than generated — and why the release waits for it.
+      - name: Refuse a version the changelog does not describe
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # The heading carries the date — `## 0.5.0 — 2026-09-13` — so the version is matched
+          # as a whole word at its start, and still anchored: `## 0.5.0` must not be satisfied
+          # by `## 0.5.01`.
+          if ! grep -Eq "^## ${VERSION//./\\.}([^0-9.]|\$)" CHANGELOG.md; then
+            echo "CHANGELOG.md has no '## $VERSION' section." >&2
+            echo "Move what is under '## Unreleased' into '## $VERSION — <today>', commit it," >&2
+            echo "and run this again." >&2
+            exit 1
+          fi
+
   release:
+    needs: version
+
     # The real target platform. The Windows projects do compile on Linux, but a release
     # binary is not the place to rely on that: this is the one artefact nobody can rebuild
     # from the host it fails on.
     runs-on: windows-latest
+
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      TAG: ${{ needs.version.outputs.tag }}
 
     steps:
       - uses: actions/checkout@v4
@@ -27,16 +246,7 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Take the version from the tag
-        shell: pwsh
-        run: |
-          $version = "${{ github.ref_name }}" -replace '^v',''
-          if ($version -notmatch '^\d+\.\d+\.\d+$') {
-            throw "tag '${{ github.ref_name }}' is not vMAJOR.MINOR.PATCH"
-          }
-          "VERSION=$version" >> $env:GITHUB_ENV
-
-      # The gate. A tag does not make a broken build releasable, and the whole solution is
+      # The gate. A version does not make a broken build releasable, and the whole solution is
       # compiled here — not only the Linux filter — because the WMI adapter ships in this
       # binary and nothing else ever checks that it builds.
       - run: dotnet build Ripcord.sln -c Release
@@ -61,17 +271,12 @@ jobs:
           Write-Host $hash
 
       # The release page has to say what is in this release *and* how to put it on a pair that
-      # cannot be failed over halfway through. The first comes from CHANGELOG.md, which is
-      # written by hand because it states what is still unverified; the second is the standing
-      # text in RELEASE_NOTES.md. A tag whose version has no changelog section fails here — the
-      # same gate `scripts/release.sh` applies before the tag exists, repeated because a tag can
-      # also be pushed without that script.
+      # cannot be failed over halfway through. The first comes from CHANGELOG.md; the second is
+      # the standing text in RELEASE_NOTES.md.
       - name: Assemble the release notes
         shell: pwsh
         run: |
           $lines = Get-Content CHANGELOG.md
-          # The heading carries the date, so the version is matched as a whole word at the
-          # start of it rather than as the whole line.
           $heading = '^##\s+' + [regex]::Escape($env:VERSION) + '([^0-9.]|$)'
           $start = -1
           for ($i = 0; $i -lt $lines.Count; $i++) {
@@ -86,13 +291,51 @@ jobs:
           $notes = @("## What is in ${env:VERSION}") + $body + @("") + (Get-Content docs/RELEASE_NOTES.md)
           $notes | Out-File -Encoding utf8 release-notes.md
 
+      # Rule 4, applied to the one operation here that cannot be taken back: a published
+      # release is a binary two hosts may already have been pointed at. The dry run builds
+      # everything, assembles the notes and hands back the binary as a run artefact — the same
+      # work, with nothing published and no tag created.
+      - name: What would be published
+        if: inputs.dry_run
+        shell: pwsh
+        run: |
+          "## Dry run — nothing was published" >> $env:GITHUB_STEP_SUMMARY
+          ""                                   >> $env:GITHUB_STEP_SUMMARY
+          "Would create tag ``$env:TAG`` on $env:GITHUB_SHA with these notes:" >> $env:GITHUB_STEP_SUMMARY
+          ""                                   >> $env:GITHUB_STEP_SUMMARY
+          Get-Content release-notes.md         >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Keep the unpublished binary as an artefact
+        if: inputs.dry_run
+        uses: actions/upload-artifact@v4
+        with:
+          name: ripcord-${{ env.VERSION }}-dry-run
+          path: |
+            publish/ripcord.exe
+            publish/ripcord.exe.sha256
+            release-notes.md
+
+      # `--target` creates the tag at this commit as part of creating the release, so the tag
+      # and the binary can never name different commits. On the hand-cut path the tag already
+      # exists and `--verify-tag` refuses if it does not.
       - name: Create the release
+        if: '!inputs.dry_run'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >
-          gh release create "${{ github.ref_name }}"
-          publish/ripcord.exe publish/ripcord.exe.sha256
-          --title "ripcord ${{ env.VERSION }}"
-          --notes-file release-notes.md
-          --verify-tag
+        run: |
+          $arguments = @(
+            'release', 'create', $env:TAG,
+            'publish/ripcord.exe', 'publish/ripcord.exe.sha256',
+            '--title', "ripcord $env:VERSION",
+            '--notes-file', 'release-notes.md'
+          )
+
+          if ($env:GITHUB_EVENT_NAME -eq 'push') {
+            $arguments += '--verify-tag'
+          } else {
+            $arguments += @('--target', $env:GITHUB_SHA)
+          }
+
+          & gh @arguments
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }

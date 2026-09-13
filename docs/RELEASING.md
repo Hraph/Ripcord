@@ -40,39 +40,58 @@ Then, on either host:
 
 ## Cutting a release
 
-The version comes from the tag and nothing else publishes a binary. There is no path by which
-merging something produces a release.
+Nothing here fires on a merge. A release is started by hand, from the Actions tab, and there is
+no path by which merging something produces a binary.
 
-```
-./scripts/release.sh --dry-run
-```
+Run the **release** workflow from the Actions tab, on `main`. It has two inputs:
 
-It reads the conventional commits since the last `v*` tag, works out the next version from
-them, and prints what is in it grouped by kind. `feat` moves the minor, `fix` and `perf` the
-patch, a `!` or a `BREAKING CHANGE:` footer the major — except while the major is still 0, where
-a breaking change moves the minor instead. Reaching 1.0.0 is a decision, not an arithmetic
-result, so it takes `--version 1.0.0`.
+| Input | Default | What it does |
+|---|---|---|
+| `version` | blank | Blank means work it out from the commits. Fill it in to overrule that. |
+| `dry_run` | **true** | Build everything, publish nothing. |
+
+Leave `dry_run` on for the first run. It reads the conventional commits since the last `v*`
+tag, works out the version, writes what is in it into the run summary, compiles the whole
+solution, runs the tests, builds the binary and assembles the release notes — then stops,
+having created no tag and published nothing. The binary and the notes are attached to the run
+as an artefact, so what would have shipped can be read before it does.
+
+The version rule: `feat` moves the minor, `fix` and `perf` the patch, a `!` in the type or a
+`BREAKING CHANGE:` footer the major — except while the major is still 0, where a breaking
+change moves the minor instead. Reaching 1.0.0 is a decision rather than an arithmetic result,
+so it takes an explicit `version` input. A range with nothing but `docs`, `test`, `refactor`,
+`chore`, `ci` or `build` in it is refused: there is no behaviour to release.
 
 Then:
 
-1. Update `CHANGELOG.md`: move `Unreleased` into `## <version>`, with the date.
-2. Commit it.
-3. `./scripts/release.sh` — it refuses until that section exists, creates the annotated tag,
-   and stops.
-4. Push the tag: `git push origin v<version>`
+1. Update `CHANGELOG.md`: move `Unreleased` into `## <version> — <date>`.
+2. Commit and push it to `main`.
+3. Run the workflow again with `dry_run` **off**.
 
-**The script never pushes.** Pushing the tag is what publishes a binary to both hosts of a
-disaster recovery pair, and that stays something a person types.
+The tag is created at the end, by the release itself, pointing at the commit that was built.
+The two can therefore never name different commits — and there is no window in which a tag
+exists for a build that failed.
+
+### Cutting a tag by hand
+
+Pushing a `v*` tag still works and takes the same path from the build onwards. It is the escape
+hatch, not the usual route.
 
 ### Why the changelog is not generated
 
 `CHANGELOG.md` is read by somebody about to update a pair they cannot fail over halfway through.
 It says what a release means for them and what in it is still unverified — neither of which a
-list of commit subjects can say. So the script shows the commits as the raw material and then
-refuses to tag until a person has written the section. The release workflow repeats the same
-check, because a tag can also be pushed without the script.
+list of commit subjects can say. So the workflow puts the commits in the run summary as the raw
+material, and **refuses to release a version the changelog does not describe**. That check runs
+before anything is compiled, on both routes in.
 
-The `release` workflow then builds the **whole solution** — not only the Linux filter, because
+### Why the tag is not pushed from a job
+
+A tag pushed with `GITHUB_TOKEN` does not trigger another workflow. A "tag" job feeding a
+"release" job would therefore sit there having published nothing, with both jobs green. The tag
+is created by `gh release create --target` instead, as part of the release.
+
+The workflow builds the **whole solution** — not only the Linux filter, because
 the WMI adapter ships in this binary and nothing else checks that it compiles — runs the tests,
 publishes a single self-contained `win-x64` executable, and attaches it to a GitHub release with
 its SHA-256.
