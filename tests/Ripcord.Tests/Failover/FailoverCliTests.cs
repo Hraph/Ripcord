@@ -208,6 +208,8 @@ public class FailoverCliTests
             peerChannel: FakePeerChannel.Answering(FakeScenarios.PeerSnapshot(Now)));
 
         Assert.Equal(ExitCode.Refused, run.Code);
+        Assert.Contains(
+            "not running the same Ripcord", run.Error, StringComparison.Ordinal);
     }
 
     private sealed record CliRun(ExitCode Code, string Output, string Error);

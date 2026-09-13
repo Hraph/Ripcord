@@ -43,12 +43,20 @@ public class FailoverQueryTests
     }
 
     /// "Could not be established" must never read as "the same".
+    ///
+    /// Asserting the exit code alone would not do: this host has no pending step either, so it
+    /// would refuse anyway and the test would pass with the version gate deleted. Mutation
+    /// testing caught that. The message is what ties the refusal to the build.
     [Fact]
     public async Task A_peer_that_published_no_build_is_refused()
     {
-        FailoverOutcome outcome = await Run("VM-DC-01", peerBuild: null);
+        FailoverOutcome outcome = await Run("VM-DC-01", peerPublishesBuild: false);
 
         Assert.Equal(ExitCode.Refused, outcome.Code);
+        Assert.Contains(
+            "not running the same Ripcord",
+            outcome.FailureMessage ?? "",
+            StringComparison.Ordinal);
     }
 
     /// The precondition refused, so nothing ran — and the refusal carries the findings that
@@ -136,6 +144,11 @@ public class FailoverQueryTests
         FakePeerChannel? peer = null,
         InMemorySnapshotStore? snapshots = null,
         BuildIdentity? peerBuild = null,
+
+        // Distinct from `peerBuild: null`, which the null-coalescing default cannot tell from
+        // "not specified" — a peer that published nothing is the case under test, not an
+        // omission in the fixture.
+        bool peerPublishesBuild = true,
         string machineName = FakeScenarios.LocalHostName,
         string expectedRole = "replica",
         bool dryRun = false)
@@ -152,7 +165,8 @@ public class FailoverQueryTests
                 FakeCertificateProvider.Valid(
                     ValidDocument.LocalThumbprint, $"CN={machineName}")),
             peer ?? FakePeerChannel.Answering(
-                FakeScenarios.PeerSnapshot(Now, peerBuild ?? Build)),
+                FakeScenarios.PeerSnapshot(
+                    Now, peerPublishesBuild ? peerBuild ?? Build : null)),
             store,
             new FixedClock(Now),
             Build);
