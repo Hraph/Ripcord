@@ -42,6 +42,15 @@ internal static class PeerHandshake
 
     /// With custom roots the chain is rebuilt against them: trusting the machine store when
     /// the pair has its own CA would let any public authority sign a peer certificate.
+    ///
+    /// Two policy choices, both deliberate. **Revocation is not checked**: the pair's CA is
+    /// its own and publishes no CRL anywhere these hosts can reach, and a revocation check
+    /// that cannot complete either fails the handshake or is ignored — neither is worth the
+    /// ambiguity. Pinning is the revocation mechanism here: a compromised certificate is
+    /// retired by changing `peer_certificate_thumbprint` on the other host. **Validity dates
+    /// are ignored by the chain build** so that an expired certificate reaches PeerIdentity
+    /// and is refused as `Expired`, by name, instead of arriving as an untrusted chain the
+    /// operator then has to diagnose.
     private static bool ChainIsTrusted(
         X509Certificate2? certificate, PeerTrust trust, SslPolicyErrors errors)
     {
