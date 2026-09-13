@@ -42,17 +42,26 @@ internal static class WmiTestFailover
         HashSet<string> external = SwitchesReachingAPhysicalNic(session, options);
         HashSet<string> internalSwitches = SwitchesReachingTheManagementOs(session, options);
 
-        // Private is deduced from two absences, so it is only trustworthy once the traversal
-        // has been shown to work at all. A wrong association class, wrong role names or
-        // insufficient privilege all return an empty set rather than throwing — and that
-        // would make every switch on the host Private, which is the value the Domain treats
-        // as safe. This is the difference between failing closed and failing open.
+        // Private is deduced from an absence, so it is only trustworthy once the traversal
+        // that would have contradicted it is known to work. A wrong association class, wrong
+        // role names or insufficient privilege all return an empty set rather than throwing,
+        // and every switch on the host would then be Private — the value the Domain treats
+        // as safe. That is the difference between failing closed and failing open.
         //
-        // The cost is a false refusal on a host whose switches really are all private: the
-        // operator is told the kind could not be established, and says so in the
-        // configuration. That is recoverable. Booting a domain controller onto production
-        // because an association returned nothing is not.
-        bool traversalWorked = external.Count > 0 || internalSwitches.Count > 0;
+        // Only the *external* traversal counts here, and the asymmetry is the point: External
+        // is the sole dangerous value, and the Domain treats Internal and Private
+        // identically. With external proven, "not External" holds whatever the internal
+        // traversal did; without it, nothing can be trusted. Including the internal set in
+        // this guard would only ever loosen it — the two traversals share their association
+        // classes and differ in the port class, so the half that can fail independently is
+        // exactly the half that matters.
+        //
+        // The cost is a host with genuinely no external switch classifying everything as
+        // Unknown and refusing every test failover. That cannot arise on this infrastructure,
+        // where the replicas sit on an external `vSwitch-PROD`, and it is the direction worth
+        // failing in: a false refusal is recoverable, a domain controller booted onto
+        // production because an association returned nothing is not.
+        bool externalTraversalProven = external.Count > 0;
 
         List<HostSwitch> switches = [];
 
@@ -76,7 +85,7 @@ internal static class WmiTestFailover
                     ? SwitchConnectivity.External
                     : internalSwitches.Contains(id)
                         ? SwitchConnectivity.Internal
-                        : traversalWorked
+                        : externalTraversalProven
                             ? SwitchConnectivity.Private
                             : SwitchConnectivity.Unknown));
             }
