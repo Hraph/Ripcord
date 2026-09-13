@@ -188,7 +188,6 @@ public static class FakeScenarios
     public const string TestSwitch = "vSwitch-ISOLATED";
     public const string ProductionSwitch = "vSwitch-PROD";
     public const string PeerHostName = "HV-PRIMARY-01";
-    public const string SwitchName = "vSwitch-PROD";
     public const int VlanId = 10;
 
     /// The same address on both sides, which is what a correct relationship looks like: a
@@ -322,7 +321,7 @@ public static class FakeScenarios
             1024,
             [
                 new VirtualAdapter(
-                    "Network Adapter", SwitchName, true, Macs[name], false, VlanId),
+                    "Network Adapter", ProductionSwitch, true, Macs[name], false, VlanId),
             ],
             disks,
             [$@"D:\VMs\{name}\os.vhdx"]);

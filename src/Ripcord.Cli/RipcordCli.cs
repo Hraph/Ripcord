@@ -343,17 +343,11 @@ public sealed class RipcordCli(
                     error = "--vm needs a VM name.";
                     return false;
 
-                case "--config" when index + 1 < args.Length && path is null:
-                    path = args[++index];
-                    break;
-
-                case "--config" when path is not null:
-                    error = "--config given more than once.";
+                case "--config" when !TryConsumeConfig(args, ref index, ref path, out error):
                     return false;
 
                 case "--config":
-                    error = "--config needs a path.";
-                    return false;
+                    break;
 
                 default:
                     error = $"unexpected argument '{args[index]}'.";
@@ -435,42 +429,56 @@ public sealed class RipcordCli(
         }
     }
 
+    /// `--config` is parsed identically by every command, and identically wrong would be
+    /// three different ways of reading the wrong host's file. Returns false with an error
+    /// once the option is malformed or repeated.
+    private static bool TryConsumeConfig(
+        string[] args, ref int index, ref string? path, out string? error)
+    {
+        error = null;
+
+        if (path is not null)
+        {
+            // Taking the last silently would mean reading a file the operator did not mean.
+            error = "--config given more than once.";
+            return false;
+        }
+
+        if (index + 1 >= args.Length)
+        {
+            error = "--config needs a path.";
+            return false;
+        }
+
+        path = args[++index];
+        return true;
+    }
+
     /// An option given without its value is refused rather than silently falling back to the
     /// default file — reading the wrong host's configuration is the failure this tool exists
     /// to prevent.
     private bool TryReadConfigurationPath(string[] args, out string path, out string? error)
     {
-        path = environment.DefaultConfigurationPath;
+        string? given = null;
         error = null;
-
-        bool given = false;
 
         for (int index = 0; index < args.Length; index++)
         {
             if (args[index] != "--config")
             {
                 error = $"unexpected argument '{args[index]}'.";
+                path = environment.DefaultConfigurationPath;
                 return false;
             }
 
-            if (index + 1 >= args.Length)
+            if (!TryConsumeConfig(args, ref index, ref given, out error))
             {
-                error = "--config needs a path.";
+                path = environment.DefaultConfigurationPath;
                 return false;
             }
-
-            // Taking the last silently would mean reading a file the operator did not mean.
-            if (given)
-            {
-                error = "--config given more than once.";
-                return false;
-            }
-
-            path = args[index + 1];
-            given = true;
-            index++;
         }
 
+        path = given ?? environment.DefaultConfigurationPath;
         return true;
     }
 
@@ -499,19 +507,12 @@ public sealed class RipcordCli(
                     remove = true;
                     break;
 
-                case "--config" when index + 1 < args.Length && path is null:
-                    path = args[++index];
-                    break;
-
-                case "--config" when path is not null:
-                    error = "--config given more than once.";
+                case "--config" when !TryConsumeConfig(args, ref index, ref path, out error):
                     options = default;
                     return false;
 
                 case "--config":
-                    error = "--config needs a path.";
-                    options = default;
-                    return false;
+                    break;
 
                 default:
                     error = $"unexpected argument '{args[index]}'.";

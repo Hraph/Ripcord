@@ -170,7 +170,7 @@ public class StatusQueryTests
         Assert.Equal(12_288, published.Facts!.PhysicalRamMb);
         Assert.NotNull(published.Facts.Volume("D:"));
         Assert.Equal(
-            FakeScenarios.SwitchName, published.Vms[0].Facts!.Adapters[0].SwitchName);
+            FakeScenarios.ProductionSwitch, published.Vms[0].Facts!.Adapters[0].SwitchName);
     }
 
     /// A degradation reaches the caller rather than being swallowed: `status` still renders,

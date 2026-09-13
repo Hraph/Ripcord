@@ -32,47 +32,34 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
         Task.Run(() => this.ReadLocalState(cancellationToken), cancellationToken);
 
     public Task<IReadOnlyList<HostSwitch>> GetSwitchesAsync(CancellationToken cancellationToken) =>
-        Task.Run(
-            () =>
-            {
-                using CimSession session = CimSession.Create(computerName: null);
-                return WmiTestFailover.Switches(session, Options(cancellationToken));
-            },
-            cancellationToken);
+        this.OnHostAsync(
+            (session, options) => WmiTestFailover.Switches(session, options), cancellationToken);
 
     public Task<IReadOnlyList<TestVm>> GetTestVmsAsync(CancellationToken cancellationToken) =>
-        Task.Run(
-            () =>
-            {
-                CimOperationOptions options = Options(cancellationToken);
-                using CimSession session = CimSession.Create(computerName: null);
-
-                return WmiTestFailover.TestVms(
-                    session, ReadSwitches(session, options), options);
-            },
+        this.OnHostAsync(
+            (session, options) => WmiTestFailover.TestVms(
+                session, ReadSwitches(session, options), options),
             cancellationToken);
 
     public Task AttachTestNetworkAsync(
         string vmName, string? switchName, CancellationToken cancellationToken) =>
-        Task.Run(
-            () =>
+        this.OnHostAsync(
+            (session, options) =>
             {
-                CimOperationOptions options = Options(cancellationToken);
-                using CimSession session = CimSession.Create(computerName: null);
                 using CimInstance vm = Vm(session, vmName, options);
 
                 WmiTestFailover.AttachTestNetwork(
                     session, vm, switchName, ReadSwitches(session, options), options);
+
+                return true;
             },
             cancellationToken);
 
     public Task<TestVm> StartTestFailoverAsync(
         string vmName, CancellationToken cancellationToken) =>
-        Task.Run(
-            () =>
+        this.OnHostAsync(
+            (session, options) =>
             {
-                CimOperationOptions options = Options(cancellationToken);
-                using CimSession session = CimSession.Create(computerName: null);
                 using CimInstance vm = Vm(session, vmName, options);
 
                 string testVmName = WmiTestFailover.CreateTestVm(session, vm, options);
@@ -90,39 +77,51 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
             cancellationToken);
 
     public Task StopTestFailoverAsync(string vmName, CancellationToken cancellationToken) =>
-        Task.Run(
-            () =>
+        this.OnHostAsync(
+            (session, options) =>
             {
-                CimOperationOptions options = Options(cancellationToken);
-                using CimSession session = CimSession.Create(computerName: null);
                 using CimInstance vm = Vm(session, vmName, options);
 
                 WmiTestFailover.DestroyTestVm(session, vm, options);
+
+                return true;
             },
             cancellationToken);
 
     public Task StartTestVmAsync(string testVmName, CancellationToken cancellationToken) =>
-        Task.Run(
-            () =>
+        this.OnHostAsync(
+            (session, options) =>
             {
-                CimOperationOptions options = Options(cancellationToken);
-                using CimSession session = CimSession.Create(computerName: null);
                 using CimInstance testVm = Vm(session, testVmName, options);
 
                 WmiTestFailover.Start(session, testVm, options);
+
+                return true;
             },
             cancellationToken);
 
     public Task<Heartbeat> ReadHeartbeatAsync(
         string testVmName, CancellationToken cancellationToken) =>
-        Task.Run(
-            () =>
+        this.OnHostAsync(
+            (session, options) =>
             {
-                CimOperationOptions options = Options(cancellationToken);
-                using CimSession session = CimSession.Create(computerName: null);
                 using CimInstance testVm = Vm(session, testVmName, options);
 
                 return WmiTestFailover.ReadHeartbeat(session, testVm, options);
+            },
+            cancellationToken);
+
+    /// One session and one set of options per operation, off the calling thread. MI is
+    /// synchronous, so every verb on this port would otherwise open with the same four lines.
+    private Task<T> OnHostAsync<T>(
+        Func<CimSession, CimOperationOptions, T> body, CancellationToken cancellationToken) =>
+        Task.Run(
+            () =>
+            {
+                CimOperationOptions options = this.Options(cancellationToken);
+                using CimSession session = CimSession.Create(computerName: null);
+
+                return body(session, options);
             },
             cancellationToken);
 

@@ -1,3 +1,4 @@
+using Ripcord.Application.Checks;
 using Ripcord.Domain.Checks;
 using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Replication;
@@ -26,6 +27,9 @@ public sealed record TestFailoverOutcome(
 /// `check` — `ConfigurationGate` then `PairReader` — because a third copy of it would be a
 /// third chance to validate against the wrong machine.
 ///
+/// `check` is step 1 of the sequence, so this runs `CheckQuery` rather than repeating its
+/// preamble — the report is built in exactly one place.
+///
 /// Three refusals live here rather than in the sequence, because each of them means the
 /// command was asked of the wrong host or at the wrong time, and none of them is a finding
 /// the rule engine has any business producing.
@@ -41,13 +45,36 @@ public sealed class TestFailoverQuery(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        ConfigurationValidation validation = ConfigurationGate.Open(
-            configStore, request.ConfigurationPath, request.MachineName);
+        CheckOutcome checkOutcome;
 
-        if (validation.Configuration is not { } configuration)
+        try
+        {
+            // `check` is step 1 of the sequence, so it is *run*, not reimplemented. Two places
+            // building a CheckReport would be two places that have to agree on how.
+            checkOutcome = await new CheckQuery(configStore, pairReader, clock)
+                .ExecuteAsync(
+                    new CheckRequestOptions(request.ConfigurationPath, request.MachineName),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Still read-only at this point, so the honest code is "nothing changed". The
+            // CLI's generic handler would report a local access failure, which tells a
+            // scheduler to investigate a run that did nothing at all.
+            return new TestFailoverOutcome(
+                ExitCode.Refused, null, null, [], "interrupted before anything was read.");
+        }
+
+        if (checkOutcome.Report is not { } check
+            || checkOutcome.Configuration is not { } configuration)
         {
             return new TestFailoverOutcome(
-                ExitCode.InvalidConfiguration, null, null, validation.Errors, null);
+                checkOutcome.Code,
+                null,
+                checkOutcome.Configuration,
+                checkOutcome.Errors,
+                checkOutcome.FailureMessage);
         }
 
         // A test failover happens on the host that holds the replicas. Asked of the primary
@@ -70,31 +97,6 @@ public sealed class TestFailoverQuery(
                 [new ConfigurationError("--vm", $"'{unknown}' is not a VM in this configuration")],
                 null);
         }
-
-        PairRead read;
-
-        try
-        {
-            read = await pairReader
-                .ReadAsync(configuration, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            // Still read-only at this point, so the honest code is "nothing changed". The
-            // CLI's generic handler would report a local access failure, which tells a
-            // scheduler to investigate a run that did nothing at all.
-            return Refused(configuration, "interrupted before anything was read.");
-        }
-
-        if (read.View is not { } view)
-        {
-            return new TestFailoverOutcome(
-                ExitCode.LocalAccessFailure, null, configuration, [], read.FailureMessage);
-        }
-
-        CheckReport check = CheckEngine.Evaluate(
-            new CheckRequest(view, configuration, clock.UtcNow, read.Notes));
 
         // Already running on the recovery side. A test copy taken now would be a copy of a
         // live production VM, and the pair has a real incident to finish first.

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using Microsoft.Management.Infrastructure;
 using Microsoft.Management.Infrastructure.Options;
@@ -341,6 +342,10 @@ internal static class WmiJob
 
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2);
 
+    /// A create or destroy that has not finished in ten minutes is a failure worth reporting,
+    /// not worth waiting on.
+    private static readonly TimeSpan JobDeadline = TimeSpan.FromMinutes(10);
+
     public static void Complete(
         CimSession session, CimMethodResult result, CimOperationOptions options, string method)
     {
@@ -363,24 +368,42 @@ internal static class WmiJob
                 $"{method} started a job and did not say which, so its outcome is unknown");
         }
 
-        Await(session, job, options, method);
+        Await(session, job, options, method, JobDeadline);
     }
 
-    /// Bounded by the caller's own operation timeout: the CIM calls inside the loop carry it,
-    /// so a job that never finishes surfaces as a timeout rather than as a hang.
+    /// The per-operation timeout on `options` bounds each `GetInstance`, not the loop, so the
+    /// loop carries a deadline of its own. Without it a job parked in Running polls every two
+    /// seconds forever: `ripcord test-failover` never returns and never prints its report,
+    /// with an operator watching a blank console during the monthly test.
     private static void Await(
-        CimSession session, CimInstance job, CimOperationOptions options, string method)
+        CimSession session,
+        CimInstance job,
+        CimOperationOptions options,
+        string method,
+        TimeSpan deadline)
     {
         using (job)
         {
+            Stopwatch elapsed = Stopwatch.StartNew();
+
             while (true)
             {
                 using CimInstance current = session.GetInstance(
                     job.CimSystemProperties.Namespace, job, options);
 
-                ushort state = Convert.ToUInt16(
-                    current.CimInstanceProperties["JobState"]?.Value ?? (ushort)0,
-                    CultureInfo.InvariantCulture);
+                // Not defaulted to an early state: 0 is not a valid CIM_ConcreteJob state at
+                // all — they begin at 2 — so treating an unread property as "still starting"
+                // would poll until the deadline every time. If JobState is the wrong property
+                // name, which is exactly what blind writing produces, this says so instead of
+                // hanging.
+                if (current.CimInstanceProperties["JobState"]?.Value is not { } raw)
+                {
+                    throw new InvalidOperationException(
+                        $"{method} started a job whose state cannot be read, so its outcome "
+                            + "is unknown");
+                }
+
+                ushort state = Convert.ToUInt16(raw, CultureInfo.InvariantCulture);
 
                 if (state == CompletedState)
                 {
@@ -392,6 +415,13 @@ internal static class WmiJob
                     throw new InvalidOperationException(
                         $"{method} ended in job state {state}: "
                             + (CimValues.Text(current, "ErrorDescription") ?? "no detail"));
+                }
+
+                if (elapsed.Elapsed >= deadline)
+                {
+                    throw new InvalidOperationException(
+                        $"{method} was still in job state {state} after "
+                            + $"{(int)deadline.TotalMinutes} minutes");
                 }
 
                 Thread.Sleep(PollInterval);
