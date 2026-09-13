@@ -182,15 +182,57 @@ public class FailoverPreconditionTests
         Assert.NotEmpty(refusal.Proceeded);
     }
 
+    /// A fact nobody can read about a *different* VM does not stop this one moving. Without the
+    /// scope the gate is unusable rather than merely strict: `VM-BACKUP-01` carries a
+    /// pass-through disk Hyper-V Replica cannot replicate, so some of its facts are permanently
+    /// unreadable — and an unscoped gate would block every planned failover of the domain
+    /// controller for ever, for a reason that has nothing to do with the domain controller.
+    [Fact]
+    public void Another_vms_unreadable_fact_does_not_block_this_one()
+    {
+        CheckReport report = Unevaluable(CheckRules.ReplicaSwitchMismatch);
+
+        FailoverRefusal refusal = FailoverPrecondition.Evaluate(
+            report, FailoverOperation.PlannedFailover, "VM-LEGACY-01");
+
+        Assert.False(refusal.Refuses);
+    }
+
+    /// And the same finding still blocks the VM it is actually about.
+    [Fact]
+    public void The_subjects_own_unreadable_fact_still_blocks_it()
+    {
+        CheckReport report = Unevaluable(CheckRules.ReplicaSwitchMismatch);
+
+        FailoverRefusal refusal = FailoverPrecondition.Evaluate(
+            report, FailoverOperation.PlannedFailover, "VM-DC-01");
+
+        Assert.True(refusal.Refuses);
+    }
+
+    /// Host-level findings carry no subject and apply to every VM: free space on the target is
+    /// not about one machine, and whichever VM moves lands on the same volume.
+    [Fact]
+    public void A_host_level_finding_applies_whichever_vm_is_moving()
+    {
+        CheckReport report = Unevaluable(CheckRules.FreeSpaceBelowThreshold, subject: null);
+
+        FailoverRefusal refusal = FailoverPrecondition.Evaluate(
+            report, FailoverOperation.PlannedFailover, "VM-LEGACY-01");
+
+        Assert.True(refusal.Refuses);
+    }
+
     /// The pair used here is fully readable, so a finding under test is the only one present
     /// and a test says exactly what it is about.
-    private static CheckReport Unevaluable(string ruleId) =>
-        Report(ruleId, FindingVerdict.Unevaluable);
+    private static CheckReport Unevaluable(string ruleId, string? subject = "VM-DC-01") =>
+        Report(ruleId, FindingVerdict.Unevaluable, subject);
 
     private static CheckReport Violated(string ruleId) =>
         Report(ruleId, FindingVerdict.Violated);
 
-    private static CheckReport Report(string ruleId, FindingVerdict verdict)
+    private static CheckReport Report(
+        string ruleId, FindingVerdict verdict, string? subject = "VM-DC-01")
     {
         CheckReport healthy = Pairs.Evaluate(Pairs.Healthy(Now), Now);
 
@@ -200,7 +242,7 @@ public class FailoverPreconditionTests
             [
                 new Finding(
                     CheckRules.ById(ruleId)!,
-                    "VM-DC-01",
+                    subject,
                     "under test",
                     "under test",
                     null,

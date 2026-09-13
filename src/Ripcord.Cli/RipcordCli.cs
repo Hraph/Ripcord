@@ -1,5 +1,6 @@
 using Ripcord.Application.Checks;
 using Ripcord.Application.Deployment;
+using Ripcord.Application.Failover;
 using Ripcord.Application.Status;
 using Ripcord.Application.TestFailover;
 using Ripcord.Application;
@@ -7,12 +8,14 @@ using Ripcord.Cli.Rendering;
 using Ripcord.Domain.Deployment;
 using Ripcord.Domain.Pairing;
 using Ripcord.Ports.Deployment;
+using Ripcord.Domain.Checks;
 using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Replication;
 using Ripcord.Domain;
 using Ripcord.Ports.Configuration;
 using Ripcord.Ports.Hosts;
 using Ripcord.Ports.Pairing;
+using Ripcord.Ports.Audit;
 using Ripcord.Ports.Replication;
 using Ripcord.Ports;
 
@@ -24,7 +27,10 @@ public sealed record CliEnvironment(
     string MachineName,
     string DefaultConfigurationPath,
     string BinaryPath,
-    TextReader? ConfirmationReader = null);
+    TextReader? ConfirmationReader = null,
+    /// Who is running the command. It goes in the audit trail (D8), which is read afterwards by
+    /// somebody working out who moved production and what they knew at the time.
+    string UserName = "unknown");
 
 /// Argument parsing and console rendering. No decision lives here: the exit code comes from
 /// the use case, the layout from StatusRenderer.
@@ -37,6 +43,7 @@ public sealed class RipcordCli(
     ISnapshotStore snapshotStore,
     IDeploymentExecutor deploymentExecutor,
     IPeerListener peerListener,
+    IAuditLog audit,
     IClock clock,
     CliEnvironment environment)
 {
@@ -81,6 +88,10 @@ public sealed class RipcordCli(
 
             case "test-failover":
                 return await this.TestFailoverAsync(args[1..], output, error, cancellationToken)
+                    .ConfigureAwait(false);
+
+            case "failover":
+                return await this.FailoverAsync(args[1..], output, error, cancellationToken)
                     .ConfigureAwait(false);
 
             case "serve":
@@ -257,6 +268,140 @@ public sealed class RipcordCli(
     /// Mutating, so it obeys both rules: `--dry-run` shows the whole plan and stops, and
     /// without it nothing is created until the operator types the node name. A test failover
     /// creates and destroys a real VM on this host — a keystroke is not a decision.
+    /// The reason the project exists. Everything about it is shaped by being read under
+    /// pressure: `--dry-run` prints the whole cross-host plan and stops, and a real run does
+    /// nothing at all until the node name is typed in full.
+    private async Task<ExitCode> FailoverAsync(
+        string[] args, TextWriter output, TextWriter error, CancellationToken cancellationToken)
+    {
+        if (!TryReadFailoverOptions(args, out FailoverOptions options, out string? optionError))
+        {
+            error.WriteLine($"ripcord: {optionError}");
+            WriteUsage(error);
+            return ExitCode.InvalidConfiguration;
+        }
+
+        // Rule 3, and the sharpest case of it in the whole tool: this shuts production down and
+        // moves it to the other host. A keystroke is not a decision.
+        if (!options.DryRun && !this.Confirmed(
+            output,
+            error,
+            $"This shuts down '{options.VmName}' and fails it over to the other host."))
+        {
+            return ExitCode.Refused;
+        }
+
+        FailoverOutcome outcome = await new FailoverQuery(
+                configStore, this.Pair(), provider, audit, clock, FailoverTiming.Default)
+            .ExecuteAsync(
+                new FailoverCommand(
+                    options.ConfigurationPath ?? environment.DefaultConfigurationPath,
+                    environment.MachineName,
+                    options.VmName!,
+                    options.DryRun,
+                    environment.UserName),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (outcome.Report is { } report)
+        {
+            output.Write(FailoverRenderer.Render(report, clock.UtcNow));
+            return outcome.Code;
+        }
+
+        if (outcome.Code == ExitCode.Refused)
+        {
+            error.WriteLine($"ripcord: refused, nothing was changed: {outcome.FailureMessage}");
+
+            foreach (Finding finding in outcome.Refusal?.Unevaluated ?? [])
+            {
+                error.WriteLine($"  {finding.Rule.Id}: {finding.Observed}");
+            }
+
+            return outcome.Code;
+        }
+
+        WriteFailure(error, new StatusOutcome(
+            outcome.Code, null, outcome.Errors, outcome.FailureMessage, []));
+
+        return outcome.Code;
+    }
+
+    private sealed record FailoverOptions(
+        string? ConfigurationPath, string? VmName, bool DryRun);
+
+    /// `--scenario` is required rather than defaulted. Planned and unplanned are different
+    /// operations with different consequences, and a default would let the wrong one run
+    /// because nobody typed the word.
+    private static bool TryReadFailoverOptions(
+        string[] args, out FailoverOptions options, out string? error)
+    {
+        string? path = null;
+        string? vmName = null;
+        string? scenario = null;
+        bool dryRun = false;
+
+        error = null;
+        options = new FailoverOptions(null, null, false);
+
+        for (int index = 0; index < args.Length; index++)
+        {
+            switch (args[index])
+            {
+                case "--dry-run":
+                    dryRun = true;
+                    break;
+
+                case "--vm" when index + 1 < args.Length:
+                    vmName = args[++index];
+                    break;
+
+                case "--vm":
+                    error = "--vm needs a VM name.";
+                    return false;
+
+                case "--scenario" when index + 1 < args.Length:
+                    scenario = args[++index];
+                    break;
+
+                case "--scenario":
+                    error = "--scenario needs a value.";
+                    return false;
+
+                case "--config" when !TryConsumeConfig(args, ref index, ref path, out error):
+                    return false;
+
+                case "--config":
+                    break;
+
+                default:
+                    error = $"unexpected argument '{args[index]}'.";
+                    return false;
+            }
+        }
+
+        if (scenario is null)
+        {
+            error = "--scenario is required: planned or unplanned.";
+            return false;
+        }
+
+        if (scenario != "planned")
+        {
+            error = $"--scenario '{scenario}' is not available yet; only 'planned' is.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(vmName))
+        {
+            error = "--vm is required.";
+            return false;
+        }
+
+        options = new FailoverOptions(path, vmName, dryRun);
+        return true;
+    }
+
     private async Task<ExitCode> TestFailoverAsync(
         string[] args, TextWriter output, TextWriter error, CancellationToken cancellationToken)
     {
@@ -549,6 +694,8 @@ public sealed class RipcordCli(
         writer.WriteLine("  ripcord test-failover (--vm <name> | --all) [--dry-run]");
         writer.WriteLine("                        [--unattended]");
         writer.WriteLine("                                     boot a replica in isolation, then destroy it");
+        writer.WriteLine("  ripcord failover --scenario planned --vm <name> [--dry-run]");
+        writer.WriteLine("                                     move a VM to the other host");
         writer.WriteLine("  ripcord serve [--config <path>]    run the read-only pair listener");
         writer.WriteLine("  ripcord version                    version and commit hash");
         writer.WriteLine();

@@ -119,22 +119,41 @@ public static class FailoverPrecondition
         CheckRules.ReplicationDirectionInverted,
     ];
 
-    public static FailoverRefusal Evaluate(CheckReport report, FailoverOperation operation)
+    /// `subject` is the VM being acted on. Findings about a *different* VM do not gate it.
+    ///
+    /// Without that scope the gate is unusable on this infrastructure rather than merely
+    /// strict: `VM-BACKUP-01` carries a pass-through disk Hyper-V Replica cannot replicate, so
+    /// some of its facts are permanently unreadable — and an unscoped gate would let that block
+    /// every planned failover of the domain controller, for ever, for a reason that has nothing
+    /// to do with the domain controller.
+    ///
+    /// Host-level findings carry no subject and always apply: free space on the target is not
+    /// about one VM, and the VM being moved lands on the same volume as the rest.
+    ///
+    /// A null subject means "judge the whole pair", which is what a sweep needs.
+    public static FailoverRefusal Evaluate(
+        CheckReport report, FailoverOperation operation, string? subject = null)
     {
         ArgumentNullException.ThrowIfNull(report);
 
         IReadOnlyList<string> blocking = BlockingFor(operation);
         IReadOnlyList<string> exempt = ExemptFor(operation);
 
+        bool About(Finding finding) =>
+            subject is null
+            || finding.Subject is null
+            || string.Equals(finding.Subject, subject, StringComparison.OrdinalIgnoreCase);
+
         List<Finding> criticals =
         [
             .. report.Findings.Where(finding =>
-                finding.CountsAsCritical && !exempt.Contains(finding.Rule.Id)),
+                finding.CountsAsCritical && About(finding) && !exempt.Contains(finding.Rule.Id)),
         ];
 
         List<Finding> unevaluated =
         [
-            .. report.Unevaluated.Where(finding => blocking.Contains(finding.Rule.Id)),
+            .. report.Unevaluated.Where(finding =>
+                About(finding) && blocking.Contains(finding.Rule.Id)),
         ];
 
         // Everything the operation is about to proceed past. Swallowing it would be the tool

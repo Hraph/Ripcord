@@ -1,0 +1,128 @@
+using System.Text;
+using Ripcord.Application.Failover;
+using Ripcord.Domain;
+
+namespace Ripcord.Cli.Rendering;
+
+/// The plan read before anyone confirms, and the account read afterwards.
+///
+/// Same constraints as the other renderers — fixed columns, 1024×768, no colour, nothing that
+/// depends on terminal width. This one has one extra obligation: **every step says which host
+/// it runs on**, in a column of its own rather than inside a sentence. Ripcord drives only the
+/// host it is on, so the operator has to see at a glance which half is theirs to run here and
+/// which half means walking to the other machine.
+public static class FailoverRenderer
+{
+    private const int StepColumn = 5;
+    private const int HostColumn = 16;
+    private const int OutcomeColumn = 13;
+
+    public static string Render(FailoverRunReport report, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+
+        bool dryRun = report.Steps.Any(step => step.Outcome == StepOutcome.Planned);
+
+        StringBuilder output = new();
+
+        output.AppendLine(Layout.Banner(
+            dryRun ? "RIPCORD FAILOVER (DRY RUN)" : "RIPCORD FAILOVER", now));
+        output.AppendLine($"ripcord {BuildInfo.VersionWithCommit}");
+        output.AppendLine();
+        output.AppendLine($"  VM: {report.VmName}");
+        output.AppendLine();
+
+        AppendSteps(output, report);
+
+        if (report.Halt is { } halt)
+        {
+            output.AppendLine();
+            AppendBlock(output, "HALTED", halt);
+        }
+
+        AppendRollback(output, report);
+
+        output.AppendLine();
+        output.AppendLine($"  {report.Continuation}");
+
+        // Last, alone, and in capitals. Production is off at this point and the operator is
+        // reading under pressure; anything after it would compete with the one line that has
+        // to be acted on now.
+        if (report.ManualRecovery is { } manual)
+        {
+            output.AppendLine();
+            AppendBlock(output, "ACTION REQUIRED NOW", manual);
+        }
+
+        return output.ToString();
+    }
+
+    private static void AppendSteps(StringBuilder output, FailoverRunReport report)
+    {
+        output.AppendLine(
+            "  " + Layout.Pad("STEP", StepColumn) + Layout.Pad("HOST", HostColumn)
+                + Layout.Pad("OUTCOME", OutcomeColumn) + "WHAT IT DOES");
+
+        output.AppendLine("  " + Layout.Line(StepColumn + HostColumn + OutcomeColumn + 40));
+
+        foreach (ExecutedStep step in report.Steps)
+        {
+            output.AppendLine(
+                "  "
+                + Layout.Pad(step.Step.Number.ToString(System.Globalization.CultureInfo.InvariantCulture), StepColumn)
+                + Layout.Pad(Layout.Truncate(step.Step.HostName, HostColumn - 1), HostColumn)
+                + Layout.Pad(Word(step.Outcome), OutcomeColumn)
+                + Layout.Truncate(step.Step.Description, 40));
+
+            // The reason a step failed goes directly beneath it rather than in a footnote:
+            // the operator is looking at the row that stopped, not scrolling for a list.
+            if (step.FailureMessage is { } failure)
+            {
+                foreach (string line in Layout.Wrap(failure, 60))
+                {
+                    output.AppendLine("       " + line);
+                }
+            }
+        }
+    }
+
+    private static void AppendRollback(StringBuilder output, FailoverRunReport report)
+    {
+        if (report.Rollback is not { } rollback)
+        {
+            return;
+        }
+
+        output.AppendLine();
+
+        AppendBlock(
+            output,
+            rollback.Succeeded ? "ROLLED BACK" : "ROLLBACK FAILED",
+            rollback.Succeeded
+                ? "this host was put back as it was; nothing was failed over"
+                : $"this host could not be put back: {rollback.FailureMessage}");
+    }
+
+    /// Words, never colour, and never an abbreviation that reads as its opposite when skimmed.
+    /// "planned" and "done" are the pair most likely to be confused, so they share no prefix.
+    private static string Word(StepOutcome outcome) =>
+        outcome switch
+        {
+            StepOutcome.Planned => "would run",
+            StepOutcome.Done => "done",
+            StepOutcome.Failed => "FAILED",
+            StepOutcome.NotThisHost => "other host",
+            StepOutcome.AlreadyDone => "already done",
+            _ => "unknown",
+        };
+
+    private static void AppendBlock(StringBuilder output, string title, string body)
+    {
+        output.AppendLine($"  {title}");
+
+        foreach (string line in Layout.Wrap(body, 68))
+        {
+            output.AppendLine("    " + line);
+        }
+    }
+}

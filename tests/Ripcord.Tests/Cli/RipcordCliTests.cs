@@ -357,6 +357,7 @@ public class RipcordCliTests
             new InMemorySnapshotStore(),
             deploymentExecutor ?? new FakeDeploymentExecutor(),
             new NoOpPeerListener(),
+            new InMemoryAuditLog(),
             new FixedClock(Now),
             new CliEnvironment(
                 machineName, DefaultConfigPath, BinaryPath, new StringReader(typed ?? "")));

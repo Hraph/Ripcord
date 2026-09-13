@@ -237,6 +237,7 @@ public class TestFailoverCliTests
             new InMemorySnapshotStore(),
             new NoOpDeploymentExecutor(),
             new NoOpPeerListener(),
+            new InMemoryAuditLog(),
             new FixedClock(Now),
             new CliEnvironment(
                 machineName,

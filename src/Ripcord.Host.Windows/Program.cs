@@ -1,5 +1,6 @@
 using Ripcord.Adapters.Pairing;
 using Ripcord.Adapters.Pairing.Transport;
+using Ripcord.Adapters.Audit;
 using Ripcord.Adapters.Wmi;
 using Ripcord.Adapters.Wmi.Deployment;
 using Ripcord.Adapters.Yaml;
@@ -52,9 +53,15 @@ internal static class Program
                 snapshotStore,
                 clock,
                 Report),
+            new JsonLinesAuditLog(
+                Path.Combine(AppContext.BaseDirectory, "audit.jsonl")),
             clock,
             new CliEnvironment(
-                Environment.MachineName, defaultConfigPath, binaryPath, Console.In));
+                Environment.MachineName,
+                defaultConfigPath,
+                binaryPath,
+                Console.In,
+                Environment.UserName));
 
         using CancellationTokenSource cancellation = new();
         Console.CancelKeyPress += (_, eventArgs) =>
