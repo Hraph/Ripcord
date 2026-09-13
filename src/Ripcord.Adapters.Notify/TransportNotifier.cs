@@ -99,9 +99,12 @@ public sealed class TransportNotifier(ISecretStore secrets, TimeSpan timeout) : 
             await client.SendMailAsync(message, cancellationToken).ConfigureAwait(false);
             delivered.Add(target);
         }
+        // ArgumentException among them: MailMessage refuses an address or a subject it will
+        // not put in a header, and that refusal must read as "the mail did not go" rather
+        // than take down the check whose finding it was carrying.
         catch (Exception exception) when (
             exception is SmtpException or InvalidOperationException or FormatException
-                or IOException or OperationCanceledException)
+                or ArgumentException or IOException or OperationCanceledException)
         {
             failed.Add($"{target} via {smtp.Host}:{smtp.Port}: {exception.Message}");
         }
