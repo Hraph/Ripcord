@@ -7,13 +7,17 @@ The second one is the one that can leave you unable to fail over, so it comes fi
 
 **The pair must not be left on two versions.** The failover sequences are encoded in the binary
 and they span both hosts, so a half-updated pair would execute half a sequence written by each
-version. `failover`, `failback` and `reprotect` refuse outright on a mismatch rather than
-warning — this is the error class that cannot be recovered from at 3 a.m., so it is prevented
-rather than reported.
+version. A planned failover and a `failback` refuse outright on a mismatch rather than warning —
+this is the error class that cannot be recovered from at 3 a.m., so it is prevented rather than
+reported.
+
+`failover --scenario unplanned` is the exception, and deliberately: its whole plan runs on the
+host it is typed on, so there is no half for the other binary to execute. A disaster failover is
+never refused for want of a version string.
 
 The consequence is blunt and worth stating plainly: **between the first host and the second, the
-pair cannot be failed over.** Update when nothing is wrong, never during an incident, and do not
-stop halfway.
+pair cannot be moved electively.** Update when nothing is wrong, never during an incident, and do
+not stop halfway.
 
 Order, on each host in turn:
 
@@ -39,10 +43,34 @@ Then, on either host:
 The version comes from the tag and nothing else publishes a binary. There is no path by which
 merging something produces a release.
 
-1. Update `CHANGELOG.md`: move `Unreleased` to the new version, with the date.
+```
+./scripts/release.sh --dry-run
+```
+
+It reads the conventional commits since the last `v*` tag, works out the next version from
+them, and prints what is in it grouped by kind. `feat` moves the minor, `fix` and `perf` the
+patch, a `!` or a `BREAKING CHANGE:` footer the major — except while the major is still 0, where
+a breaking change moves the minor instead. Reaching 1.0.0 is a decision, not an arithmetic
+result, so it takes `--version 1.0.0`.
+
+Then:
+
+1. Update `CHANGELOG.md`: move `Unreleased` into `## <version>`, with the date.
 2. Commit it.
-3. Tag: `git tag v0.4.0`
-4. Push the tag: `git push origin v0.4.0`
+3. `./scripts/release.sh` — it refuses until that section exists, creates the annotated tag,
+   and stops.
+4. Push the tag: `git push origin v<version>`
+
+**The script never pushes.** Pushing the tag is what publishes a binary to both hosts of a
+disaster recovery pair, and that stays something a person types.
+
+### Why the changelog is not generated
+
+`CHANGELOG.md` is read by somebody about to update a pair they cannot fail over halfway through.
+It says what a release means for them and what in it is still unverified — neither of which a
+list of commit subjects can say. So the script shows the commits as the raw material and then
+refuses to tag until a person has written the section. The release workflow repeats the same
+check, because a tag can also be pushed without the script.
 
 The `release` workflow then builds the **whole solution** — not only the Linux filter, because
 the WMI adapter ships in this binary and nothing else checks that it compiles — runs the tests,

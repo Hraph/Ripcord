@@ -15,6 +15,18 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 - `ripcord failover --scenario planned --vm <name> [--dry-run]` — carries out this host's half
   of a planned failover and names the host that continues it.
+- `ripcord failover --scenario unplanned` — the disaster path. Three steps, all on the replica;
+  nothing is asked of the host that is gone and replication is not reversed, because reversing
+  needs a primary that is there to accept the new direction.
+- `ripcord fence` — the first command to run on the original primary when it comes back. It
+  records each failed-over VM's `AutomaticStartAction`, sets it to `Nothing`, and names any copy
+  it could not confirm switched off. Without it, restoring that host's power boots the original
+  domain controller beside the failed-over one, on the same switch and the same address.
+- `ripcord failback` — the planned sequence pointed home, reversing replication exactly once.
+- `--all` and `--priority P1` sweeps, in priority order, with `failover: auto | manual | never`
+  per VM. `VM-BACKUP-01` is `manual`: it boots without its 4 TB repository and can fill the
+  target volume the failed-over VMs are living on. Failing it over is still possible; it has to
+  be named.
 - An append-only JSON Lines audit trail (D8). What a run could not establish is written
   **before** the first mutation, because afterwards the host may not be writable.
 - Split brain, version skew and `Stop-VMFailover` intent resolution, each of which halts a
@@ -26,6 +38,10 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 - **A planned failover cannot yet cross from the primary to the replica.** The prepare leaves
   no state this binary can name (V35), so the replica cannot observe that the primary's half
   has run and refuses rather than assuming. It is pinned by a test rather than left silent.
-- `--scenario unplanned`, `failback` and `reprotect` are not implemented and are refused by
-  name rather than treated as `planned`.
-- Every CIM name in the failover adapter is unverified on real hardware (V37).
+- **`reprotect` is not implemented**, so after an unplanned failover the pair stays unprotected
+  until it is put back by hand. The step it turns on —
+  `Set-VMReplication -AsReplica -AllowedPrimaryServer` — is the one no GUI offers and no
+  documentation settles (V3, V16); writing it blind would be guessing at the one operation whose
+  failure mode is a pair that looks protected and is not.
+- Every CIM name in the failover adapter is unverified on real hardware (V37), and the fence's
+  own write is unverified too (V43).

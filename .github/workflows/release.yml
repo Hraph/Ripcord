@@ -60,6 +60,32 @@ jobs:
           "$hash  ripcord.exe" | Out-File -Encoding ascii publish/ripcord.exe.sha256
           Write-Host $hash
 
+      # The release page has to say what is in this release *and* how to put it on a pair that
+      # cannot be failed over halfway through. The first comes from CHANGELOG.md, which is
+      # written by hand because it states what is still unverified; the second is the standing
+      # text in RELEASE_NOTES.md. A tag whose version has no changelog section fails here — the
+      # same gate `scripts/release.sh` applies before the tag exists, repeated because a tag can
+      # also be pushed without that script.
+      - name: Assemble the release notes
+        shell: pwsh
+        run: |
+          $lines = Get-Content CHANGELOG.md
+          # The heading carries the date, so the version is matched as a whole word at the
+          # start of it rather than as the whole line.
+          $heading = '^##\s+' + [regex]::Escape($env:VERSION) + '([^0-9.]|$)'
+          $start = -1
+          for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -match $heading) { $start = $i; break }
+          }
+          if ($start -lt 0) {
+            throw "CHANGELOG.md has no '## $env:VERSION' section"
+          }
+          $rest = $lines[($start + 1)..($lines.Count - 1)]
+          $end = ($rest | Select-String -Pattern '^## ' | Select-Object -First 1).LineNumber
+          $body = if ($end) { $rest[0..($end - 2)] } else { $rest }
+          $notes = @("## What is in ${env:VERSION}") + $body + @("") + (Get-Content docs/RELEASE_NOTES.md)
+          $notes | Out-File -Encoding utf8 release-notes.md
+
       - name: Create the release
         shell: pwsh
         env:
@@ -68,5 +94,5 @@ jobs:
           gh release create "${{ github.ref_name }}"
           publish/ripcord.exe publish/ripcord.exe.sha256
           --title "ripcord ${{ env.VERSION }}"
-          --notes-file docs/RELEASE_NOTES.md
+          --notes-file release-notes.md
           --verify-tag
