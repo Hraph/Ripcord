@@ -47,16 +47,19 @@ public sealed record Notification(AlertKind Kind, string Subject, string Body)
         lines.Add("");
         lines.Add($"Run 'ripcord check' on {report.TargetHostName} for the full report.");
 
+        // The subject becomes a mail header, and the host names in it were read off the pair.
+        // A carriage return in one of them would be a header of somebody else's choosing.
         return new Notification(
             AlertKind.Raised,
-            $"ripcord: {count} on {report.SourceHostName} -> {report.TargetHostName}",
+            Printable.Of(
+                $"ripcord: {count} on {report.SourceHostName} -> {report.TargetHostName}"),
             string.Join("\n", lines));
     }
 
     internal static Notification Recovered(CheckReport report) =>
         new(
             AlertKind.Recovered,
-            $"ripcord: {report.TargetHostName} is clear again",
+            Printable.Of($"ripcord: {report.TargetHostName} is clear again"),
             $"no critical rule is violated on {report.TargetHostName}.\n"
             + $"\nchecked at {Instant(report.EvaluatedAt)}");
 

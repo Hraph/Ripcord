@@ -131,7 +131,8 @@ internal sealed record SnapshotPayload
         return new HostSnapshot(
             capturedAt,
             new HostState(
-                this.HostName, vms, HostReachability.Reachable(), this.Facts?.ToFacts()),
+                Printable.Of(this.HostName), vms, HostReachability.Reachable(),
+                this.Facts?.ToFacts()),
 
             // Both halves or neither. A build identified by only one of them cannot be shown to
             // match another, and a half-filled identity would compare unequal for a reason
@@ -194,7 +195,7 @@ internal sealed record VmPayload
         string.IsNullOrWhiteSpace(this.Name)
             ? null
             : new VmReplicationState(
-                this.Name,
+                Printable.Of(this.Name),
                 Defined<ReplicationRole>(this.Role, ReplicationRole.Unknown),
                 Defined<ReplicationState>(this.State, ReplicationState.Unknown),
                 Defined<ReplicationHealth>(this.Health, ReplicationHealth.Unknown),
@@ -249,7 +250,7 @@ internal sealed record VmFactsPayload
             this.DynamicMinimumMb,
             [.. (this.Adapters ?? []).Select(adapter => adapter.ToAdapter())],
             [.. (this.Disks ?? []).Select(disk => disk.ToDisk())],
-            this.ReplicatedDiskPaths);
+            this.ReplicatedDiskPaths is { } paths ? [.. paths.Select(Printable.Of)] : null);
 }
 
 internal sealed record AdapterPayload
@@ -278,10 +279,10 @@ internal sealed record AdapterPayload
 
     public VirtualAdapter ToAdapter() =>
         new(
-            this.Name ?? "",
-            this.SwitchName,
+            Printable.Of(this.Name),
+            Printable.OrNull(this.SwitchName),
             this.IsConnected,
-            this.MacAddress,
+            Printable.OrNull(this.MacAddress),
             this.UsesDynamicMac,
             this.VlanId);
 }
@@ -298,7 +299,7 @@ internal sealed record DiskPayload
         IsPassthrough = disk.IsPassthrough,
     };
 
-    public VmDisk ToDisk() => new(this.Path ?? "", this.IsPassthrough);
+    public VmDisk ToDisk() => new(Printable.Of(this.Path), this.IsPassthrough);
 }
 
 internal sealed record HostFactsPayload
@@ -349,7 +350,7 @@ internal sealed record VolumePayload
 
     public HostVolume ToVolume() =>
         new(
-            this.Name ?? "",
+            Printable.Of(this.Name),
             this.FreeBytes,
             this.TotalBytes,
             this.IsBitLockerProtected,
@@ -378,6 +379,7 @@ internal sealed record CertificatePayload
     /// whole fact is dropped rather than dated to the epoch.
     public CertificateFact? ToFact() =>
         this.NotAfter is { } notAfter
-            ? new CertificateFact(this.Thumbprint ?? "", this.CommonName ?? "", notAfter)
+            ? new CertificateFact(
+                Printable.Of(this.Thumbprint), Printable.Of(this.CommonName), notAfter)
             : null;
 }

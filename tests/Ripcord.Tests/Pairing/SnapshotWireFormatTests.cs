@@ -21,6 +21,33 @@ public class SnapshotWireFormatTests
         Assert.Equal(original, read);
     }
 
+    /// The peer is trusted to be the peer, not to be well behaved. A VM it names with an
+    /// escape sequence would otherwise be printed verbatim on the console somebody is reading
+    /// during an incident, where it can repaint the verdict above it.
+    [Fact]
+    public void A_control_character_in_a_peer_supplied_name_does_not_cross()
+    {
+        HostSnapshot hostile = new(
+            Now,
+            new HostState(
+                "HV-PRIMARY-01\u001b[2K",
+                [
+                    new VmReplicationState(
+                        "VM-DC-01\u001b[2K READY",
+                        ReplicationRole.Primary,
+                        ReplicationState.Replicating,
+                        ReplicationHealth.Normal,
+                        Now,
+                        0),
+                ],
+                HostReachability.Reachable()));
+
+        HostSnapshot? read = SnapshotWireFormat.Read(SnapshotWireFormat.Write(hostile));
+
+        Assert.Equal("HV-PRIMARY-01?[2K", read!.State.HostName);
+        Assert.Equal("VM-DC-01?[2K READY", read.State.Vms[0].Name);
+    }
+
     /// The empty and degraded shapes are the ones a real incident produces, and the ones a
     /// round-trip is most likely to quietly alter.
     [Fact]
