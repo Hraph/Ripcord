@@ -128,6 +128,25 @@ public class TestFailoverSequenceTests
         Assert.NotEqual(TestFailoverStatus.Booted, result.Status);
     }
 
+    /// The other half of the data-unavailable state, and the half that historically goes
+    /// missing: the heartbeat could not be read at all. Waiting longer answers nothing, and
+    /// it is no more a pass than a guest without integration services.
+    [Fact]
+    public async Task A_heartbeat_that_cannot_be_read_is_not_reported_as_a_pass()
+    {
+        FakeHypervProvider host = new(FakeScenarios.Healthy(Start));
+        host.Heartbeats.Clear();
+        host.Heartbeats.Add(Heartbeat.Unreadable);
+
+        TestFailoverReport report = await Run(host, "VM-DC-01");
+
+        VmTestFailoverResult result = Assert.Single(report.Results);
+
+        Assert.Equal(TestFailoverStatus.BootedWithoutHeartbeat, result.Status);
+        Assert.Contains("could not be read", result.FailureMessage);
+        Assert.Contains("stop:VM-DC-01", host.Calls);
+    }
+
     /// It takes three polls to come up, which is an ordinary boot rather than a failure.
     [Fact]
     public async Task A_slow_boot_is_a_pass()
@@ -184,6 +203,27 @@ public class TestFailoverSequenceTests
         // Not 1: a reader sent to `ripcord check` would find no critical violation and
         // conclude it was transient, while a test VM quietly holds disk on the target.
         Assert.Equal(ExitCode.IntermediateState, report.Code);
+    }
+
+    /// Interrupted before the loop even starts — during the orphan scan, which is the very
+    /// first host call. Nothing was touched, so the code must be 4. Letting the cancellation
+    /// escape would reach the CLI's generic handler and report a local access failure, which
+    /// tells a scheduler to investigate a run that did nothing at all.
+    [Fact]
+    public async Task An_interruption_before_anything_is_touched_still_exits_four()
+    {
+        FakeHypervProvider host = new(FakeScenarios.Healthy(Start));
+
+        using CancellationTokenSource cancellation = new();
+        await cancellation.CancelAsync();
+
+        TestFailoverReport report = await Sequence(host).RunAsync(
+            Plan(["VM-DC-01"]), cancellation.Token);
+
+        Assert.Equal(ExitCode.Refused, report.Code);
+        Assert.True(report.Interrupted);
+        Assert.Empty(report.Results);
+        Assert.DoesNotContain(host.Calls, call => call.StartsWith("create", StringComparison.Ordinal));
     }
 
     /// A cleanup failure outranks an interruption: "nothing changed" is simply false once a

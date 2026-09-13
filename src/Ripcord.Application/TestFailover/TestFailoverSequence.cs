@@ -124,9 +124,21 @@ public sealed class TestFailoverSequence(
 
         DateTimeOffset startedAt = clock.UtcNow;
 
-        IReadOnlyList<Orphan> orphans = await this
-            .ScanForOrphansAsync(plan, cancellationToken)
-            .ConfigureAwait(false);
+        IReadOnlyList<Orphan> orphans;
+
+        try
+        {
+            orphans = await this
+                .ScanForOrphansAsync(plan, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Interrupted before the precondition was even evaluated. Nothing was touched,
+            // and saying so is the whole purpose of exit 4 — letting this escape would reach
+            // the CLI's generic handler and report a local access failure instead.
+            return new TestFailoverReport(startedAt, null, [], [], plan.DryRun, true);
+        }
 
         PreconditionRefusal refusal = TestFailoverPrecondition.Evaluate(plan.Check);
 
@@ -187,6 +199,8 @@ public sealed class TestFailoverSequence(
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             // A scan that failed must not stop a test failover that would otherwise run.
+            // Cancellation is deliberately not caught here: it is not a failed scan, it is
+            // the operator stopping the run, and the caller turns it into exit 4.
             return [];
         }
     }

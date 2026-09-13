@@ -26,41 +26,23 @@ public class CompensationTests
         Assert.Null(result.FailureMessage);
     }
 
-    /// The whole reason this type exists.
+    /// The two tests that used to sit here created a cancelled token and never passed it to
+    /// `RunAsync` — because there is nowhere to pass it. They read as proof of the guarantee
+    /// and proved nothing, which is the failure this whole milestone has been hunting, one
+    /// level up.
+    ///
+    /// The guarantee cannot honestly be tested here. What can be tested is the property that
+    /// makes it hold: the signature takes no caller token, so there is none in scope to
+    /// thread through by mistake. That catches a later refactor "helpfully" adding one back.
+    /// The behaviour itself is pinned at the call site, in TestFailoverSequenceTests.
     [Fact]
-    public async Task It_runs_even_when_the_callers_token_is_already_cancelled()
+    public void The_signature_admits_no_caller_token()
     {
-        using CancellationTokenSource cancelled = new();
-        await cancelled.CancelAsync();
-
-        bool ran = false;
-
-        Compensation result = await Compensation.RunAsync(
-            _ => { ran = true; return Task.CompletedTask; }, Deadline);
-
-        Assert.True(ran);
-        Assert.True(result.Succeeded);
-    }
-
-    /// It hands the action a token of its own so a hung cleanup cannot block a report from
-    /// ever being printed — but that token is not the caller's, and is not cancelled.
-    [Fact]
-    public async Task The_action_receives_its_own_uncancelled_token()
-    {
-        using CancellationTokenSource cancelled = new();
-        await cancelled.CancelAsync();
-
-        bool tokenWasCancelled = true;
-
-        await Compensation.RunAsync(
-            token =>
-            {
-                tokenWasCancelled = token.IsCancellationRequested;
-                return Task.CompletedTask;
-            },
-            Deadline);
-
-        Assert.False(tokenWasCancelled);
+        Assert.DoesNotContain(
+            typeof(Compensation)
+                .GetMethod(nameof(Compensation.RunAsync))!
+                .GetParameters(),
+            parameter => parameter.ParameterType == typeof(CancellationToken));
     }
 
     /// A cleanup that fails is reported, never swallowed: an orphaned test VM holds disk on

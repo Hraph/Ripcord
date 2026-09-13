@@ -1,8 +1,10 @@
 using Ripcord.Adapters.Fake;
 using Ripcord.Cli;
 using Ripcord.Domain.Configuration;
+using Ripcord.Domain.Replication;
 using Ripcord.Domain;
 using Ripcord.Ports.Configuration;
+using Ripcord.Ports.Replication;
 using Ripcord.Ports;
 using Ripcord.Tests.Configuration;
 
@@ -90,6 +92,44 @@ public class TestFailoverCliTests
         Assert.Contains(ValidDocument.MachineName, run.Error);
     }
 
+    /// Already running on the recovery side. A test copy taken now would be a copy of a live
+    /// production VM, and the pair has a real incident to finish first.
+    [Fact]
+    public async Task A_failed_over_pair_refuses()
+    {
+        CliRun run = await Run(
+            ["test-failover", "--all", "--dry-run"],
+            provider: new FakeHypervProvider(FailedOver()));
+
+        Assert.Equal(ExitCode.Refused, run.Code);
+        Assert.Contains("failed over", run.Error);
+    }
+
+    /// The local host could not be read at all, which is the tool failing rather than the
+    /// infrastructure being wrong — a different code, and deliberately so.
+    [Fact]
+    public async Task A_host_that_cannot_be_read_is_a_local_access_failure()
+    {
+        CliRun run = await Run(
+            ["test-failover", "--vm", "VM-DC-01", "--dry-run"],
+            provider: FakeHypervProvider.FailingLocally("the WMI service is not running"));
+
+        Assert.Equal(ExitCode.LocalAccessFailure, run.Code);
+        Assert.Contains("WMI service", run.Error);
+    }
+
+    /// Interrupted during the pair read, which is still read-only. Exit 3 would tell a
+    /// scheduler to investigate a local access failure that never happened.
+    [Fact]
+    public async Task An_interruption_during_the_read_reports_nothing_changed()
+    {
+        CliRun run = await Run(
+            ["test-failover", "--vm", "VM-DC-01"], provider: new CancellingProvider());
+
+        Assert.Equal(ExitCode.Refused, run.Code);
+        Assert.Contains("nothing was changed", run.Error);
+    }
+
     [Fact]
     public async Task The_command_appears_in_the_usage()
     {
@@ -99,7 +139,7 @@ public class TestFailoverCliTests
     private static async Task<CliRun> Run(
         string[] args,
         string machineName = FakeScenarios.LocalHostName,
-        FakeHypervProvider? provider = null,
+        IHypervProvider? provider = null,
         IConfigStore? configStore = null,
         string? typed = FakeScenarios.LocalHostName)
     {
@@ -128,6 +168,25 @@ public class TestFailoverCliTests
     }
 
     private sealed record CliRun(ExitCode Code, string Output, string Error);
+
+    /// A P1 VM holding the primary copy on the host that normally holds the replicas: the
+    /// observed state decision D20 derives `failed-over` from.
+    private static HostState FailedOver() =>
+        FakeScenarios.Healthy(Now) with
+        {
+            Vms =
+            [
+                .. FakeScenarios.Healthy(Now).Vms.Select(vm =>
+                    vm.Name == "VM-DC-01" ? vm with { Role = ReplicationRole.Primary } : vm),
+            ],
+        };
+
+    private sealed class CancellingProvider : ReadOnlyHypervProvider
+    {
+        public override Task<HostState> GetLocalStateAsync(
+            CancellationToken cancellationToken) =>
+            Task.FromCanceled<HostState>(new CancellationToken(true));
+    }
 
     private sealed class StubConfigStore(Action<ConfigurationDocument>? adjust = null)
         : IConfigStore

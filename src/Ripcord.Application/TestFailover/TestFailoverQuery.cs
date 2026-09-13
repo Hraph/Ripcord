@@ -71,9 +71,21 @@ public sealed class TestFailoverQuery(
                 null);
         }
 
-        PairRead read = await pairReader
-            .ReadAsync(configuration, cancellationToken)
-            .ConfigureAwait(false);
+        PairRead read;
+
+        try
+        {
+            read = await pairReader
+                .ReadAsync(configuration, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Still read-only at this point, so the honest code is "nothing changed". The
+            // CLI's generic handler would report a local access failure, which tells a
+            // scheduler to investigate a run that did nothing at all.
+            return Refused(configuration, "interrupted before anything was read.");
+        }
 
         if (read.View is not { } view)
         {
