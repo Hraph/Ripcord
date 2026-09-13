@@ -607,6 +607,22 @@ public static class ConfigurationValidator
                 complete = false;
             }
 
+            // Absent means auto. Present and unreadable is refused by name, never by ordinal,
+            // for the reason the priority is: reading `manaul` as `auto` sweeps up the one
+            // machine the key was written to keep out.
+            FailoverPolicy failover = FailoverPolicy.Auto;
+
+            if (vm.Failover is not null
+                && (!IsPolicyName(vm.Failover)
+                    || !Enum.TryParse(vm.Failover.Trim(), ignoreCase: true, out failover)))
+            {
+                errors.Add(new ConfigurationError(
+                    $"{path}.failover",
+                    "when present, one of "
+                        + string.Join(", ", Enum.GetNames<FailoverPolicy>()).ToLowerInvariant()));
+                complete = false;
+            }
+
             // Optional and unused at this milestone (decision D5), but a present absurd value
             // is still a typo worth reporting.
             if (vm.ExpectedStartupRamMb is <= 0)
@@ -624,7 +640,8 @@ public static class ConfigurationValidator
                     vm.IsDomainController,
                     vm.HasPassthroughDisk,
                     vm.ExpectedStartupRamMb,
-                    vm.GuestOsSupportEnds is { } supportEnds ? AsUtcDate(supportEnds) : null));
+                    vm.GuestOsSupportEnds is { } supportEnds ? AsUtcDate(supportEnds) : null,
+                    failover));
             }
         }
 
@@ -633,6 +650,10 @@ public static class ConfigurationValidator
 
     private static bool IsPriorityName(string? value) =>
         Enum.GetNames<VmPriority>()
+            .Contains(value?.Trim() ?? "", StringComparer.OrdinalIgnoreCase);
+
+    private static bool IsPolicyName(string? value) =>
+        Enum.GetNames<FailoverPolicy>()
             .Contains(value?.Trim() ?? "", StringComparer.OrdinalIgnoreCase);
 
     private static bool Required(

@@ -68,6 +68,11 @@ vms:
     priority: P2
     has_passthrough_disk: true    # not replicated by Hyper-V Replica
     expected_startup_ram_mb: 2048
+    # Kept out of --all and --priority sweeps. Not because it would run badly on the other
+    # host, but because it boots without its 4 TB repository and can start writing fresh full
+    # backups into the target's D: — the volume the failed-over VMs are already living on.
+    # Failing it over is still possible; it has to be named.
+    failover: manual
 
 # Findings the operator has seen and accepted. Every entry needs a reason and an expiry date:
 # without one, an acknowledgement is a rule deleted by the back door. Rules whose violation

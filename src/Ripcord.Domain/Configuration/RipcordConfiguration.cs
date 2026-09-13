@@ -104,10 +104,26 @@ public enum VmPriority
     P2,
 }
 
+/// Whether a sweep may pick this VM up (decision D19). Not a statement about how well the VM
+/// would run on the other host: `VM-BACKUP-01` is `manual` because it boots without its 4 TB
+/// repository and can fill the target volume the VMs that matter are already living on.
+///
+/// `never` is the stronger form — a VM that must not be failed over by this tool at all, even
+/// when somebody names it. Nothing in the current configuration uses it; it is here because
+/// "excluded from sweeps" and "not to be moved" are different statements, and a `manual` VM
+/// answering for both would make the weaker one unsayable.
+public enum FailoverPolicy
+{
+    Auto,
+    Manual,
+    Never,
+}
+
 public sealed record VmSettings(
     string Name,
     VmPriority Priority,
     bool IsDomainController,
     bool HasPassthroughDisk,
     int? ExpectedStartupRamMb,
-    DateTimeOffset? GuestOsSupportEnds = null);
+    DateTimeOffset? GuestOsSupportEnds = null,
+    FailoverPolicy Failover = FailoverPolicy.Auto);

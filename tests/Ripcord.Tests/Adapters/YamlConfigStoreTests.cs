@@ -151,6 +151,13 @@ public sealed class YamlConfigStoreTests : IDisposable
 
         Assert.NotNull(
             configuration.Vms.Single(vm => vm.Name == "VM-LEGACY-01").GuestOsSupportEnds);
+
+        // Decision D19, read through the real YAML naming convention rather than a hand-built
+        // document: the backup VM is the reason the key exists, and a sample that lost it
+        // would sweep the machine into every --all.
+        Assert.Equal(
+            FailoverPolicy.Manual,
+            configuration.Vms.Single(vm => vm.Name == "VM-BACKUP-01").Failover);
     }
 
     /// The naming convention maps this key automatically, which is exactly why it needs a

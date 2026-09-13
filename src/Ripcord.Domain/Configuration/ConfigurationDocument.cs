@@ -116,4 +116,7 @@ public sealed class VmDocument
     public int? ExpectedStartupRamMb { get; set; }
 
     public DateTime? GuestOsSupportEnds { get; set; }
+
+    /// Absent on every VM that fails over like the rest, which is most of them.
+    public string? Failover { get; set; }
 }
