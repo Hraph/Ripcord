@@ -71,4 +71,14 @@ public interface IHypervProvider
     /// `StopFailoverIntent` having resolved the effect first. The port stays thin: it invokes,
     /// it does not decide which situation it is in.
     Task CancelFailoverAsync(string vmName, CancellationToken cancellationToken);
+
+    /// Sets what this host does with the VM on its next boot.
+    ///
+    /// The one mutating operation here that is not part of a failover sequence. It exists for
+    /// fencing: after an unplanned failover the original primary still holds a copy of every
+    /// VM that moved, and both hosts sit on the same external switch — so restoring its power
+    /// with the usual `StartIfRunning` default boots the old domain controller alongside the
+    /// live one. Which VMs, and back to what afterwards, is decided by `Fencing`.
+    Task SetAutomaticStartActionAsync(
+        string vmName, AutomaticStartAction action, CancellationToken cancellationToken);
 }

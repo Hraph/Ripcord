@@ -172,6 +172,48 @@ public class SnapshotWireFormatTests
         Assert.Equal(VmPowerState.Running, read!.State.Vms[0].PowerState);
     }
 
+    [Fact]
+    public void A_startup_action_survives_the_round_trip()
+    {
+        HostSnapshot original = new(
+            Now,
+            new HostState(
+                "HV-PRIMARY-01",
+                [
+                    new VmReplicationState(
+                        "VM-DC-01",
+                        ReplicationRole.Primary,
+                        ReplicationState.Replicating,
+                        ReplicationHealth.Normal,
+                        Now.AddSeconds(-20),
+                        0,
+                        null,
+                        VmPowerState.Running,
+                        AutomaticStartAction.StartIfRunning),
+                ],
+                HostReachability.Reachable()));
+
+        HostSnapshot? read = SnapshotWireFormat.Read(SnapshotWireFormat.Write(original));
+
+        Assert.Equal(AutomaticStartAction.StartIfRunning, read!.State.Vms[0].StartAction);
+    }
+
+    /// A peer that has not been updated sends nothing here, and its VMs must not read as
+    /// fenced. "Not reported" and "will not boot" are opposite inputs to the fencing decision.
+    [Fact]
+    public void A_payload_without_a_startup_action_yields_null_rather_than_nothing()
+    {
+        string withoutAction = "{\"schema_version\":2,"
+            + "\"captured_at\":\"2026-09-13T14:00:00+00:00\","
+            + "\"host_name\":\"HV-PRIMARY-01\","
+            + "\"vms\":[{\"name\":\"VM-DC-01\",\"role\":1,\"state\":3,\"health\":1,"
+            + "\"pending_bytes\":0}]}";
+
+        HostSnapshot? read = SnapshotWireFormat.Read(withoutAction);
+
+        Assert.Null(read!.State.Vms[0].StartAction);
+    }
+
     /// Null facts are the degraded shape: a host that could not read its own memory settings
     /// must publish the gap, not a zero that reads as a VM needing no RAM.
     [Fact]

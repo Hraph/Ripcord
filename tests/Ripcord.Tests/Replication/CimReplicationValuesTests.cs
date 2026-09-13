@@ -115,4 +115,29 @@ public class CimReplicationValuesTests
     {
         Assert.Equal(VmPowerState.Unknown, CimReplicationValues.Power(4242));
     }
+
+    [Theory]
+    [InlineData(2, AutomaticStartAction.Nothing)]
+    [InlineData(3, AutomaticStartAction.StartIfRunning)]
+    [InlineData(4, AutomaticStartAction.Start)]
+    public void The_documented_startup_actions_are_named(
+        ushort value, AutomaticStartAction expected)
+    {
+        Assert.Equal(expected, CimReplicationValues.StartAction(value));
+    }
+
+    /// The same distinction the power state draws, and for a sharper reason: fencing reads
+    /// this to decide whether the returning host would boot the old domain controller, and
+    /// "nobody could see" answering as Nothing is how two live copies happen.
+    [Fact]
+    public void A_missing_startup_action_is_absent_rather_than_nothing()
+    {
+        Assert.Null(CimReplicationValues.StartAction(null));
+    }
+
+    [Fact]
+    public void An_unrecognised_startup_action_is_unknown_rather_than_nothing()
+    {
+        Assert.Equal(AutomaticStartAction.Unknown, CimReplicationValues.StartAction(42));
+    }
 }

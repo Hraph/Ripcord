@@ -1,5 +1,6 @@
 using Microsoft.Management.Infrastructure;
 using Microsoft.Management.Infrastructure.Options;
+using Ripcord.Domain.Replication;
 
 namespace Ripcord.Adapters.Wmi;
 
@@ -25,6 +26,7 @@ internal static class WmiFailover
     private const string InitiateFailover = "InitiateFailover";
     private const string RevertFailover = "RevertFailover";
     private const string ReverseRelationship = "ReverseReplicationRelationship";
+    private const string ModifySystemSettings = "ModifySystemSettings";
 
     /// `Msvm_ComputerSystem.RequestStateChange` values. 2 is Enabled — the CIM spelling of
     /// "start". 3 is Disabled, which is a **hard power off** and is deliberately never used
@@ -156,6 +158,52 @@ internal static class WmiFailover
             Namespace, vm, "RequestStateChange", parameters, options);
 
         WmiJob.Complete(session, result, options, "RequestStateChange");
+    }
+
+    /// Fencing's one mutating call: `Msvm_VirtualSystemManagementService.ModifySystemSettings`
+    /// with the VM's realized `Msvm_VirtualSystemSettingData`, its `AutomaticStartupAction`
+    /// changed and nothing else touched.
+    ///
+    /// **Unverified on this hardware (V43).** The MOF declares `SystemSettings` as a string —
+    /// "a string representation of an instance of the Msvm_VirtualSystemSettingData class" —
+    /// and how MI marshals a `CimInstance` into that is exactly the ambiguity V38 records for
+    /// `GetReplicationStatisticsEx`. `CimType.Instance` is used here for the same reason and
+    /// with the same caveat: it is the reading the rest of this adapter takes, so if the lab
+    /// disproves it, it is disproved in one place rather than two.
+    ///
+    /// Whatever it turns out to be, the failure is loud: `ModifySystemSettings` returns a
+    /// non-zero code and `WmiJob.Complete` throws, so the fence reports that it did not fence.
+    public static void SetStartAction(
+        CimSession session,
+        CimInstance vm,
+        AutomaticStartAction action,
+        CimOperationOptions options)
+    {
+        using CimInstance? settings = WmiVmInventory.MutableSettings(session, vm, options);
+
+        if (settings is null)
+        {
+            throw new InvalidOperationException(
+                "this VM's system settings could not be read, so its startup action cannot be "
+                    + "changed — it may still boot itself when this host restarts");
+        }
+
+        settings.CimInstanceProperties["AutomaticStartupAction"].Value = (ushort)action;
+
+        using CimMethodParametersCollection parameters =
+        [
+            CimMethodParameter.Create(
+                "SystemSettings", settings, CimType.Instance, CimFlags.In),
+        ];
+
+        using CimInstance service = session.QueryInstances(
+            Namespace, "WQL", "SELECT * FROM Msvm_VirtualSystemManagementService", options)
+            .First();
+
+        using CimMethodResult result = session.InvokeMethod(
+            Namespace, service, ModifySystemSettings, parameters, options);
+
+        WmiJob.Complete(session, result, options, ModifySystemSettings);
     }
 
     /// The three replication methods hang off the service and differ only in their parameter

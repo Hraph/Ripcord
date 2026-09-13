@@ -12,7 +12,10 @@ public sealed record VmReplicationState(
     DateTimeOffset? LastReplicationTime,
     long? PendingBytes,
     VmFacts? Facts = null,
-    VmPowerState? PowerState = null)
+    VmPowerState? PowerState = null,
+
+    /// What this host would do with the VM on its next boot. Null means not read.
+    AutomaticStartAction? StartAction = null)
 {
     /// Null means "never replicated", which must not render as a lag of zero.
     public TimeSpan? LagAt(DateTimeOffset now) => Elapsed.Between(LastReplicationTime, now);

@@ -165,6 +165,8 @@ public sealed class FakeHypervProvider : IHypervProvider
     /// a cancel that will not run leaves production shut down.
     public Exception? CancelFailure { get; set; }
 
+    public Exception? StartActionFailure { get; set; }
+
     public Task ShutDownVmAsync(string vmName, CancellationToken cancellationToken) =>
         this.Record($"shutdown:{vmName}", this.ShutDownFailure, cancellationToken);
 
@@ -182,6 +184,31 @@ public sealed class FakeHypervProvider : IHypervProvider
 
     public Task CancelFailoverAsync(string vmName, CancellationToken cancellationToken) =>
         this.Record($"cancel:{vmName}", this.CancelFailure, cancellationToken);
+
+    /// Applied to `LocalState` as well as recorded, so a fence that re-reads the host to
+    /// confirm its own work sees what it just did rather than the state from before it ran.
+    public Task SetAutomaticStartActionAsync(
+        string vmName, AutomaticStartAction action, CancellationToken cancellationToken)
+    {
+        Task recorded = this.Record(
+            $"start-action:{vmName}:{action}", this.StartActionFailure, cancellationToken);
+
+        if (this.StartActionFailure is null)
+        {
+            this.LocalState = this.LocalState with
+            {
+                Vms =
+                [
+                    .. this.LocalState.Vms.Select(vm =>
+                        string.Equals(vm.Name, vmName, StringComparison.OrdinalIgnoreCase)
+                            ? vm with { StartAction = action }
+                            : vm),
+                ],
+            };
+        }
+
+        return recorded;
+    }
 
     /// The call is recorded before the scripted failure is raised. A step that threw still
     /// happened as far as the host is concerned, and a rollback test that could not see the

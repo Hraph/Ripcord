@@ -1,6 +1,7 @@
 using Microsoft.Management.Infrastructure;
 using Microsoft.Management.Infrastructure.Options;
 using Ripcord.Domain.Inventory;
+using Ripcord.Domain.Replication;
 
 namespace Ripcord.Adapters.Wmi;
 
@@ -88,6 +89,29 @@ internal static class WmiVmInventory
             ? []
             : [.. Components(session, settings, "Msvm_EthernetPortAllocationSettingData", options)];
     }
+
+    /// `Msvm_VirtualSystemSettingData.AutomaticStartupAction` — what the host does with this
+    /// VM when the host itself boots. Read for fencing, which is the only thing that needs it.
+    ///
+    /// Null when the settings instance cannot be reached or the property is absent. It must
+    /// stay null rather than fall back to `Nothing`: the fence reads this to decide whether
+    /// the returning primary would boot the old domain controller.
+    public static AutomaticStartAction? StartAction(
+        CimSession session, CimInstance vm, CimOperationOptions options)
+    {
+        using CimInstance? settings = Settings(session, vm, options);
+
+        return settings is null
+            ? null
+            : CimReplicationValues.StartAction(
+                CimValues.Number(settings, "AutomaticStartupAction"));
+    }
+
+    /// The realized settings instance, handed to the caller to modify and pass back to
+    /// `ModifySystemSettings`. Every other caller gets the flattened read-only view instead.
+    public static CimInstance? MutableSettings(
+        CimSession session, CimInstance vm, CimOperationOptions options) =>
+        Settings(session, vm, options);
 
     private static CimInstance? Settings(
         CimSession session, CimInstance vm, CimOperationOptions options)

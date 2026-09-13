@@ -40,4 +40,14 @@ public static class CimReplicationValues
             : Enum.IsDefined((VmPowerState)state)
                 ? (VmPowerState)state
                 : VmPowerState.Unknown;
+
+    /// `Msvm_VirtualSystemSettingData.AutomaticStartupAction`. Nullable for the same reason
+    /// `Power` is, and for a sharper consequence: fencing reads this to decide whether the
+    /// returning host would boot the old domain controller alongside the failed-over one.
+    public static AutomaticStartAction? StartAction(ushort? value) =>
+        value is not { } action
+            ? null
+            : Enum.IsDefined((AutomaticStartAction)action)
+                ? (AutomaticStartAction)action
+                : AutomaticStartAction.Unknown;
 }

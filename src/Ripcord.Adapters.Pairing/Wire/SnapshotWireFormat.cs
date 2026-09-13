@@ -170,6 +170,11 @@ internal sealed record VmPayload
     /// "positively switched off" are opposite inputs to the split-brain reading.
     public int? PowerState { get; init; }
 
+    /// Added at milestone 4B, on the same terms as `PowerState` above and for the same reason
+    /// the version is not bumped. Null means the peer never sent it — never `Nothing`, which
+    /// would read as "this host will not boot the VM" and is how a fence gets skipped.
+    public int? StartAction { get; init; }
+
     public static VmPayload From(VmReplicationState vm) => new()
     {
         Name = vm.Name,
@@ -180,6 +185,7 @@ internal sealed record VmPayload
         PendingBytes = vm.PendingBytes,
         Facts = VmFactsPayload.From(vm.Facts),
         PowerState = (int?)vm.PowerState,
+        StartAction = (int?)vm.StartAction,
     };
 
     /// Enums cross as numbers, and a number the other side does not know maps to its Unknown
@@ -197,6 +203,9 @@ internal sealed record VmPayload
                 this.Facts?.ToFacts(),
                 this.PowerState is { } power
                     ? Defined(power, VmPowerState.Unknown)
+                    : null,
+                this.StartAction is { } action
+                    ? Defined(action, AutomaticStartAction.Unknown)
                     : null);
 
     private static T Defined<T>(int value, T fallback)

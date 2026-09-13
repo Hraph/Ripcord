@@ -129,6 +129,13 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
     public Task CancelFailoverAsync(string vmName, CancellationToken cancellationToken) =>
         this.OnVmAsync(vmName, (s, vm, _, o) => WmiFailover.Cancel(s, vm, o), cancellationToken);
 
+    public Task SetAutomaticStartActionAsync(
+        string vmName, AutomaticStartAction action, CancellationToken cancellationToken) =>
+        this.OnVmAsync(
+            vmName,
+            (s, vm, _, o) => WmiFailover.SetStartAction(s, vm, action, o),
+            cancellationToken);
+
     /// The six mutating failover verbs differ only in which CIM call they make against one
     /// VM, so the lookup and the session live here rather than six times over.
     private Task<bool> OnVmAsync(
@@ -241,7 +248,9 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
 
             // EnabledState is on the computer system, not the relationship: it describes the
             // VM, and a replica that has never failed over still has one.
-            CimReplicationValues.Power(CimValues.Number(vm, "EnabledState")));
+            CimReplicationValues.Power(CimValues.Number(vm, "EnabledState")),
+
+            WmiVmInventory.StartAction(session, vm, options));
     }
 
     /// GUID to friendly name. `Msvm_VirtualEthernetSwitch.Name` is the GUID an adapter's
