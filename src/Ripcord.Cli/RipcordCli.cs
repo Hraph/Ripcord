@@ -483,7 +483,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         output.Write(DeploymentRenderer.RenderResult(
             result.Applied, result.Failed, result.FailureMessage));
 
-        return result.Succeeded ? ExitCode.Success : ExitCode.LocalAccessFailure;
+        return result.Code;
     }
 
     /// Mutating, so it obeys both rules: `--dry-run` shows the whole plan and stops, and

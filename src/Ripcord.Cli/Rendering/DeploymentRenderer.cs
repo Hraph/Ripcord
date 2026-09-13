@@ -61,8 +61,20 @@ public static class DeploymentRenderer
             output.AppendLine($"  FAILED: {failed.Description}");
             output.AppendLine($"          {failureMessage}");
             output.AppendLine();
-            output.AppendLine("  The host is in an intermediate state. Re-run the command once");
-            output.AppendLine("  the cause is fixed: it resumes from where it stopped.");
+
+            // Failing on the first step changed nothing, and telling an operator the host is
+            // half-deployed when it is untouched sends them looking for damage that is not
+            // there.
+            if (applied.Count == 0)
+            {
+                output.AppendLine(
+                    "  Nothing was changed. Re-run the command once the cause is fixed.");
+            }
+            else
+            {
+                output.AppendLine("  The host is in an intermediate state. Re-run the command once");
+                output.AppendLine("  the cause is fixed: it resumes from where it stopped.");
+            }
         }
 
         return Layout.Rendered(output);

@@ -373,6 +373,38 @@ public class RipcordCliTests
             executor.Applied);
     }
 
+    /// A plan that stopped part-way left the service installed and the port shut. That is
+    /// exit code 5 — not 3, which says the tool could not read the host and implies the host
+    /// is where it was.
+    [Fact]
+    public async Task Deploy_listener_that_fails_after_a_step_reports_an_intermediate_state()
+    {
+        FakeDeploymentExecutor executor = new(failOnStep: 1);
+
+        CliRun run = await Run(
+            ["deploy-listener"], deploymentExecutor: executor, typed: FakeScenarios.LocalHostName);
+
+        Assert.Equal(ExitCode.IntermediateState, run.Code);
+        Assert.Single(executor.Applied);
+        Assert.Contains("intermediate state", run.Output, StringComparison.Ordinal);
+    }
+
+    /// Failing on the first step is the other case entirely: nothing was applied, so nothing
+    /// is half-done, and sending the operator to look for damage would be a wrong answer.
+    [Fact]
+    public async Task Deploy_listener_that_fails_on_the_first_step_says_nothing_changed()
+    {
+        FakeDeploymentExecutor executor = new(failOnStep: 0);
+
+        CliRun run = await Run(
+            ["deploy-listener"], deploymentExecutor: executor, typed: FakeScenarios.LocalHostName);
+
+        Assert.Equal(ExitCode.LocalAccessFailure, run.Code);
+        Assert.Empty(executor.Applied);
+        Assert.Contains("Nothing was changed", run.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("intermediate state", run.Output, StringComparison.Ordinal);
+    }
+
     /// Re-running a correct deployment must be safe and obviously uneventful.
     [Fact]
     public async Task Deploy_listener_on_an_already_correct_host_does_nothing()
@@ -603,8 +635,8 @@ public class RipcordCliTests
     }
 
     /// Reports a bare host, and records what it was asked to change.
-    private sealed class FakeDeploymentExecutor(ObservedDeployment? observed = null)
-        : IDeploymentExecutor
+    private sealed class FakeDeploymentExecutor(
+        ObservedDeployment? observed = null, int failOnStep = -1) : IDeploymentExecutor
     {
         private readonly List<DeploymentAction> applied = [];
 
@@ -613,8 +645,15 @@ public class RipcordCliTests
         public ObservedDeployment Observe(DesiredDeployment desired) =>
             observed ?? ObservedDeployment.Nothing;
 
-        public void Apply(DeploymentStep change, DesiredDeployment desired) =>
+        public void Apply(DeploymentStep change, DesiredDeployment desired)
+        {
+            if (this.applied.Count == failOnStep)
+            {
+                throw new InvalidOperationException("sc.exe exited with code 5");
+            }
+
             this.applied.Add(change.Action);
+        }
     }
 
 

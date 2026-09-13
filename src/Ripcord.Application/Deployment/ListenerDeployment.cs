@@ -101,4 +101,16 @@ public sealed record DeploymentResult(
     IReadOnlyList<DeploymentStep> Applied, DeploymentStep? Failed, string? FailureMessage)
 {
     public bool Succeeded => this.Failed is null;
+
+    /// A failure with nothing applied is a host that was not touched: the tool could not do
+    /// its work, and the infrastructure is where it was. A failure with a step behind it is
+    /// the other thing entirely — the service exists and the port does not, or the firewall
+    /// rule was deleted and its replacement never landed. That is exit code 5, the one an
+    /// operator must not walk away from, and the renderer says so in the same breath.
+    public ExitCode Code =>
+        this.Failed is null
+            ? ExitCode.Success
+            : this.Applied.Count == 0
+                ? ExitCode.LocalAccessFailure
+                : ExitCode.IntermediateState;
 }
