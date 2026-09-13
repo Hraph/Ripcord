@@ -15,6 +15,12 @@ public sealed class HttpReleaseSourceTests
 
     private static readonly byte[] Signature = Encoding.UTF8.GetBytes("a detached signature");
 
+    private const long RepositoryId = 1_367_653_231;
+
+    private const long BinaryAssetId = 900_001;
+
+    private const long SignatureAssetId = 900_002;
+
     [Fact]
     public async Task A_published_release_arrives_with_its_signature()
     {
@@ -37,7 +43,10 @@ public sealed class HttpReleaseSourceTests
         FetchedRelease release = await origin.Source().FetchAsync("0.2.0", default);
 
         Assert.False(release.Arrived);
-        Assert.Contains("signature", release.FailureMessage!, StringComparison.OrdinalIgnoreCase);
+        // Names the file, not the concept: "signature" sends somebody to read about
+        // signing, "ripcord.exe.sig" sends them to look at the release page.
+        Assert.Contains(
+            "ripcord.exe.sig", release.FailureMessage!, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -77,8 +86,8 @@ public sealed class HttpReleaseSourceTests
         Assert.False(release.Arrived);
     }
 
-    /// The tag comes off the GitHub API. It reaches the path escaped, so a tag that is not a
-    /// version number cannot walk out of the release it names.
+    /// The tag comes off the release feed. It reaches the path escaped, so a tag that is not
+    /// a version number cannot walk out of the release it names.
     [Fact]
     public async Task A_tag_cannot_escape_its_own_path()
     {
@@ -88,6 +97,39 @@ public sealed class HttpReleaseSourceTests
 
         Assert.All(origin.Requested, path =>
             Assert.DoesNotContain("etc/passwd", path, StringComparison.Ordinal));
+    }
+
+    /// `github.com/repositories/{id}` is not a route — the numeric id is an API path and never
+    /// a web one — so the URL this adapter used to build returned 404 for every release on
+    /// every host. Nothing may go back to building one.
+    [Fact]
+    public async Task Every_request_is_addressed_by_id_and_names_no_repository()
+    {
+        await using Origin origin = await Origin.StartAsync();
+
+        await origin.Source().FetchAsync("0.2.0", default);
+
+        Assert.NotEmpty(origin.Requested);
+
+        Assert.All(origin.Requested, path =>
+        {
+            Assert.StartsWith($"/repositories/{RepositoryId}/", path, StringComparison.Ordinal);
+            Assert.DoesNotContain("Ripcord", path, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    /// Only the asset ids are read out of the metadata. An address in a response body is
+    /// somebody else's text, and following one would be the whole of a supply chain attack.
+    [Fact]
+    public async Task A_download_address_offered_by_the_metadata_is_not_followed()
+    {
+        await using Origin origin = await Origin.StartAsync(offerAnotherAddress: true);
+
+        FetchedRelease release = await origin.Source().FetchAsync("0.2.0", default);
+
+        Assert.True(release.Arrived);
+        Assert.All(origin.Requested, path =>
+            Assert.DoesNotContain("elsewhere", path, StringComparison.OrdinalIgnoreCase));
     }
 
     /// A host with no outbound access is the normal case for this pair: it has to report that
@@ -121,7 +163,8 @@ public sealed class HttpReleaseSourceTests
             bool publishBinary = true,
             bool publishSignature = true,
             bool chunked = false,
-            bool hang = false)
+            bool hang = false,
+            bool offerAnotherAddress = false)
         {
             Origin origin = new() { Port = FreePort() };
 
@@ -129,7 +172,8 @@ public sealed class HttpReleaseSourceTests
             origin.listener.Start();
 
             origin.loop = Task.Run(() =>
-                origin.ServeAsync(publishBinary, publishSignature, chunked, hang));
+                origin.ServeAsync(
+                    publishBinary, publishSignature, chunked, hang, offerAnotherAddress));
 
             await Task.Yield();
             return origin;
@@ -138,11 +182,11 @@ public sealed class HttpReleaseSourceTests
         public HttpReleaseSource Source(
             long maximumBytes = 1024, TimeSpan? timeout = null) =>
             new(
-                1_367_653_231,
+                RepositoryId,
                 "ripcord/test",
                 timeout ?? TimeSpan.FromSeconds(10),
                 maximumBytes,
-                new Uri($"http://127.0.0.1:{this.Port}/"));
+                new ReleaseOrigin(new Uri($"http://127.0.0.1:{this.Port}/")));
 
         public async ValueTask DisposeAsync()
         {
@@ -169,7 +213,11 @@ public sealed class HttpReleaseSourceTests
         }
 
         private async Task ServeAsync(
-            bool publishBinary, bool publishSignature, bool chunked, bool hang)
+            bool publishBinary,
+            bool publishSignature,
+            bool chunked,
+            bool hang,
+            bool offerAnotherAddress = false)
         {
             while (!this.cancellation.IsCancellationRequested)
             {
@@ -186,15 +234,44 @@ public sealed class HttpReleaseSourceTests
                     await Task.Delay(TimeSpan.FromSeconds(30), this.cancellation.Token);
                 }
 
-                bool signature = path.EndsWith(".sig", StringComparison.Ordinal);
-                bool published = signature ? publishSignature : publishBinary;
+                // The release metadata, in the shape the API answers with: the assets carry
+                // names and ids, and nothing here hands back a download address.
+                if (path.EndsWith("/releases/tags/0.2.0", StringComparison.Ordinal))
+                {
+                    List<string> entries = [];
 
-                if (!published)
+                    if (publishBinary)
+                    {
+                        entries.Add(offerAnotherAddress
+                            ? $$"""{"name":"ripcord.exe","id":{{BinaryAssetId}},"browser_download_url":"http://elsewhere.invalid/ripcord.exe"}"""
+                            : $$"""{"name":"ripcord.exe","id":{{BinaryAssetId}}}""");
+                    }
+
+                    if (publishSignature)
+                    {
+                        entries.Add($$"""{"name":"ripcord.exe.sig","id":{{SignatureAssetId}}}""");
+                    }
+
+                    byte[] metadata = Encoding.UTF8.GetBytes(
+                        $$"""{"tag_name":"0.2.0","assets":[{{string.Join(",", entries)}}]}""");
+
+                    context.Response.ContentType = "application/json";
+                    context.Response.ContentLength64 = metadata.Length;
+                    await context.Response.OutputStream.WriteAsync(metadata, this.cancellation.Token);
+                    context.Response.Close();
+                    continue;
+                }
+
+                if (!path.EndsWith($"/releases/assets/{BinaryAssetId}", StringComparison.Ordinal)
+                    && !path.EndsWith($"/releases/assets/{SignatureAssetId}", StringComparison.Ordinal))
                 {
                     context.Response.StatusCode = 404;
                     context.Response.Close();
                     continue;
                 }
+
+                bool signature = path.EndsWith(
+                    $"/releases/assets/{SignatureAssetId}", StringComparison.Ordinal);
 
                 byte[] body = signature ? Signature : Binary;
 
