@@ -262,9 +262,10 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
                 "ReplicationRelationship", relationship, CimType.Instance, CimFlags.In),
         ];
 
+        using CimInstance service = ReplicationService(session, options);
+
         using CimMethodResult result = session.InvokeMethod(
-            Namespace, ReplicationService(session, options), "GetReplicationStatisticsEx",
-            parameters, options);
+            Namespace, service, "GetReplicationStatisticsEx", parameters, options);
 
         if (Convert.ToUInt32(result.ReturnValue.Value, CultureInfo.InvariantCulture) != 0)
         {

@@ -43,25 +43,9 @@ internal static class WmiTestFailover
         HashSet<string> external = SwitchesReachingAPhysicalNic(session, options);
         HashSet<string> internalSwitches = SwitchesReachingTheManagementOs(session, options);
 
-        // Private is deduced from an absence, so it is only trustworthy once the traversal
-        // that would have contradicted it is known to work. A wrong association class, wrong
-        // role names or insufficient privilege all return an empty set rather than throwing,
-        // and every switch on the host would then be Private — the value the Domain treats
-        // as safe. That is the difference between failing closed and failing open.
-        //
-        // Only the *external* traversal counts here, and the asymmetry is the point: External
-        // is the sole dangerous value, and the Domain treats Internal and Private
-        // identically. With external proven, "not External" holds whatever the internal
-        // traversal did; without it, nothing can be trusted. Including the internal set in
-        // this guard would only ever loosen it — the two traversals share their association
-        // classes and differ in the port class, so the half that can fail independently is
-        // exactly the half that matters.
-        //
-        // The cost is a host with genuinely no external switch classifying everything as
-        // Unknown and refusing every test failover. That cannot arise on this infrastructure,
-        // where the replicas sit on an external `vSwitch-PROD`, and it is the direction worth
-        // failing in: a false refusal is recoverable, a domain controller booted onto
-        // production because an association returned nothing is not.
+        // The judgement about whether an empty external set is a fact or a broken traversal
+        // lives in the Domain, where it is testable: SwitchClassification.Of. All the adapter
+        // establishes is what the associations reported.
         bool externalTraversalProven = external.Count > 0;
 
         List<HostSwitch> switches = [];
@@ -79,16 +63,10 @@ internal static class WmiTestFailover
                     continue;
                 }
 
-                // Unknown when the classification could not be established, never Private:
-                // the Domain refuses to start a test VM on a switch it cannot classify, and
-                // guessing Private here would turn that refusal into a boot.
-                switches.Add(new HostSwitch(name, external.Contains(id)
-                    ? SwitchConnectivity.External
-                    : internalSwitches.Contains(id)
-                        ? SwitchConnectivity.Internal
-                        : externalTraversalProven
-                            ? SwitchConnectivity.Private
-                            : SwitchConnectivity.Unknown));
+                switches.Add(new HostSwitch(name, SwitchClassification.Of(
+                    external.Contains(id),
+                    internalSwitches.Contains(id),
+                    externalTraversalProven)));
             }
         }
 
@@ -145,6 +123,11 @@ internal static class WmiTestFailover
                 // TestReplicaSwitchName is read/write on Msvm_EthernetPortAllocationSettingData,
                 // which is what makes a test VM's network configurable independently of the
                 // replica's. Empty means "attached to nothing".
+                //
+                // The milestone names TestReplicaPoolID alongside it and this does not set it
+                // (V30). If the pool identifier turns out to be required for the reassignment
+                // to take, the test VM stays on the replica's switch and the isolation rule
+                // refuses it — the safe direction, but a confusing refusal rather than a boot.
                 allocation.CimInstanceProperties["TestReplicaSwitchName"].Value = testSwitchId;
 
                 ModifyResourceSettings(session, allocation, options);
@@ -160,9 +143,10 @@ internal static class WmiTestFailover
             CimMethodParameter.Create("ComputerSystem", vm, CimType.Reference, CimFlags.In),
         ];
 
+        using CimInstance service = ReplicationService(session, options);
+
         using CimMethodResult result = session.InvokeMethod(
-            Namespace, ReplicationService(session, options), CreateTestSystem,
-            parameters, options);
+            Namespace, service, CreateTestSystem, parameters, options);
 
         WmiJob.Complete(session, result, options, CreateTestSystem);
 
@@ -194,9 +178,10 @@ internal static class WmiTestFailover
             CimMethodParameter.Create("ComputerSystem", vm, CimType.Reference, CimFlags.In),
         ];
 
+        using CimInstance service = ReplicationService(session, options);
+
         using CimMethodResult result = session.InvokeMethod(
-            Namespace, ReplicationService(session, options), DestroyTestSystem,
-            parameters, options);
+            Namespace, service, DestroyTestSystem, parameters, options);
 
         WmiJob.Complete(session, result, options, DestroyTestSystem);
     }
@@ -215,7 +200,7 @@ internal static class WmiTestFailover
         WmiJob.Complete(session, result, options, "RequestStateChange");
     }
 
-    /// Msvm_Heartbeat's OperationalStatus: 2 is OK, 13 is "no contact", 12 is "lost
+    /// Msvm_Heartbeat's OperationalStatus: 2 is OK, 12 is "no contact", 13 is "lost
     /// communication". The instance exists only while the VM runs and only when the guest has
     /// the integration services, so its absence is NotInstalled rather than a failure.
     public static Heartbeat ReadHeartbeat(
@@ -308,9 +293,10 @@ internal static class WmiTestFailover
                 "ResourceSettings", new[] { allocation }, CimType.InstanceArray, CimFlags.In),
         ];
 
+        using CimInstance service = VirtualSystemManagementService(session, options);
+
         using CimMethodResult result = session.InvokeMethod(
-            Namespace, VirtualSystemManagementService(session, options),
-            "ModifyResourceSettings", parameters, options);
+            Namespace, service, "ModifyResourceSettings", parameters, options);
 
         WmiJob.Complete(session, result, options, "ModifyResourceSettings");
     }
