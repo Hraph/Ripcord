@@ -65,25 +65,40 @@ public sealed record TestFailoverReport(
     bool DryRun,
     bool Interrupted)
 {
-    /// 4 is "nothing changed": refused by the precondition, or interrupted by the operator.
-    /// 1 is the infrastructure not being in the state it must be in — a VM that would not
-    /// come up, or a test VM this run failed to destroy. 0 is a monthly test that passed.
+    /// Ordered by what the reader has to do about it, not by severity of intent.
+    ///
+    /// 5 first: a cleanup that failed left a test VM behind, holding disk on the target with
+    /// a relationship in a state nobody chose. That is the intermediate state of decision D7,
+    /// and it outranks everything — including an interruption, because "nothing changed" is
+    /// then simply false. Reporting it as 1 would send the reader to `ripcord check`, where
+    /// they would find no critical violation and conclude it was transient.
+    ///
+    /// 4 next: refused or interrupted with nothing left behind.
+    ///
+    /// 1 for a test VM that would not come up. D7's row says "a critical rule is violated",
+    /// but its own preamble defines the class as "the infrastructure is wrong" as against
+    /// "the tool itself failed" — and a replica that will not boot is the most important
+    /// thing that code could ever carry.
     public ExitCode Code
     {
         get
         {
+            if (this.Results.Any(result => result.Cleanup is { Succeeded: false }))
+            {
+                return ExitCode.IntermediateState;
+            }
+
             if (this.Refusal is { Refuses: true } || this.Interrupted)
             {
                 return ExitCode.Refused;
             }
 
-            return this.Results.Any(Unsuccessful) ? ExitCode.CriticalFinding : ExitCode.Success;
+            return this.Results.Any(DidNotBoot) ? ExitCode.CriticalFinding : ExitCode.Success;
         }
     }
 
-    private static bool Unsuccessful(VmTestFailoverResult result) =>
-        result.Status is not (TestFailoverStatus.Booted or TestFailoverStatus.Planned)
-        || result.Cleanup is { Succeeded: false };
+    private static bool DidNotBoot(VmTestFailoverResult result) =>
+        result.Status is not (TestFailoverStatus.Booted or TestFailoverStatus.Planned);
 }
 
 /// Steps 2 to 6 of milestone 3, one VM at a time.

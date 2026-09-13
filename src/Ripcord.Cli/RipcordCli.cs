@@ -542,6 +542,7 @@ public sealed class RipcordCli(
         writer.WriteLine("            or a test failover did not come up, "
             + "2 bad configuration,");
         writer.WriteLine("            3 local access failure, "
-            + "4 refused or interrupted - nothing changed.");
+            + "4 refused or interrupted - nothing changed,");
+        writer.WriteLine("            5 a mutating operation left an intermediate state.");
     }
 }

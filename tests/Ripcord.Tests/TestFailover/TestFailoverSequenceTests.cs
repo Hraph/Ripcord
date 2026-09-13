@@ -180,7 +180,34 @@ public class TestFailoverSequenceTests
 
         Assert.False(result.Cleanup!.Succeeded);
         Assert.Contains("locked", result.Cleanup.FailureMessage);
-        Assert.Equal(ExitCode.CriticalFinding, report.Code);
+
+        // Not 1: a reader sent to `ripcord check` would find no critical violation and
+        // conclude it was transient, while a test VM quietly holds disk on the target.
+        Assert.Equal(ExitCode.IntermediateState, report.Code);
+    }
+
+    /// A cleanup failure outranks an interruption: "nothing changed" is simply false once a
+    /// test VM has been left behind, and 4 would say exactly that.
+    [Fact]
+    public async Task A_failed_cleanup_outranks_an_interruption()
+    {
+        using CancellationTokenSource cancellation = new();
+
+        FakeHypervProvider host = new(FakeScenarios.Healthy(Start))
+        {
+            StopFailure = new InvalidOperationException("the test VM is locked"),
+        };
+
+        host.TestVmFactory = name =>
+        {
+            cancellation.Cancel();
+            return new TestVm(name + " (test copy)", null, []);
+        };
+
+        TestFailoverReport report = await Sequence(host).RunAsync(
+            Plan(["VM-DC-01"]), cancellation.Token);
+
+        Assert.Equal(ExitCode.IntermediateState, report.Code);
     }
 
     /// Sequentially, never in parallel: the target has about twelve gigabytes usable and a
