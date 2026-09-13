@@ -20,10 +20,12 @@ public sealed record Notification(AlertKind Kind, string Subject, string Body)
             ? "1 critical finding"
             : $"{criticals.Count} critical findings";
 
+        // Every name in here was read off a host. A newline in one would forge a line of its
+        // own in a message whose whole point is that each line is a finding.
         List<string> lines =
         [
-            $"A failover from {report.SourceHostName} to {report.TargetHostName} would not go "
-            + "as planned.",
+            $"A failover from {Printable.Of(report.SourceHostName)} to "
+            + $"{Printable.Of(report.TargetHostName)} would not go as planned.",
             "",
             $"raised at {Instant(raisedAt)}",
             $"checked at {Instant(report.EvaluatedAt)}",
@@ -33,19 +35,20 @@ public sealed record Notification(AlertKind Kind, string Subject, string Body)
         {
             lines.Add("");
             lines.Add(finding.Subject is { } vm
-                ? $"{vm}: {finding.Rule.Title}"
+                ? $"{Printable.Of(vm)}: {finding.Rule.Title}"
                 : finding.Rule.Title);
-            lines.Add($"  seen: {finding.Observed}");
-            lines.Add($"  on the day: {finding.Implication}");
+            lines.Add($"  seen: {Printable.Of(finding.Observed)}");
+            lines.Add($"  on the day: {Printable.Of(finding.Implication)}");
 
             if (finding.Remedy is { } remedy)
             {
-                lines.Add($"  fix: {remedy}");
+                lines.Add($"  fix: {Printable.Of(remedy)}");
             }
         }
 
         lines.Add("");
-        lines.Add($"Run 'ripcord check' on {report.TargetHostName} for the full report.");
+        lines.Add(
+            $"Run 'ripcord check' on {Printable.Of(report.TargetHostName)} for the full report.");
 
         // The subject becomes a mail header, and the host names in it were read off the pair.
         // A carriage return in one of them would be a header of somebody else's choosing.
@@ -60,7 +63,7 @@ public sealed record Notification(AlertKind Kind, string Subject, string Body)
         new(
             AlertKind.Recovered,
             Printable.Of($"ripcord: {report.TargetHostName} is clear again"),
-            $"no critical rule is violated on {report.TargetHostName}.\n"
+            $"no critical rule is violated on {Printable.Of(report.TargetHostName)}.\n"
             + $"\nchecked at {Instant(report.EvaluatedAt)}");
 
     /// Local time with its offset spelled out. The reader is on a phone in another time zone

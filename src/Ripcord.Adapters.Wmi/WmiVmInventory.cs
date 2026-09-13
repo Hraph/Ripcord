@@ -1,5 +1,6 @@
 using Microsoft.Management.Infrastructure;
 using Microsoft.Management.Infrastructure.Options;
+using Ripcord.Domain;
 using Ripcord.Domain.Inventory;
 using Ripcord.Domain.Replication;
 
@@ -191,9 +192,12 @@ internal static class WmiVmInventory
                 Allocation? allocation = allocations
                     .FirstOrDefault(candidate => candidate.References(instanceId));
 
+                // Cleaned here for the same reason the peer's names are cleaned as they cross
+                // the wire: these strings are printed on the console an operator reads under
+                // pressure, and Hyper-V accepts an escape sequence in a name.
                 adapters.Add(new VirtualAdapter(
-                    CimValues.Text(port, "ElementName") ?? "Network Adapter",
-                    allocation?.SwitchName(switches),
+                    Printable.Of(CimValues.Text(port, "ElementName") ?? "Network Adapter"),
+                    Printable.OrNull(allocation?.SwitchName(switches)),
                     allocation?.IsConnected,
                     CimInventory.MacAddressOf(CimValues.Text(port, "Address")),
                     CimInventory.UsesDynamicMac(CimValues.Flag(port, "StaticMacAddress")),
@@ -217,7 +221,7 @@ internal static class WmiVmInventory
                 allocations.Add(new Allocation(
                     CimValues.Text(instance, "Parent") ?? "",
                     FirstHostResource(instance),
-                    CimValues.Text(instance, "LastKnownSwitchName"),
+                    Printable.OrNull(CimValues.Text(instance, "LastKnownSwitchName")),
                     Vlan(session, instance, options)));
             }
         }
@@ -277,7 +281,7 @@ internal static class WmiVmInventory
 
                     if (FirstHostResource(instance) is { Length: > 0 } path)
                     {
-                        disks.Add(new VmDisk(path, passthrough));
+                        disks.Add(new VmDisk(Printable.Of(path), passthrough));
                     }
                 }
             }

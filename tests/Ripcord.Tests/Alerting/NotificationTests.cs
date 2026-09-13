@@ -75,6 +75,15 @@ public class NotificationTests
         Assert.Contains("no critical rule", notification.Body, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void A_name_carrying_a_newline_cannot_forge_a_line_of_its_own()
+    {
+        Notification notification = Raised(Reports.WithAHostileHostName());
+
+        Assert.DoesNotContain("\nfake: all clear", notification.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain('\n', notification.Subject);
+    }
+
     private static readonly AlertingSettings Settings =
         new(true, TimeSpan.FromHours(24), null, null, null);
 

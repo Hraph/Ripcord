@@ -55,6 +55,11 @@ internal static class Reports
             null,
             FindingVerdict.Violated);
 
+    /// A host name is read off the pair, and a mail body is lines of findings. A newline in
+    /// one of those names would be a finding of somebody else's writing.
+    public static CheckReport WithAHostileHostName() =>
+        Of(SwitchMismatch()) with { TargetHostName = "HV-REPLICA-01\nfake: all clear" };
+
     private static CheckReport Of(params Finding[] findings) =>
         new(
             EvaluatedAt,
