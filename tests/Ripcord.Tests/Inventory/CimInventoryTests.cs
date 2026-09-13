@@ -127,6 +127,17 @@ public class CimInventoryTests
         Assert.Equal(expected, CimInventory.MacAddressOf(address));
     }
 
+    /// "Network Adapter" is Hyper-V's own default name, so it cannot also mean "the name could
+    /// not be read" — the two would be indistinguishable on the console and in the isolation
+    /// breach list, which is where an adapter name is read in anger.
+    [Theory]
+    [InlineData(null, "(unnamed)")]
+    [InlineData("   ", "(unnamed)")]
+    [InlineData("Network Adapter", "Network Adapter")]
+    [InlineData("Legacy NIC", "Legacy NIC")]
+    public void An_adapter_with_no_name_is_said_to_have_none(string? given, string expected) =>
+        Assert.Equal(expected, CimInventory.AdapterName(given));
+
     /// Resource subtypes rather than display names, so they are not localized — the trap this
     /// project has already been bitten by twice.
     [Theory]

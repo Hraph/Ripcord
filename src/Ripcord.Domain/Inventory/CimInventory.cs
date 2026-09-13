@@ -75,6 +75,12 @@ public static partial class CimInventory
     /// no separators. Anything else — empty, absent, a placeholder — is not an address.
     public static string? MacAddressOf(string? address) => MacAddress.Normalise(address);
 
+    /// "Network Adapter" is Hyper-V's own default name, so substituting it for a name that
+    /// could not be read makes the two indistinguishable. Same convention as a VM with no
+    /// element name: say it is unnamed, in a form no real adapter carries.
+    public static string AdapterName(string? elementName) =>
+        string.IsNullOrWhiteSpace(elementName) ? "(unnamed)" : Printable.Of(elementName);
+
     /// Hyper-V's own disk subtypes, matched on the invariant part of the string. These are
     /// resource subtypes rather than display names, so they are not localized.
     public static bool IsVirtualHardDisk(string? resourceSubType) =>

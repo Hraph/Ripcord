@@ -196,7 +196,7 @@ internal static class WmiVmInventory
                 // the wire: these strings are printed on the console an operator reads under
                 // pressure, and Hyper-V accepts an escape sequence in a name.
                 adapters.Add(new VirtualAdapter(
-                    Printable.Of(CimValues.Text(port, "ElementName") ?? "Network Adapter"),
+                    CimInventory.AdapterName(CimValues.Text(port, "ElementName")),
                     Printable.OrNull(allocation?.SwitchName(switches)),
                     allocation?.IsConnected,
                     CimInventory.MacAddressOf(CimValues.Text(port, "Address")),
