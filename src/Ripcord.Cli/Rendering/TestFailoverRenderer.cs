@@ -30,6 +30,15 @@ public static class TestFailoverRenderer
         output.AppendLine($"ripcord {BuildInfo.VersionWithCommit}");
         output.AppendLine();
 
+        if (report.Unattended)
+        {
+            AppendField(
+                output,
+                "Mode",
+                "unattended - no operator confirmed this run, so every unchecked rule "
+                    + "blocked it");
+        }
+
         AppendField(output, "Isolation", testSwitch is null
             ? "every adapter disconnected (no test_failover_switch configured)"
             : $"'{testSwitch}', which must not be an external switch");

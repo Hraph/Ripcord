@@ -36,6 +36,12 @@ replication:
   # How long a test VM may exist before it is reported as the residue of an interrupted run.
   # Hyper-V lists test VMs and never mentions them; this is what mentions them. Default 24.
   # test_failover_orphan_after_hours: 24
+  # VMs that `ripcord test-failover --unattended` may test with nobody present. This is the
+  # one place the typed confirmation is waived, so it is a per-VM authorisation and not a
+  # switch: absent, no VM may run unattended. It does not make the run easier — unattended
+  # refuses on ANY rule that could not be checked, where an attended run refuses on six.
+  # unattended_test_failover_vms:
+  #   - VM-LEGACY-01
 
 # The read-only pair channel. Remove this block entirely, or set enabled: false, and the node
 # degrades to the local-only view rather than failing.

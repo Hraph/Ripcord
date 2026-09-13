@@ -267,7 +267,10 @@ public sealed class RipcordCli(
             return ExitCode.InvalidConfiguration;
         }
 
-        if (!options.DryRun && !this.Confirmed(
+        // Unattended skips the confirmation and pays for it elsewhere: the run is refused
+        // for any VM the configuration has not named, and every unevaluable finding blocks
+        // rather than only the six that block an attended run.
+        if (!options.DryRun && !options.Unattended && !this.Confirmed(
             output,
             error,
             "This creates a test VM on this host and destroys it again when the test ends."))
@@ -285,7 +288,8 @@ public sealed class RipcordCli(
                     environment.MachineName,
                     options.VmNames,
                     options.All,
-                    options.DryRun),
+                    options.DryRun,
+                    options.Unattended),
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -309,7 +313,11 @@ public sealed class RipcordCli(
     }
 
     private readonly record struct TestFailoverOptions(
-        string? ConfigurationPath, IReadOnlyList<string> VmNames, bool All, bool DryRun);
+        string? ConfigurationPath,
+        IReadOnlyList<string> VmNames,
+        bool All,
+        bool DryRun,
+        bool Unattended);
 
     /// `--vm` may be repeated. Neither `--vm` nor `--all` is refused rather than defaulted:
     /// a mutating command with no subject must not guess which VMs were meant.
@@ -320,6 +328,7 @@ public sealed class RipcordCli(
         List<string> vmNames = [];
         bool all = false;
         bool dryRun = false;
+        bool unattended = false;
         error = null;
         options = default;
 
@@ -333,6 +342,10 @@ public sealed class RipcordCli(
 
                 case "--all":
                     all = true;
+                    break;
+
+                case "--unattended":
+                    unattended = true;
                     break;
 
                 case "--vm" when index + 1 < args.Length:
@@ -367,7 +380,7 @@ public sealed class RipcordCli(
             return false;
         }
 
-        options = new TestFailoverOptions(path, vmNames, all, dryRun);
+        options = new TestFailoverOptions(path, vmNames, all, dryRun, unattended);
         return true;
     }
 
@@ -534,6 +547,7 @@ public sealed class RipcordCli(
         writer.WriteLine("  ripcord deploy-listener [--dry-run] [--remove]");
         writer.WriteLine("                                     install or remove the pair listener");
         writer.WriteLine("  ripcord test-failover (--vm <name> | --all) [--dry-run]");
+        writer.WriteLine("                        [--unattended]");
         writer.WriteLine("                                     boot a replica in isolation, then destroy it");
         writer.WriteLine("  ripcord serve [--config <path>]    run the read-only pair listener");
         writer.WriteLine("  ripcord version                    version and commit hash");

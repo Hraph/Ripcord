@@ -14,7 +14,8 @@ public sealed record TestFailoverRequest(
     string MachineName,
     IReadOnlyList<string> VmNames,
     bool All,
-    bool DryRun);
+    bool DryRun,
+    bool Unattended = false);
 
 public sealed record TestFailoverOutcome(
     ExitCode Code,
@@ -107,25 +108,58 @@ public sealed class TestFailoverQuery(
                 "the pair is failed over. Finish the failback before testing.");
         }
 
+        IReadOnlyList<string> targets = Targets(request, configuration);
+
+        if (request.Unattended && Unauthorised(targets, configuration) is { } refusal)
+        {
+            return Refused(configuration, refusal);
+        }
+
         TestFailoverReport report = await new TestFailoverSequence(provider, clock, timing)
             .RunAsync(
                 new TestFailoverPlan(
                     check,
-                    Targets(request, configuration),
+                    targets,
                     configuration.Replication.TestFailoverSwitch,
                     configuration.Replication.TestFailoverOrphanAfter,
-                    request.DryRun),
+                    request.DryRun,
+                    request.Unattended),
                 cancellationToken)
             .ConfigureAwait(false);
 
         return new TestFailoverOutcome(report.Code, report, configuration, [], null);
     }
 
+    /// `--all` unattended sweeps the authorised VMs rather than refusing because one is not:
+    /// a scheduled sweep that stopped over a single unauthorised VM would test nothing at all,
+    /// month after month, and the authorisation is per VM on purpose. Naming a VM explicitly
+    /// is a different claim, and an unauthorised one is refused.
     private static IReadOnlyList<string> Targets(
         TestFailoverRequest request, RipcordConfiguration configuration) =>
         request.All
-            ? [.. configuration.Vms.Select(vm => vm.Name)]
+            ? [.. configuration.Vms
+                .Select(vm => vm.Name)
+                .Where(name =>
+                    !request.Unattended || configuration.Replication.AuthorisedUnattended(name))]
             : request.VmNames;
+
+    private static string? Unauthorised(
+        IReadOnlyList<string> targets, RipcordConfiguration configuration)
+    {
+        if (targets.Count == 0)
+        {
+            return "no VM is authorised to run unattended. Name them in "
+                + "replication.unattended_test_failover_vms, or run without --unattended.";
+        }
+
+        string[] refused = [.. targets.Where(name =>
+            !configuration.Replication.AuthorisedUnattended(name))];
+
+        return refused.Length == 0
+            ? null
+            : $"{string.Join(", ", refused)} is not authorised to run unattended. Name it in "
+                + "replication.unattended_test_failover_vms, or run without --unattended.";
+    }
 
     /// A misspelt VM name must not silently test nothing and report success.
     private static string? Unknown(

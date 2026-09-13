@@ -28,7 +28,8 @@ public sealed record TestFailoverPlan(
     IReadOnlyList<string> VmNames,
     string? TestSwitch,
     TimeSpan OrphanAfter,
-    bool DryRun);
+    bool DryRun,
+    bool Unattended = false);
 
 public enum TestFailoverStatus
 {
@@ -64,7 +65,8 @@ public sealed record TestFailoverReport(
     IReadOnlyList<VmTestFailoverResult> Results,
     IReadOnlyList<string> UnconfirmedDiskSets,
     bool DryRun,
-    bool Interrupted)
+    bool Interrupted,
+    bool Unattended = false)
 {
     /// Ordered by what the reader has to do about it, not by severity of intent.
     ///
@@ -138,15 +140,24 @@ public sealed class TestFailoverSequence(
             // Interrupted before the precondition was even evaluated. Nothing was touched,
             // and saying so is the whole purpose of exit 4 — letting this escape would reach
             // the CLI's generic handler and report a local access failure instead.
-            return new TestFailoverReport(startedAt, null, [], [], [], plan.DryRun, true);
+            return new TestFailoverReport(
+                startedAt, null, [], [], [], plan.DryRun, true, plan.Unattended);
         }
 
-        PreconditionRefusal refusal = TestFailoverPrecondition.Evaluate(plan.Check);
+        PreconditionRefusal refusal =
+            TestFailoverPrecondition.Evaluate(plan.Check, plan.Unattended);
 
         if (refusal.Refuses)
         {
             return new TestFailoverReport(
-                startedAt, refusal, orphans, [], Unconfirmed(plan), plan.DryRun, false);
+                startedAt,
+                refusal,
+                orphans,
+                [],
+                Unconfirmed(plan),
+                plan.DryRun,
+                false,
+                plan.Unattended);
         }
 
         if (plan.DryRun)
@@ -158,7 +169,8 @@ public sealed class TestFailoverSequence(
                 [.. plan.VmNames.Select(Planned)],
                 Unconfirmed(plan),
                 true,
-                false);
+                false,
+                plan.Unattended);
         }
 
         List<VmTestFailoverResult> results = [];
@@ -183,7 +195,14 @@ public sealed class TestFailoverSequence(
         }
 
         return new TestFailoverReport(
-            startedAt, null, orphans, results, Unconfirmed(plan), false, interrupted);
+            startedAt,
+            null,
+            orphans,
+            results,
+            Unconfirmed(plan),
+            false,
+            interrupted,
+            plan.Unattended);
     }
 
     /// Named in the report rather than blocking: a guest missing a data disk still boots and

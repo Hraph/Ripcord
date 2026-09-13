@@ -73,6 +73,87 @@ public class TestFailoverCliTests
         Assert.DoesNotContain(host.Calls, call => call.StartsWith("create", StringComparison.Ordinal));
     }
 
+    /// The scheduled mode. It skips the typed confirmation only for VMs the configuration
+    /// names, so authorising nothing authorises nothing.
+    [Fact]
+    public async Task An_unattended_run_of_an_unauthorised_vm_is_refused()
+    {
+        FakeHypervProvider host = new(FakeScenarios.Healthy(Now));
+
+        CliRun run = await Run(
+            ["test-failover", "--vm", "VM-DC-01", "--unattended"],
+            provider: host,
+            typed: null);
+
+        Assert.Equal(ExitCode.Refused, run.Code);
+        Assert.Contains("VM-DC-01", run.Error);
+        Assert.Empty(host.Calls);
+    }
+
+    /// Authorised, and nobody is asked to type anything. That is the whole point of the mode;
+    /// whether the run then proceeds is the precondition's business, not the confirmation's.
+    [Fact]
+    public async Task An_authorised_vm_is_never_asked_to_confirm()
+    {
+        CliRun run = await Run(
+            ["test-failover", "--vm", "VM-DC-01", "--unattended"],
+            configStore: new StubConfigStore(document =>
+                document.Replication!.UnattendedTestFailoverVms = ["VM-DC-01"]),
+            typed: null);
+
+        Assert.DoesNotContain("Type the node name", run.Output);
+    }
+
+    /// The counterweight, and the reason skipping the confirmation is defensible: with nobody
+    /// reading the report, a rule that could not be checked stops the run. Here the peer is
+    /// unreachable, so the cross-host rules are unevaluable and an attended run would have
+    /// proceeded on the operator's judgement.
+    [Fact]
+    public async Task An_unattended_run_refuses_when_any_rule_could_not_be_checked()
+    {
+        FakeHypervProvider host = new(FakeScenarios.Healthy(Now));
+
+        CliRun run = await Run(
+            ["test-failover", "--vm", "VM-DC-01", "--unattended"],
+            provider: host,
+            configStore: new StubConfigStore(document =>
+                document.Replication!.UnattendedTestFailoverVms = ["VM-DC-01"]),
+            typed: null);
+
+        Assert.Equal(ExitCode.Refused, run.Code);
+        Assert.Contains("unattended", run.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("not checked", run.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(host.Calls, call => call.StartsWith("create", StringComparison.Ordinal));
+    }
+
+    /// `--all` unattended sweeps only the authorised VMs rather than refusing because one is
+    /// not: a scheduled sweep that stopped over a single unauthorised VM would test nothing at
+    /// all, month after month. Proven by the authorisation refusal *not* firing — VM-DC-01 and
+    /// VM-BACKUP-01 are unauthorised and were dropped from the sweep rather than refusing it.
+    [Fact]
+    public async Task An_unattended_sweep_drops_the_unauthorised_vms_rather_than_refusing()
+    {
+        CliRun run = await Run(
+            ["test-failover", "--all", "--unattended"],
+            configStore: new StubConfigStore(document =>
+                document.Replication!.UnattendedTestFailoverVms = ["VM-LEGACY-01"]),
+            typed: null);
+
+        Assert.DoesNotContain("not authorised", run.Error);
+    }
+
+    /// A sweep that authorises nothing has nothing to do, and must say so rather than report
+    /// a clean run over an empty list.
+    [Fact]
+    public async Task An_unattended_sweep_with_no_authorisation_is_refused()
+    {
+        CliRun run = await Run(
+            ["test-failover", "--all", "--unattended"], typed: null);
+
+        Assert.Equal(ExitCode.Refused, run.Code);
+        Assert.Contains("unattended_test_failover_vms", run.Error);
+    }
+
     /// Run on the host that holds the primary copies there is nothing to test, and the
     /// operator is on the wrong machine — which is the mistake worth catching loudly.
     [Fact]
@@ -141,7 +222,8 @@ public class TestFailoverCliTests
         string machineName = FakeScenarios.LocalHostName,
         IHypervProvider? provider = null,
         IConfigStore? configStore = null,
-        string? typed = FakeScenarios.LocalHostName)
+        string? typed = FakeScenarios.LocalHostName,
+        FakePeerChannel? peerChannel = null)
     {
         StringWriter output = new();
         StringWriter error = new();
@@ -151,7 +233,7 @@ public class TestFailoverCliTests
             provider ?? new FakeHypervProvider(FakeScenarios.Healthy(Now)),
             FakeHostSystemProvider.Target(),
             FakeCertificateProvider.Valid(ValidDocument.LocalThumbprint, "CN=HV-REPLICA-01"),
-            FakePeerChannel.Absent(),
+            peerChannel ?? FakePeerChannel.Absent(),
             new InMemorySnapshotStore(),
             new NoOpDeploymentExecutor(),
             new NoOpPeerListener(),
