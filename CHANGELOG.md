@@ -11,6 +11,16 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ## Unreleased
 
+### Added
+
+- `install.ps1` — the first install, in one line:
+  `irm https://raw.githubusercontent.com/Hraph/Ripcord/main/install.ps1 | iex`. It checks the
+  SHA-256 and verifies the release signature against a key written into the script before
+  anything lands, and installs nothing if either fails. `-Prepare` and `-FromPath` split that
+  in two for a host with no outbound access: download and verify on a machine that has some,
+  copy the folder, verify again on the host. It refuses a host that already has a binary —
+  that host wants `ripcord update`.
+
 ### Security
 
 - Anything a host names — a VM, a switch, an adapter, the other host itself — is stripped of

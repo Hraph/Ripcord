@@ -1,0 +1,224 @@
+<#
+    The installer's verification, under whichever PowerShell is running these.
+
+    The point of running the same file under 5.1 and 7 is that they verify by different means —
+    5.1 has neither ImportFromPem nor a DER-aware VerifyData — and the host these will actually
+    be typed into is the one with 5.1 on it.
+
+    The fixtures come from New-SignatureVectors.ps1, which signs with a throwaway key. The real
+    signing key never leaves the release workflow's secret, and nothing here needs it.
+#>
+
+BeforeAll {
+    $script:RepositoryRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+
+    . (Join-Path $script:RepositoryRoot 'install.ps1') -SourceOnly
+
+    $script:Vectors = if ($env:RIPCORD_SIGNATURE_VECTORS) {
+        $env:RIPCORD_SIGNATURE_VECTORS
+    }
+    else {
+        Join-Path $PSScriptRoot 'vectors'
+    }
+
+    $script:PublicKey = Get-Content -LiteralPath (Join-Path $script:Vectors 'key.pub.pem') -Raw
+    $script:StrangerKey = Get-Content -LiteralPath (Join-Path $script:Vectors 'stranger.pub.pem') -Raw
+    $script:Payload = [IO.File]::ReadAllBytes((Join-Path $script:Vectors 'payload.bin'))
+    $script:Tampered = [IO.File]::ReadAllBytes((Join-Path $script:Vectors 'tampered.bin'))
+    $script:Good = [IO.File]::ReadAllBytes((Join-Path $script:Vectors 'good.sig'))
+    $script:Stranger = [IO.File]::ReadAllBytes((Join-Path $script:Vectors 'stranger.sig'))
+    $script:PaddedR = [IO.File]::ReadAllBytes((Join-Path $script:Vectors 'padded-r.sig'))
+}
+
+Describe 'the release signature' {
+    It 'accepts what the pinned key signed' {
+        Test-ReleaseSignature -Payload $script:Payload -Signature $script:Good `
+            -PublicKeyPem $script:PublicKey | Should -BeTrue
+    }
+
+    It 'refuses a payload with one byte changed' {
+        Test-ReleaseSignature -Payload $script:Tampered -Signature $script:Good `
+            -PublicKeyPem $script:PublicKey | Should -BeFalse
+    }
+
+    It 'refuses a signature made by somebody else' {
+        Test-ReleaseSignature -Payload $script:Payload -Signature $script:Stranger `
+            -PublicKeyPem $script:PublicKey | Should -BeFalse
+    }
+
+    It 'refuses the right signature against the wrong key' {
+        Test-ReleaseSignature -Payload $script:Payload -Signature $script:Good `
+            -PublicKeyPem $script:StrangerKey | Should -BeFalse
+    }
+
+    <#
+        The case the fixed-width conversion exists for: a DER integer whose top bit is set
+        carries a leading zero byte, so r arrives at 33 bytes and has to become 32 without
+        losing a byte of the value.
+    #>
+    It 'accepts a signature whose r carries a DER sign byte' {
+        Test-ReleaseSignature -Payload $script:Payload -Signature $script:PaddedR `
+            -PublicKeyPem $script:PublicKey | Should -BeTrue
+    }
+
+    It 'accepts a signature whose r lost its leading zeros to minimal DER' {
+        $short = Join-Path $script:Vectors 'short-r.sig'
+
+        if (-not (Test-Path -LiteralPath $short)) {
+            Set-ItResult -Skipped -Because 'no short-r signature appeared in the fixture run'
+            return
+        }
+
+        Test-ReleaseSignature -Payload $script:Payload -Signature ([IO.File]::ReadAllBytes($short)) `
+            -PublicKeyPem $script:PublicKey | Should -BeTrue
+    }
+
+    It 'refuses an absent signature rather than reading it as a pass' {
+        { Test-ReleaseSignature -Payload $script:Payload -Signature ([byte[]] @()) `
+                -PublicKeyPem $script:PublicKey } |
+            Should -Throw '*absent proof*'
+    }
+
+    It 'refuses an empty release' {
+        { Test-ReleaseSignature -Payload ([byte[]] @()) -Signature $script:Good `
+                -PublicKeyPem $script:PublicKey } |
+            Should -Throw '*empty*'
+    }
+
+    It 'refuses a signature that is not a DER sequence' {
+        { Test-ReleaseSignature -Payload $script:Payload `
+                -Signature ([byte[]] (1..40)) -PublicKeyPem $script:PublicKey } |
+            Should -Throw
+    }
+}
+
+Describe 'the key this script carries' {
+    It 'is the one compiled into the binary' {
+        $inProgram = Get-Content -LiteralPath (
+            Join-Path $script:RepositoryRoot 'src/Ripcord.Host.Windows/Program.cs') -Raw
+
+        $body = ($script:SigningKeyPem -split "`n" |
+            Where-Object { $_ -notmatch '-----' } |
+            ForEach-Object { $_.Trim() }) -join ''
+
+        # Two copies of one fact. They drift the day the key is rotated and only one is
+        # changed, and the host would then refuse the release it was handed.
+        $inProgram.Replace("`r", '').Replace("`n", '').Replace(' ', '') |
+            Should -BeLike "*$body*"
+    }
+
+    It 'reads as a P-256 point' {
+        $point = ConvertFrom-P256PublicKeyPem -Pem $script:SigningKeyPem
+
+        $point.X.Length | Should -Be 32
+        $point.Y.Length | Should -Be 32
+    }
+
+    It 'refuses a key that is not P-256' {
+        { ConvertFrom-P256PublicKeyPem -Pem $script:StrangerKey.Replace('MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE', 'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQgDQgAE') } |
+            Should -Throw
+    }
+}
+
+Describe 'the DER signature reader' {
+    It 'always produces sixty-four bytes' {
+        (ConvertFrom-DerSignature -Der $script:Good).Length | Should -Be 64
+        (ConvertFrom-DerSignature -Der $script:PaddedR).Length | Should -Be 64
+    }
+
+    It 'pads a short value on the left, where the zeros belong' {
+        $padded = ConvertTo-Fixed32 -Value ([byte[]] @(0x01, 0x02))
+
+        $padded.Length | Should -Be 32
+        $padded[30] | Should -Be 1
+        $padded[31] | Should -Be 2
+        $padded[0] | Should -Be 0
+    }
+
+    It 'drops the DER sign byte rather than the value' {
+        $value = [byte[]] (@(0x00, 0xFF) + (1..31))
+        $fixed = ConvertTo-Fixed32 -Value $value
+
+        $fixed.Length | Should -Be 32
+        $fixed[0] | Should -Be 0xFF
+    }
+
+    It 'refuses a value too large for the curve' {
+        { ConvertTo-Fixed32 -Value ([byte[]] (1..33)) } | Should -Throw
+    }
+}
+
+Describe 'the published checksum' {
+    BeforeAll {
+        $script:Directory = Join-Path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Force -Path $script:Directory | Out-Null
+    }
+
+    AfterAll {
+        Remove-Item -LiteralPath $script:Directory -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    It 'is read as the release publishes it' {
+        $file = Join-Path $script:Directory 'ok.sha256'
+        $hash = 'a' * 64
+        Set-Content -LiteralPath $file -Value "$hash  ripcord.exe"
+
+        Get-PublishedChecksum -ChecksumPath $file | Should -Be $hash
+    }
+
+    It 'refuses anything that is not one' {
+        $file = Join-Path $script:Directory 'bad.sha256'
+        Set-Content -LiteralPath $file -Value 'not a hash  ripcord.exe'
+
+        { Get-PublishedChecksum -ChecksumPath $file } | Should -Throw '*SHA-256*'
+    }
+}
+
+Describe 'a release as a whole' {
+    BeforeEach {
+        $script:Release = Join-Path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Force -Path $script:Release | Out-Null
+
+        [IO.File]::WriteAllBytes((Join-Path $script:Release 'ripcord.exe'), $script:Payload)
+        [IO.File]::WriteAllBytes((Join-Path $script:Release 'ripcord.exe.sig'), $script:Good)
+
+        $hash = (Get-FileHash -LiteralPath (Join-Path $script:Release 'ripcord.exe') `
+                -Algorithm SHA256).Hash.ToLowerInvariant()
+
+        Set-Content -LiteralPath (Join-Path $script:Release 'ripcord.exe.sha256') `
+            -Value "$hash  ripcord.exe"
+    }
+
+    AfterEach {
+        Remove-Item -LiteralPath $script:Release -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    It 'refuses a folder with no signature in it' {
+        Remove-Item -LiteralPath (Join-Path $script:Release 'ripcord.exe.sig')
+
+        { Assert-Release -Directory $script:Release -PublicKeyPem $script:PublicKey } | Should -Throw '*signature*'
+    }
+
+    It 'refuses a binary the checksum does not describe' {
+        [IO.File]::WriteAllBytes((Join-Path $script:Release 'ripcord.exe'), $script:Tampered)
+
+        { Assert-Release -Directory $script:Release -PublicKeyPem $script:PublicKey } | Should -Throw '*checksum does not match*'
+    }
+
+    <#
+        Both files consistent with each other and with nothing else: the checksum was recomputed
+        over the tampered binary, so only the signature can still tell. This is the case a
+        checksum alone cannot catch.
+    #>
+    It 'refuses a binary that was replaced together with its checksum' {
+        [IO.File]::WriteAllBytes((Join-Path $script:Release 'ripcord.exe'), $script:Tampered)
+
+        $hash = (Get-FileHash -LiteralPath (Join-Path $script:Release 'ripcord.exe') `
+                -Algorithm SHA256).Hash.ToLowerInvariant()
+
+        Set-Content -LiteralPath (Join-Path $script:Release 'ripcord.exe.sha256') `
+            -Value "$hash  ripcord.exe"
+
+        { Assert-Release -Directory $script:Release -PublicKeyPem $script:PublicKey } | Should -Throw '*signature does not match*'
+    }
+}

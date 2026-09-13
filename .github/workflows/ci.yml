@@ -1,4 +1,4 @@
-name: ci
+name: CI
 
 on: [push, pull_request]
 
@@ -46,6 +46,45 @@ jobs:
         with:
           name: test-results
           path: '**/*.trx'
+
+  # install.ps1 cannot be run by the xUnit suite, and it cannot be run on the machine it was
+  # written on either — there is no PowerShell there. This job is the only thing that executes
+  # it, which is why it runs on every push rather than at release time, when finding out would
+  # be too late.
+  installer:
+    name: Verify the installer
+    runs-on: windows-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # A throwaway key pair, generated fresh. The real signing key stays in the release
+      # workflow's secret: this job runs on every push, and the refusals it checks — a wrong
+      # signer, a flipped byte, an absent signature — need a key, not *the* key.
+      - name: Generate the signature fixtures
+        shell: pwsh
+        run: ./tests/install/New-SignatureVectors.ps1 -Destination "$env:RUNNER_TEMP/vectors"
+
+      - name: Run the installer tests under PowerShell 7
+        shell: pwsh
+        env:
+          RIPCORD_SIGNATURE_VECTORS: ${{ runner.temp }}/vectors
+        run: Invoke-Pester -CI -Output Detailed tests/install/Install.Tests.ps1
+
+      # The same file again under Windows PowerShell 5.1, which is what a Hyper-V host has and
+      # what the operator will paste the one-liner into. It verifies by a different route —
+      # neither ImportFromPem nor a DER-aware VerifyData exists there — so a suite that only
+      # ran under 7 would leave the path that matters unexecuted.
+      - name: Run the installer tests under Windows PowerShell 5.1
+        shell: powershell
+        env:
+          RIPCORD_SIGNATURE_VECTORS: ${{ runner.temp }}/vectors
+        run: |
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          Install-PackageProvider -Name NuGet -Force -Scope CurrentUser | Out-Null
+          Install-Module Pester -MinimumVersion 5.5.0 -Force -SkipPublisherCheck -Scope CurrentUser
+          Import-Module Pester -MinimumVersion 5.5.0
+          Invoke-Pester -CI -Output Detailed tests/install/Install.Tests.ps1
 
   # The Dockerfile is the documented local way to run the tests. Building it here keeps it
   # from rotting unnoticed.

@@ -3,6 +3,11 @@
 Two separate things live here: how a release is cut, and how the two hosts are moved onto it.
 The second one is the one that can leave you unable to fail over, so it comes first.
 
+A host that has no Ripcord on it yet is a different operation: `install.ps1`, documented in the
+[README](../README.md#installation). It verifies the same signature this document tells you to
+check by hand, and it refuses a host that already has a binary — that host wants `ripcord
+update`, below.
+
 ## Updating the pair
 
 **The pair must not be left on two versions.** The failover sequences are encoded in the binary
