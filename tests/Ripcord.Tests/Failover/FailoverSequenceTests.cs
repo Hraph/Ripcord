@@ -70,6 +70,10 @@ public class FailoverSequenceTests
 
         Assert.Empty(provider.Calls);
         Assert.Equal(ExitCode.Success, report.Code);
+
+        // Asserted non-empty first: Assert.All over an empty list passes, so a dry run that
+        // returned to the operator with no plan at all would otherwise read as correct.
+        Assert.NotEmpty(report.Steps);
         Assert.All(report.Steps, step => Assert.Equal(StepOutcome.Planned, step.Outcome));
     }
 
@@ -341,6 +345,31 @@ public class FailoverSequenceTests
         Assert.Equal(
             [AuditStage.Starting, AuditStage.Finished],
             audit.Entries.Select(entry => entry.Stage));
+    }
+
+    /// The outcome is written whatever the outcome was, and this is the run somebody actually
+    /// reads: production went off, the failover did not take, and the trail has to say so with
+    /// the exit code that means a human must look.
+    [Fact]
+    public async Task The_trail_records_the_outcome_of_a_run_that_failed()
+    {
+        FakeHypervProvider provider = Provider(VmPowerState.Running);
+        provider.PrepareFailure = new InvalidOperationException("prepare refused");
+
+        InMemoryAuditLog audit = new();
+
+        FailoverRunReport report = await Run(provider, Primary, Fresh(), audit: audit);
+
+        Assert.Equal(ExitCode.IntermediateState, report.Code);
+
+        Assert.Equal(
+            [AuditStage.Starting, AuditStage.Finished],
+            audit.Entries.Select(entry => entry.Stage));
+
+        Assert.Contains(
+            $"exit {(int)ExitCode.IntermediateState}",
+            audit.Entries[1].Detail,
+            StringComparison.Ordinal);
     }
 
     /// `--dry-run` changed nothing, so there is nothing to account for. A trail full of

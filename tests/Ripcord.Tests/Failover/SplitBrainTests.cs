@@ -81,6 +81,12 @@ public class SplitBrainTests
         Assert.Equal(SplitBrainVerdict.NotSuspected, verdict.Verdict);
     }
 
+    /// Neither side readable — the peer is gone and this host's own read failed. Two silences
+    /// are not two claims, and refusing the failover here would refuse it in the dark.
+    [Fact]
+    public void Two_hosts_that_were_not_read_are_not_two_claimants() =>
+        Assert.Equal(SplitBrainVerdict.NotSuspected, SplitBrain.Of(null, null).Verdict);
+
     /// A role this binary could not map is not evidence of safety. It is reported as its own
     /// answer so a caller can decide, rather than folded into "not suspected".
     [Fact]

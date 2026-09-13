@@ -96,6 +96,59 @@ public class TestFailoverSequenceTests
         Assert.Contains("stop:VM-DC-01", host.Calls);
     }
 
+    /// The earliest two steps, which nothing exercised. Attaching the isolated network and
+    /// creating the test VM both happen before there is anything to stop — and the cleanup has
+    /// to survive an error in any step, including the ones that fail before the test VM exists.
+    [Fact]
+    public async Task A_vm_whose_test_copy_cannot_be_created_is_reported_and_nothing_is_left()
+    {
+        FakeHypervProvider host = new(FakeScenarios.Healthy(Start))
+        {
+            CreateFailure = new InvalidOperationException("the replica has no recovery point"),
+        };
+
+        TestFailoverReport report = await Run(host, "VM-DC-01");
+
+        Assert.Equal(TestFailoverStatus.Failed, Assert.Single(report.Results).Status);
+        Assert.Contains("recovery point", Assert.Single(report.Results).FailureMessage);
+        Assert.DoesNotContain("start:VM-DC-01", host.Calls);
+    }
+
+    [Fact]
+    public async Task A_test_network_that_cannot_be_attached_stops_before_the_vm_starts()
+    {
+        FakeHypervProvider host = new(FakeScenarios.Healthy(Start))
+        {
+            AttachFailure = new InvalidOperationException("the switch is gone"),
+        };
+
+        TestFailoverReport report = await Run(host, "VM-DC-01");
+
+        Assert.Equal(TestFailoverStatus.Failed, Assert.Single(report.Results).Status);
+        Assert.Contains("the switch is gone", Assert.Single(report.Results).FailureMessage);
+        Assert.DoesNotContain("start:VM-DC-01", host.Calls);
+    }
+
+    /// One VM failing does not cancel the rest: the operator asked for a test of several, and
+    /// the second is not less worth testing because the first would not boot. Only the
+    /// operator interrupting stops the run.
+    [Fact]
+    public async Task A_vm_that_fails_does_not_stop_the_next_one()
+    {
+        FakeHypervProvider host = new(FakeScenarios.Healthy(Start))
+        {
+            StartVmFailure = new InvalidOperationException("not enough memory on the host"),
+        };
+
+        TestFailoverReport report = await Run(host, "VM-DC-01", "VM-LEGACY-01");
+
+        Assert.Equal(
+            [TestFailoverStatus.Failed, TestFailoverStatus.Failed],
+            report.Results.Select(result => result.Status));
+
+        Assert.Contains("create:VM-LEGACY-01", host.Calls);
+    }
+
     /// The heartbeat never arrives. The VM started, so something real happened and the run is
     /// not a pass — but it is also not a crash, and the report has to tell them apart.
     [Fact]
