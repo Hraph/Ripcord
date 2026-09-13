@@ -241,6 +241,29 @@ jobs:
             exit 1
           fi
 
+      # The other half of the same rule as the changelog gate above: a release is described,
+      # and declared, before it is cut. `Directory.Build.props` is what the binary stamps
+      # itself with, and the version here is derived from the commits — nothing compared them.
+      #
+      # It was caught by accident rather than by design: this job's `VERSION` reaches the
+      # Windows build as MSBuild's `Version` property, because environment variables there are
+      # case-insensitive, so the assembly was stamped with the derived version while the tree
+      # declared another and `BuildChainTests` noticed. That is too clever a mechanism to rely
+      # on, so the comparison is made here, by name.
+      - name: Refuse a version the build properties do not declare
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          declared="$(sed -n 's:.*<VersionPrefix>\(.*\)</VersionPrefix>.*:\1:p' Directory.Build.props)"
+
+          if [ "$declared" != "$VERSION" ]; then
+            echo "Directory.Build.props declares $declared; this release would be $VERSION." >&2
+            echo "Set <VersionPrefix>$VERSION</VersionPrefix>, commit it, and run this again." >&2
+            exit 1
+          fi
+
   release:
     name: Build and publish the release
     needs: version

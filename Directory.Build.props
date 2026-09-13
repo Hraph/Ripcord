@@ -22,7 +22,12 @@
     <Authors>Ripcord contributors</Authors>
     <RepositoryUrl>https://github.com/Hraph/RipCord</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <VersionPrefix>0.1.0</VersionPrefix>
+    <!-- The version this repository declares itself to be, and what the binary stamps into
+         its own informational version. The release workflow derives a version from the
+         commits and refuses to cut one this does not match: two names for the same release
+         that nothing reconciled is how a binary reporting 0.2.0 shipped from a tree saying
+         0.1.0. `ripcord update` compares these strings, so the disagreement is not cosmetic. -->
+    <VersionPrefix>0.2.0</VersionPrefix>
   </PropertyGroup>
 
   <!-- SourceLink ships in the SDK, so no PackageReference. -->
