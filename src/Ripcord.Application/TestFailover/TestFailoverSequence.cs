@@ -313,17 +313,17 @@ public sealed class TestFailoverSequence(
                         null,
                         null);
 
-                // The guest cannot be asked at all, so waiting longer answers nothing.
-                case Heartbeat.NotInstalled:
+                // The guest cannot answer at all, so waiting longer answers nothing.
+                case Heartbeat.CannotConfirm:
                 case Heartbeat.Unreadable:
                     return new VmTestFailoverResult(
                         vmName,
                         TestFailoverStatus.BootedWithoutHeartbeat,
                         null,
                         [],
-                        heartbeat == Heartbeat.NotInstalled
-                            ? "the guest has no integration services, so its boot cannot be "
-                                + "confirmed from the host"
+                        heartbeat == Heartbeat.CannotConfirm
+                            ? "the guest cannot answer the host - an incompatible integration "
+                                + "services version, or a paused VM"
                             : "the heartbeat could not be read",
                         null);
 
@@ -338,7 +338,9 @@ public sealed class TestFailoverSequence(
                     TestFailoverStatus.NoHeartbeat,
                     null,
                     [],
-                    $"no heartbeat within {(int)timing.HeartbeatTimeout.TotalSeconds}s",
+                    $"no heartbeat within {(int)timing.HeartbeatTimeout.TotalSeconds}s. The "
+                        + "guest may still be booting, or may have no integration services - "
+                        + "Hyper-V reports both the same way and does not distinguish them",
                     null);
             }
 

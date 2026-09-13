@@ -21,10 +21,12 @@ internal static class WmiTestFailover
 {
     private const string Namespace = @"root\virtualization\v2";
 
-    /// Unverified. `Get-VMFailover`'s test operations are documented as living on the
-    /// replication service, but the exact spellings are not closable from the reference.
-    private const string CreateTestSystem = "CreateTestVirtualSystem";
-    private const string DestroyTestSystem = "DestroyTestVirtualSystem";
+    /// Verified against the Microsoft `hyperv_v2` reference. The creation lives on the
+    /// replication service; the destruction does **not** — a test VM is destroyed like any
+    /// other VM, through the management service, and the reference says so explicitly on
+    /// TestReplicaSystem's ResultingSystem parameter.
+    private const string CreateTestSystem = "TestReplicaSystem";
+    private const string DestroyTestSystem = "DestroySystem";
 
     /// A VM in test-replica mode. Discriminated on the mode, never on the `" - Test"` name
     /// suffix, whose localisation on a non-English host is unverifiable.
@@ -34,8 +36,10 @@ internal static class WmiTestFailover
     private const string SwitchQuery =
         "SELECT Name, ElementName FROM Msvm_VirtualEthernetSwitch";
 
-    /// Requested state 2 is Enabled — the CIM spelling of "start".
+    /// CIM_EnabledLogicalElement requested states: 2 is Enabled ("start"), 3 is Disabled
+    /// ("turn off"). Verified on Msvm_ComputerSystem.EnabledState.
     private const ushort Enabled = 2;
+    private const ushort Disabled = 3;
 
     public static IReadOnlyList<HostSwitch> Switches(
         CimSession session, CimOperationOptions options)
@@ -141,6 +145,11 @@ internal static class WmiTestFailover
         using CimMethodParametersCollection parameters =
         [
             CimMethodParameter.Create("ComputerSystem", vm, CimType.Reference, CimFlags.In),
+
+            // Null is documented as "the latest point in time", which is what a monthly test
+            // wants. Passed explicitly rather than omitted so the intent is on the wire.
+            CimMethodParameter.Create(
+                "SnapshotSettingData", null, CimType.Reference, CimFlags.In),
         ];
 
         using CimInstance service = ReplicationService(session, options);
@@ -153,7 +162,7 @@ internal static class WmiTestFailover
         // The created system is returned by the method. Read from the out parameter rather
         // than derived from the replica's name, which is the whole reason the `" - Test"`
         // suffix never appears in this codebase.
-        if (result.OutParameters["TestVirtualSystem"]?.Value is CimInstance created)
+        if (result.OutParameters["ResultingSystem"]?.Value is CimInstance created)
         {
             using (created)
             {
@@ -170,15 +179,22 @@ internal static class WmiTestFailover
                 + "or destroyed by this run");
     }
 
+    /// Takes the **test** VM, not the replicated one, and turns it off first: DestroySystem
+    /// is documented as requiring the machine to be powered off or saved, so destroying a
+    /// running test VM returns Invalid State and leaves it behind — the orphan this milestone
+    /// exists to prevent.
     public static void DestroyTestVm(
-        CimSession session, CimInstance vm, CimOperationOptions options)
+        CimSession session, CimInstance testVm, CimOperationOptions options)
     {
+        TurnOff(session, testVm, options);
+
         using CimMethodParametersCollection parameters =
         [
-            CimMethodParameter.Create("ComputerSystem", vm, CimType.Reference, CimFlags.In),
+            CimMethodParameter.Create(
+                "AffectedSystem", testVm, CimType.Reference, CimFlags.In),
         ];
 
-        using CimInstance service = ReplicationService(session, options);
+        using CimInstance service = VirtualSystemManagementService(session, options);
 
         using CimMethodResult result = session.InvokeMethod(
             Namespace, service, DestroyTestSystem, parameters, options);
@@ -186,12 +202,33 @@ internal static class WmiTestFailover
         WmiJob.Complete(session, result, options, DestroyTestSystem);
     }
 
-    public static void Start(
+    /// Already off is not a failure: the VM may never have been started, or may have shut
+    /// itself down. Only the destruction that follows has to succeed.
+    private static void TurnOff(
         CimSession session, CimInstance testVm, CimOperationOptions options)
+    {
+        try
+        {
+            RequestState(session, testVm, Disabled, options);
+        }
+        catch (CimException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
+    }
+
+    public static void Start(
+        CimSession session, CimInstance testVm, CimOperationOptions options) =>
+        RequestState(session, testVm, Enabled, options);
+
+    private static void RequestState(
+        CimSession session, CimInstance testVm, ushort state, CimOperationOptions options)
     {
         using CimMethodParametersCollection parameters =
         [
-            CimMethodParameter.Create("RequestedState", Enabled, CimType.UInt16, CimFlags.In),
+            CimMethodParameter.Create("RequestedState", state, CimType.UInt16, CimFlags.In),
         ];
 
         using CimMethodResult result = session.InvokeMethod(
@@ -200,9 +237,14 @@ internal static class WmiTestFailover
         WmiJob.Complete(session, result, options, "RequestStateChange");
     }
 
-    /// Msvm_Heartbeat's OperationalStatus: 2 is OK, 12 is "no contact", 13 is "lost
-    /// communication". The instance exists only while the VM runs and only when the guest has
-    /// the integration services, so its absence is NotInstalled rather than a failure.
+    /// `Msvm_HeartbeatComponent.OperationalStatus[0]`, reached through `Msvm_SystemDevice`.
+    /// Codes are the documented ones: 2 OK, 3 Degraded (normal, on a negotiated protocol
+    /// version), 7 the guest supports no compatible protocol, 12 not installed *or* not yet
+    /// contacted, 13 lost communication, 15 the VM is paused.
+    ///
+    /// The component only exists while the VM runs, so no component means not running — not,
+    /// as this adapter first assumed, a guest without integration services. That state is not
+    /// reportable: code 12 covers both and Hyper-V does not separate them.
     public static Heartbeat ReadHeartbeat(
         CimSession session, CimInstance testVm, CimOperationOptions options)
     {
@@ -220,17 +262,15 @@ internal static class WmiTestFailover
 
                 return status[0] switch
                 {
-                    2 => Heartbeat.Ok,
+                    2 or 3 => Heartbeat.Ok,
                     12 or 13 => Heartbeat.NoContact,
+                    7 or 15 => Heartbeat.CannotConfirm,
                     _ => Heartbeat.Unreadable,
                 };
             }
         }
 
-        // The same reasoning as the switch classification, one notch less dangerous: absence
-        // of a heartbeat component is read as "the guest has none". It is never a pass, so a
-        // wrong association here costs an unconfirmed boot rather than an unsafe one.
-        return Heartbeat.NotInstalled;
+        return Heartbeat.NotRunning;
     }
 
     /// A switch bridged to a physical NIC. This is the property that makes a test VM unsafe;

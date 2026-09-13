@@ -13,17 +13,21 @@ namespace Ripcord.Adapters.Fake;
 /// arrive with the milestone that needs them.
 public sealed class FakeHypervProvider : IHypervProvider
 {
-    private readonly HostState local;
     private readonly Exception? localFailure;
 
-    public FakeHypervProvider(HostState local) => this.local = local;
+    public FakeHypervProvider(HostState local) => this.LocalState = local;
+
+    /// Settable, because a sequence re-derives its position from observed state rather than
+    /// from a cursor: a test that cannot move the pair on between reads cannot exercise a
+    /// resume at all.
+    public HostState LocalState { get; set; }
 
     private FakeHypervProvider(Exception localFailure)
     {
         // Never returned — GetLocalStateAsync always faults — but a sentinel timestamp here
         // would render as a lag of two thousand years the day this fake grows a quieter
         // failure mode.
-        this.local = HostState.Unreachable(
+        this.LocalState = HostState.Unreachable(
             FakeScenarios.LocalHostName, HostReachability.NotConfigured());
         this.localFailure = localFailure;
     }
@@ -35,7 +39,7 @@ public sealed class FakeHypervProvider : IHypervProvider
 
     public Task<HostState> GetLocalStateAsync(CancellationToken cancellationToken) =>
         this.localFailure is null
-            ? Task.FromResult(this.local)
+            ? Task.FromResult(this.LocalState)
             : Task.FromException<HostState>(this.localFailure);
 
     /// Every call the sequence made, in order. The cleanup guarantee is an ordering claim —
@@ -70,8 +74,9 @@ public sealed class FakeHypervProvider : IHypervProvider
 
     public Exception? StopFailure { get; set; }
 
-    /// Read in order, the last one repeating. `[NoContact, NoContact, Ok]` is a VM that took
-    /// three polls to come up; `[NoContact]` alone never comes up at all.
+    /// Read in order, the last one repeating. `[NotRunning, NoContact, Ok]` is a VM that
+    /// took three polls to come up; `[NoContact]` alone never comes up at all — which is what
+    /// a guest with no integration services looks like, Hyper-V reporting no difference.
     public List<Heartbeat> Heartbeats { get; } = [Heartbeat.Ok];
 
     private int heartbeatReads;
@@ -139,6 +144,51 @@ public sealed class FakeHypervProvider : IHypervProvider
 
         this.heartbeatReads++;
         return Task.FromResult(heartbeat);
+    }
+
+    /// Scripted failures for the mutating failover steps, so a sequence test can break exactly
+    /// one step and assert what the rollback did about it.
+    public Exception? ShutDownFailure { get; set; }
+
+    public Exception? PrepareFailure { get; set; }
+
+    public Exception? StartFailoverFailure { get; set; }
+
+    public Exception? ReverseFailure { get; set; }
+
+    public Exception? StartRealVmFailure { get; set; }
+
+    /// The rollback's own failure. Milestone 4 cares about this one more than milestone 3 did:
+    /// a cancel that will not run leaves production shut down.
+    public Exception? CancelFailure { get; set; }
+
+    public Task ShutDownVmAsync(string vmName, CancellationToken cancellationToken) =>
+        this.Record($"shutdown:{vmName}", this.ShutDownFailure, cancellationToken);
+
+    public Task PrepareFailoverAsync(string vmName, CancellationToken cancellationToken) =>
+        this.Record($"prepare:{vmName}", this.PrepareFailure, cancellationToken);
+
+    public Task StartFailoverAsync(string vmName, CancellationToken cancellationToken) =>
+        this.Record($"failover:{vmName}", this.StartFailoverFailure, cancellationToken);
+
+    public Task ReverseReplicationAsync(string vmName, CancellationToken cancellationToken) =>
+        this.Record($"reverse:{vmName}", this.ReverseFailure, cancellationToken);
+
+    public Task StartVmAsync(string vmName, CancellationToken cancellationToken) =>
+        this.Record($"start:{vmName}", this.StartRealVmFailure, cancellationToken);
+
+    public Task CancelFailoverAsync(string vmName, CancellationToken cancellationToken) =>
+        this.Record($"cancel:{vmName}", this.CancelFailure, cancellationToken);
+
+    /// The call is recorded before the scripted failure is raised. A step that threw still
+    /// happened as far as the host is concerned, and a rollback test that could not see the
+    /// attempt would be asserting against a fiction.
+    private Task Record(string call, Exception? failure, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        this.Calls.Add(call);
+
+        return failure is null ? Task.CompletedTask : Task.FromException(failure);
     }
 }
 

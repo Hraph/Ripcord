@@ -111,21 +111,56 @@ public class TestFailoverSequenceTests
         Assert.Contains("stop:VM-DC-01", host.Calls);
     }
 
-    /// A guest without integration services cannot be asked. Saying so is the requirement;
-    /// reporting it as a pass would be the tool claiming a boot it never observed.
+    /// A guest that cannot answer at all — an incompatible integration services version, or a
+    /// paused VM. Waiting longer answers nothing, and reporting it as a pass would be the tool
+    /// claiming a boot it never observed.
     [Fact]
-    public async Task A_guest_without_integration_services_is_not_reported_as_a_pass()
+    public async Task A_guest_that_cannot_answer_is_not_reported_as_a_pass()
     {
         FakeHypervProvider host = new(FakeScenarios.Healthy(Start));
         host.Heartbeats.Clear();
-        host.Heartbeats.Add(Heartbeat.NotInstalled);
+        host.Heartbeats.Add(Heartbeat.CannotConfirm);
 
         TestFailoverReport report = await Run(host, "VM-DC-01");
 
         VmTestFailoverResult result = Assert.Single(report.Results);
 
         Assert.Equal(TestFailoverStatus.BootedWithoutHeartbeat, result.Status);
-        Assert.NotEqual(TestFailoverStatus.Booted, result.Status);
+        Assert.Contains("cannot answer", result.FailureMessage);
+    }
+
+    /// A guest with no integration services is NOT a state Hyper-V reports: status 12 means
+    /// "not installed or not yet contacted" and it does not separate them. So it looks exactly
+    /// like a slow boot and ends as a timeout — and the message has to admit the ambiguity
+    /// rather than assert one of the two.
+    [Fact]
+    public async Task A_guest_with_no_integration_services_times_out_and_says_why()
+    {
+        FakeHypervProvider host = new(FakeScenarios.Healthy(Start));
+        host.Heartbeats.Clear();
+        host.Heartbeats.Add(Heartbeat.NoContact);
+
+        TestFailoverReport report = await Run(host, "VM-DC-01");
+
+        VmTestFailoverResult result = Assert.Single(report.Results);
+
+        Assert.Equal(TestFailoverStatus.NoHeartbeat, result.Status);
+        Assert.Contains("integration services", result.FailureMessage);
+        Assert.Contains("does not distinguish", result.FailureMessage);
+    }
+
+    /// The component does not exist while the VM is not running, so an early poll says only
+    /// "not up yet" and must keep waiting rather than conclude anything.
+    [Fact]
+    public async Task A_vm_not_yet_running_is_polled_again_rather_than_judged()
+    {
+        FakeHypervProvider host = new(FakeScenarios.Healthy(Start));
+        host.Heartbeats.Clear();
+        host.Heartbeats.AddRange([Heartbeat.NotRunning, Heartbeat.NotRunning, Heartbeat.Ok]);
+
+        TestFailoverReport report = await Run(host, "VM-DC-01");
+
+        Assert.Equal(TestFailoverStatus.Booted, Assert.Single(report.Results).Status);
     }
 
     /// The other half of the data-unavailable state, and the half that historically goes
