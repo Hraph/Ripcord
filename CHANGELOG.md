@@ -11,6 +11,27 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ## Unreleased
 
+### Security
+
+- Anything a host names — a VM, a switch, an adapter, the other host itself — is stripped of
+  control characters before it reaches a console or a mail header. A name carrying an ANSI
+  escape could otherwise repaint the verdict an operator is reading during an incident.
+- SMTP credentials on a connection that never starts TLS are refused by the configuration
+  validator rather than sent in the clear.
+- A mail the framework refuses to build is a failed delivery, not an exception out of
+  `ripcord check`.
+- The release workflow no longer substitutes its inputs into a shell script, and its token is
+  read-only except on the job that publishes. Third-party actions are pinned to a commit.
+- `SECURITY.md` states how to report a vulnerability and what the tool assumes.
+
+### Changed
+
+- A deployment that fails part-way exits **5** (the host is between two states) rather than 3,
+  and says "nothing was changed" instead when the first step failed. A declined confirmation
+  exits **4**, like every other declined confirmation.
+- The peer's address is compared as an address, so a peer arriving over IPv6 from its own
+  address is still the peer.
+
 ### Added
 
 - `ripcord dashboard` — the read-only page of milestone 7, served on `127.0.0.1` only and off
