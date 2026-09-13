@@ -208,6 +208,13 @@ PEER    HV-PRIMARY-01                                               OFFLINE
 | 1 | at least one critical rule violated (`check` only) |
 | 2 | invalid invocation, or invalid or missing configuration |
 | 3 | local access failure (WMI, privileges, timeout) |
+| 4 | refused, or interrupted — **nothing was changed** |
+| 5 | a mutating operation left the host between two states — a human has to look |
+
+The last two are what separate "it did not run" from "it ran half way". A deployment or a
+failover that stops part-way exits 5 and says where it stopped; one that fails before touching
+anything exits 3 or 4 and says nothing was changed. Re-running is safe in both cases: every
+mutating command re-derives where it is from what the hosts report.
 
 An unreachable peer is a degraded state, not an error: a scheduled `ripcord status` must not
 alert because the other host is down.
