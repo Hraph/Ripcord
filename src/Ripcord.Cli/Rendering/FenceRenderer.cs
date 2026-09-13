@@ -30,19 +30,19 @@ public static class FenceRenderer
 
         if (outcome.Scope is { } scope)
         {
-            AppendBlock(output, "SCOPE", scope);
+            Layout.AppendBlock(output, "SCOPE", scope);
             output.AppendLine();
         }
 
         if (outcome.Plan is not { } plan)
         {
-            AppendBlock(output, "NOT FENCED", outcome.FailureMessage ?? "nothing was read");
+            Layout.AppendBlock(output, "NOT FENCED", outcome.FailureMessage ?? "nothing was read");
             return Layout.Rendered(output);
         }
 
         if (plan.Halt is { } halt)
         {
-            AppendBlock(output, "HALTED", halt);
+            Layout.AppendBlock(output, "HALTED", halt);
             return Layout.Rendered(output);
         }
 
@@ -51,7 +51,7 @@ public static class FenceRenderer
         if (plan.AlreadyFenced.Count > 0)
         {
             output.AppendLine();
-            AppendBlock(
+            Layout.AppendBlock(
                 output,
                 "ALREADY FENCED",
                 string.Join(", ", plan.AlreadyFenced));
@@ -62,7 +62,7 @@ public static class FenceRenderer
         if (plan.NotConfirmedOff.Count > 0)
         {
             output.AppendLine();
-            AppendBlock(
+            Layout.AppendBlock(
                 output,
                 "NOT CONFIRMED OFF",
                 "these are fenced against the next boot but are not switched off, so they can "
@@ -73,7 +73,7 @@ public static class FenceRenderer
         if (plan.Absent.Count > 0)
         {
             output.AppendLine();
-            AppendBlock(
+            Layout.AppendBlock(
                 output,
                 "NOT ON THIS HOST",
                 string.Join(", ", plan.Absent));
@@ -128,13 +128,4 @@ public static class FenceRenderer
     private static string Outcome(FencedVm? done, bool dryRun) =>
         dryRun ? "would fence" : done is null ? "not attempted" : done.Succeeded ? "fenced" : "FAILED";
 
-    private static void AppendBlock(StringBuilder output, string title, string body)
-    {
-        output.AppendLine($"  {title}");
-
-        foreach (string line in Layout.Wrap(body, 68))
-        {
-            output.AppendLine("    " + line);
-        }
-    }
 }

@@ -38,7 +38,7 @@ public static class FailoverRenderer
         if (report.Halt is { } halt)
         {
             output.AppendLine();
-            AppendBlock(output, "HALTED", halt);
+            Layout.AppendBlock(output, "HALTED", halt);
         }
 
         AppendRollback(output, report);
@@ -55,7 +55,7 @@ public static class FailoverRenderer
         if (report.ManualRecovery is { } manual)
         {
             output.AppendLine();
-            AppendBlock(output, "ACTION REQUIRED NOW", manual);
+            Layout.AppendBlock(output, "ACTION REQUIRED NOW", manual);
         }
 
         return Layout.Rendered(output);
@@ -178,7 +178,7 @@ public static class FailoverRenderer
 
         output.AppendLine();
 
-        AppendBlock(
+        Layout.AppendBlock(
             output,
             rollback.Succeeded ? "ROLLED BACK" : "ROLLBACK FAILED",
             rollback.Succeeded
@@ -199,13 +199,4 @@ public static class FailoverRenderer
             _ => "unknown",
         };
 
-    private static void AppendBlock(StringBuilder output, string title, string body)
-    {
-        output.AppendLine($"  {title}");
-
-        foreach (string line in Layout.Wrap(body, 68))
-        {
-            output.AppendLine("    " + line);
-        }
-    }
 }

@@ -52,6 +52,23 @@ internal static class Layout
 
     public static string Line(int width) => new('-', width);
 
+    /// A titled block, indented under its title and wrapped inside the fixed width. Shared so
+    /// the indent and the wrap width are one decision rather than two that drift.
+    public static void AppendBlock(StringBuilder output, string title, string body)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+
+        output.AppendLine($"  {title}");
+
+        foreach (string line in Wrap(body, BlockWidth))
+        {
+            output.AppendLine("    " + line);
+        }
+    }
+
+    /// The fixed width less the four columns a block is indented by, less one.
+    private const int BlockWidth = 68;
+
     /// Wrapped on word boundaries at a fixed width, never at the terminal's. A word longer
     /// than the column — a path, a thumbprint — is broken rather than allowed to push the
     /// line off a 1024×768 screen.

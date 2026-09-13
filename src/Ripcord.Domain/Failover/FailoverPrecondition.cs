@@ -150,6 +150,11 @@ public static class FailoverPrecondition
                 finding.CountsAsCritical && About(finding) && !exempt.Contains(finding.Rule.Id)),
         ];
 
+        // No exemption filter here, and that is not an oversight: no exempt rule is in any
+        // blocking list, so there is nothing to filter. If one is ever added to both — and
+        // `ReplicationDirectionInverted` joining `BlockingForFailback` is the plausible way —
+        // this filter has to take the exemption too, or an *unevaluable* reading of the rule
+        // would block the operation the exemption exists to let through.
         List<Finding> unevaluated =
         [
             .. report.Unevaluated.Where(finding =>
