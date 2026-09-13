@@ -24,6 +24,12 @@ public enum PeerVerdict
     WrongCertificate,
     WrongSubject,
     WrongAddress,
+
+    /// This host could not present its own certificate — renewed out from under the
+    /// configured thumbprint, or a thumbprint that never matched anything with a private key.
+    /// `Verify` never returns it: it is the listener's own failure, named here so a refusal
+    /// caused by this host is not logged as a caller who did something wrong.
+    LocalCertificateUnavailable,
 }
 
 /// Chain validation **and** name validation, per the specification: neither alone is enough.
@@ -82,6 +88,8 @@ public static class PeerIdentity
         PeerVerdict.Expired => "the certificate is outside its validity dates",
         PeerVerdict.WrongCertificate => "the certificate is not the peer's",
         PeerVerdict.WrongSubject => "the certificate subject is not the peer's",
+        PeerVerdict.LocalCertificateUnavailable =>
+            "this host could not present its own certificate",
         _ => "the certificate did not come from the peer's address",
     };
 

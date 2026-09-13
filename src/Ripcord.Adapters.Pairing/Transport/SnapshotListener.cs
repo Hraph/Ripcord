@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Authentication;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Ripcord.Adapters.Pairing.Wire;
@@ -73,7 +74,24 @@ public sealed class SnapshotListener(
         // Fail closed: if the validation callback never runs, nothing is served.
         PeerVerdict observed = PeerVerdict.NoCertificate;
 
-        using X509Certificate2 certificate = localCertificate();
+        X509Certificate2 certificate;
+
+        try
+        {
+            certificate = localCertificate();
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or CryptographicException)
+        {
+            // The store answered, and the answer was that this host has no usable certificate
+            // — renewed, removed, or a thumbprint that never matched. One refused connection
+            // and a line saying whose fault it is; the service keeps serving, because the
+            // operator fixing the certificate needs the listener to come back on its own.
+            return new ServedConnection(
+                PeerVerdict.LocalCertificateUnavailable, remote, Served: false);
+        }
+
+        using X509Certificate2 disposable = certificate;
 
         using SslStream stream = new(
             client.GetStream(),
