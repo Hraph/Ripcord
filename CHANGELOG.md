@@ -32,6 +32,16 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 - Split brain, version skew and `Stop-VMFailover` intent resolution, each of which halts a
   mutating command rather than reporting a finding to read later.
 - A VM power state carried end to end, distinguishing "not reported" from "switched off".
+- `ripcord check --notify` — notification over SMTP or webhook when a critical rule appears.
+  On transitions rather than on every run, grouped into one message, with a repeat threshold and
+  quiet hours that hold an alert until the window ends rather than dropping it. `--dry-run`
+  shows what would go where. Delivery never changes the exit code, and what was sent is recorded
+  only after a transport accepted it.
+- An `alerting` block in `ripcord.yaml`, off by default. The SMTP password is named by
+  `password_secret` and read from the environment; a `password:` key in the file is refused.
+- `ripcord check-update` — reports that a newer release exists and nothing more. Off unless
+  `updates.check` switches it on, and it addresses the repository by numeric id rather than by
+  `owner/name`.
 
 ### Known limitations
 

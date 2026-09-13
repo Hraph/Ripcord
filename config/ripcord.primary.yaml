@@ -115,3 +115,9 @@ storage:
 #     password_secret: RIPCORD_SMTP_PASSWORD
 #   webhook:
 #     url: "https://hooks.example.net/ripcord"
+
+# Whether this host may ask GitHub whether a newer release exists. Off, and meant to stay off
+# on a host with no outbound access. Nothing downloads and nothing installs: the command
+# reports a version number and stops there.
+# updates:
+#   check: true

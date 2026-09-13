@@ -20,7 +20,7 @@ on:
         required: false
         type: string
       dry_run:
-        description: 'Work it all out and build it, but publish nothing'
+        description: 'Work it all out and build it, but publish nothing (dry run)'
         required: false
         default: true
         type: boolean

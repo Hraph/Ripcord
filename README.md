@@ -23,10 +23,10 @@ file written in calm conditions.
 
 ## Project state
 
-**Milestone 0 shipped. Milestones 1, 1b, 2, 3, 4 and most of 4B built, awaiting validation on
-the real hosts.** `status`, `check`, `test-failover`, `failover` in both scenarios, `failback`,
-`fence`, `version`, `serve` and `deploy-listener` are implemented and covered by tests that run
-on Linux — including the mTLS handshake end to end, with generated certificates and real
+**Milestone 0 shipped. Milestones 1, 1b, 2, 3, 4, most of 4B and 5 built, awaiting validation on
+the real hosts.** `status`, `check` (with `--notify`), `test-failover`, `failover` in both
+scenarios, `failback`, `fence`, `check-update`, `version`, `serve` and `deploy-listener` are
+implemented and covered by tests that run on Linux — including the mTLS handshake end to end, with generated certificates and real
 sockets, and a case table per check rule.
 
 `reprotect` is **not** built. It re-establishes replication onto the returning host, and the
@@ -135,7 +135,8 @@ The machine names, addresses and thumbprints throughout this repository are pseu
 
 ```
 ripcord status [--config <path>]              read both sides of the pair
-ripcord check [--config <path>]               would a failover work right now
+ripcord check [--config <path>] [--notify [--dry-run]]
+                                              would a failover work right now
 ripcord test-failover (--vm <name> | --all) [--dry-run] [--unattended]
                                               boot a replica in isolation, then destroy it
 ripcord failover --scenario planned|unplanned (--vm <name> | --all | --priority P1)
@@ -145,6 +146,7 @@ ripcord failback (--vm <name> | --all | --priority P1) [--dry-run]
 ripcord fence [--dry-run]                     stop this host's VMs starting themselves
 ripcord serve [--config <path>]               run the read-only pair listener
 ripcord deploy-listener [--dry-run] [--remove]  install or remove that listener
+ripcord check-update [--config <path>]        is a newer release published
 ripcord version                               version and commit hash
 ```
 
@@ -273,6 +275,53 @@ some VMs primary on one host and some on the other — is still critical.
 The PENDING column renders `-` when Hyper-V answers the statistics call asynchronously:
 Ripcord declines to poll a job for one column. See
 [milestone 1](docs/milestones/milestone-1.md).
+
+### Alerting
+
+Hyper-V Replica surfaces plenty of state and pushes none of it: a resync can run for three weeks
+with nobody knowing. `ripcord check --notify` is the delivery half, and nothing else — the
+trigger is the same code 1 the command already returns, so there is no second detection path
+and no second opinion about whether the pair is healthy.
+
+```
+schtasks /Create /TN "Ripcord check" /SC MINUTE /MO 15 /RL HIGHEST /RU SYSTEM ^
+  /TR "\"C:\Program Files\Ripcord\ripcord.exe\" check --notify"
+```
+
+Four rules decide what actually leaves the host, and all four exist because an alert nobody
+reads is worse than no alert at all.
+
+- **Transitions, not runs.** A critical finding that was not in the last notification is sent at
+  once. The same one on the next run is not: a mail every fifteen minutes becomes a filter rule
+  within a week, and then the criticals go unread too.
+- **A repeat threshold**, 24 hours by default, after which a still-broken pair is mentioned
+  again.
+- **Quiet hours**, in the host's local time. An alert raised inside the window is **held and
+  delivered when the window ends**, never dropped. One that clears before the window ends is
+  dropped, because nothing was ever sent to correct.
+- **Grouping.** Everything wrong with the pair goes in one message, with each finding's
+  implication on the day of the failover and the command that fixes it — not a dump of the
+  check output. The pair recovering is itself a transition and is notified once.
+
+Delivery never changes the exit code: a relay that is down must not be reported as a pair that
+is broken. A notification that was held, refused or never attempted is printed on stderr beside
+the report, and what was sent is remembered in `alert-state.json` next to the binary — written
+only after the transport accepted it, so a relay that was down for a minute does not cost a
+day's silence. `check --notify --dry-run` shows what would go where and writes nothing.
+
+The SMTP password is never in `ripcord.yaml`; `password_secret` names an environment variable
+the service reads it from, and a `password:` key in the file is refused by name. On a host
+running the check as SYSTEM that means a machine-wide variable — readable by administrators,
+which is the trade-off — so an internal relay that accepts from this subnet without credentials
+is the better arrangement where one exists.
+
+`ripcord check-update` asks whether a newer release has been published and reports the version.
+It is **off** unless `updates.check` says otherwise, and refuses rather than silently skipping
+when it is off: these hosts are meant to have no outbound access, and a host somebody believes
+is checking is worse than one that plainly is not. Nothing downloads and nothing installs. It
+addresses the repository by numeric id rather than by `owner/name`, because a rename leaves a
+redirect that stops failing — and starts returning a stranger's releases — the day somebody
+recreates the abandoned name.
 
 Install is a copy: the `.exe` and one of the samples from `config/`, renamed `ripcord.yaml`,
 side by side. `--config` overrides the path.
