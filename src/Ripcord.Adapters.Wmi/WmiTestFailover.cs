@@ -42,6 +42,18 @@ internal static class WmiTestFailover
         HashSet<string> external = SwitchesReachingAPhysicalNic(session, options);
         HashSet<string> internalSwitches = SwitchesReachingTheManagementOs(session, options);
 
+        // Private is deduced from two absences, so it is only trustworthy once the traversal
+        // has been shown to work at all. A wrong association class, wrong role names or
+        // insufficient privilege all return an empty set rather than throwing — and that
+        // would make every switch on the host Private, which is the value the Domain treats
+        // as safe. This is the difference between failing closed and failing open.
+        //
+        // The cost is a false refusal on a host whose switches really are all private: the
+        // operator is told the kind could not be established, and says so in the
+        // configuration. That is recoverable. Booting a domain controller onto production
+        // because an association returned nothing is not.
+        bool traversalWorked = external.Count > 0 || internalSwitches.Count > 0;
+
         List<HostSwitch> switches = [];
 
         foreach (CimInstance instance in session.QueryInstances(
@@ -64,7 +76,9 @@ internal static class WmiTestFailover
                     ? SwitchConnectivity.External
                     : internalSwitches.Contains(id)
                         ? SwitchConnectivity.Internal
-                        : SwitchConnectivity.Private));
+                        : traversalWorked
+                            ? SwitchConnectivity.Private
+                            : SwitchConnectivity.Unknown));
             }
         }
 
@@ -218,6 +232,9 @@ internal static class WmiTestFailover
             }
         }
 
+        // The same reasoning as the switch classification, one notch less dangerous: absence
+        // of a heartbeat component is read as "the guest has none". It is never a pass, so a
+        // wrong association here costs an unconfirmed boot rather than an unsafe one.
         return Heartbeat.NotInstalled;
     }
 
