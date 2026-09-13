@@ -13,16 +13,17 @@ public class SwitchClassificationTests
     {
         Assert.Equal(
             SwitchConnectivity.External,
-            SwitchClassification.Of(true, false, externalTraversalProven: true));
+            SwitchClassification.Of(true, false, portsWereEnumerated: true));
     }
 
-    /// External is established positively, so it stands even when nothing else does.
+    /// External is established positively from a binding that was seen, so it stands even
+    /// when the rest of the enumeration is in doubt.
     [Fact]
-    public void An_external_switch_is_external_even_if_nothing_was_proven()
+    public void An_external_switch_is_external_even_if_nothing_else_was_established()
     {
         Assert.Equal(
             SwitchConnectivity.External,
-            SwitchClassification.Of(true, false, externalTraversalProven: false));
+            SwitchClassification.Of(true, false, portsWereEnumerated: false));
     }
 
     [Fact]
@@ -30,7 +31,7 @@ public class SwitchClassificationTests
     {
         Assert.Equal(
             SwitchConnectivity.Internal,
-            SwitchClassification.Of(false, true, externalTraversalProven: true));
+            SwitchClassification.Of(false, true, portsWereEnumerated: true));
     }
 
     [Fact]
@@ -38,31 +39,27 @@ public class SwitchClassificationTests
     {
         Assert.Equal(
             SwitchConnectivity.Private,
-            SwitchClassification.Of(false, false, externalTraversalProven: true));
+            SwitchClassification.Of(false, false, portsWereEnumerated: true));
     }
 
     /// The whole reason this function exists. Absence of evidence is not evidence of absence,
     /// and reading it as Private would boot a test VM onto whatever it is really attached to.
     [Fact]
-    public void An_unproven_external_traversal_leaves_a_switch_unclassified()
+    public void An_unenumerated_switch_is_left_unclassified()
     {
         Assert.Equal(
             SwitchConnectivity.Unknown,
-            SwitchClassification.Of(false, false, externalTraversalProven: false));
+            SwitchClassification.Of(false, false, portsWereEnumerated: false));
     }
 
-    /// The asymmetric failure: the internal traversal worked, the external one did not. A
-    /// genuinely external switch missed by the broken traversal must not become Private
-    /// merely because the other half of the machinery was healthy.
+    /// A switch with no ports at all is unclassified rather than private: even a private
+    /// switch carries the ports of the VMs on it, so an empty enumeration is a failure to
+    /// look rather than a fact about the switch.
     [Fact]
-    public void A_working_internal_traversal_does_not_vouch_for_the_external_one()
+    public void A_switch_whose_ports_could_not_be_enumerated_is_unclassified()
     {
         Assert.Equal(
             SwitchConnectivity.Unknown,
-            SwitchClassification.Of(false, false, externalTraversalProven: false));
-
-        Assert.Equal(
-            SwitchConnectivity.Internal,
-            SwitchClassification.Of(false, true, externalTraversalProven: true));
+            SwitchClassification.Of(false, true, portsWereEnumerated: false));
     }
 }

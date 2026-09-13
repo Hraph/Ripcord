@@ -41,17 +41,19 @@ internal static class WmiTestFailover
     private const ushort Enabled = 2;
     private const ushort Disabled = 3;
 
+    /// Classifies every virtual switch on the host, by the route Microsoft's own networking
+    /// sample uses: the switch's ports through `Msvm_SystemDevice`, each port's allocation
+    /// setting data through `Msvm_ElementSettingData`, and the class named by that setting's
+    /// `HostResource`.
+    ///
+    /// An earlier version walked `Msvm_LANEndpoint` and `Msvm_ActiveConnection` instead. The
+    /// classes were real but the route rested on two things the reference does not state: the
+    /// direction of `Msvm_ActiveConnection` (documented as not mattering for a bidirectional
+    /// connection, so querying one direction may find nothing) and `SystemName` on the peer
+    /// endpoint being the switch GUID. This route needs neither.
     public static IReadOnlyList<HostSwitch> Switches(
         CimSession session, CimOperationOptions options)
     {
-        HashSet<string> external = SwitchesReachingAPhysicalNic(session, options);
-        HashSet<string> internalSwitches = SwitchesReachingTheManagementOs(session, options);
-
-        // The judgement about whether an empty external set is a fact or a broken traversal
-        // lives in the Domain, where it is testable: SwitchClassification.Of. All the adapter
-        // establishes is what the associations reported.
-        bool externalTraversalProven = external.Count > 0;
-
         List<HostSwitch> switches = [];
 
         foreach (CimInstance instance in session.QueryInstances(
@@ -59,22 +61,76 @@ internal static class WmiTestFailover
         {
             using (instance)
             {
-                string? id = CimValues.Text(instance, "Name");
-                string? name = CimValues.Text(instance, "ElementName");
-
-                if (name is null || id is null)
+                if (CimValues.Text(instance, "ElementName") is not { } name)
                 {
                     continue;
                 }
 
-                switches.Add(new HostSwitch(name, SwitchClassification.Of(
-                    external.Contains(id),
-                    internalSwitches.Contains(id),
-                    externalTraversalProven)));
+                switches.Add(Classify(session, instance, name, options));
             }
         }
 
         return switches;
+    }
+
+    private static HostSwitch Classify(
+        CimSession session, CimInstance virtualSwitch, string name, CimOperationOptions options)
+    {
+        bool reachesAPhysicalNic = false;
+        bool reachesTheManagementOs = false;
+        bool portsWereEnumerated = false;
+
+        foreach (CimInstance port in session.EnumerateAssociatedInstances(
+            Namespace, virtualSwitch, "Msvm_SystemDevice", "Msvm_EthernetSwitchPort",
+            sourceRole: "GroupComponent", resultRole: "PartComponent", options))
+        {
+            using (port)
+            {
+                portsWereEnumerated = true;
+
+                foreach (string bound in BoundResources(session, port, options))
+                {
+                    // The object path names the bound resource's class. Class names are not
+                    // localized, unlike the switch and rule names this project refuses to
+                    // match on elsewhere.
+                    reachesAPhysicalNic |= bound.Contains(
+                        "Msvm_ExternalEthernetPort", StringComparison.OrdinalIgnoreCase);
+
+                    reachesTheManagementOs |= bound.Contains(
+                        "Msvm_ComputerSystem", StringComparison.OrdinalIgnoreCase);
+                }
+            }
+        }
+
+        return new HostSwitch(name, SwitchClassification.Of(
+            reachesAPhysicalNic, reachesTheManagementOs, portsWereEnumerated));
+    }
+
+    /// `HostResource` holds the object path of whatever the port is bound to — a physical
+    /// NIC, the management OS, or nothing at all for a port serving a VM. Only the first
+    /// element is meaningful; the reference says only one host resource can be assigned.
+    private static List<string> BoundResources(
+        CimSession session, CimInstance port, CimOperationOptions options)
+    {
+        List<string> bound = [];
+
+        foreach (CimInstance setting in session.EnumerateAssociatedInstances(
+            Namespace, port, "Msvm_ElementSettingData",
+            "Msvm_EthernetPortAllocationSettingData",
+            sourceRole: "ManagedElement", resultRole: "SettingData", options))
+        {
+            using (setting)
+            {
+                if (setting.CimInstanceProperties["HostResource"]?.Value
+                    is string[] { Length: > 0 } resources
+                    && resources[0] is { } first)
+                {
+                    bound.Add(first);
+                }
+            }
+        }
+
+        return bound;
     }
 
     public static IReadOnlyList<TestVm> TestVms(
@@ -271,57 +327,6 @@ internal static class WmiTestFailover
         }
 
         return Heartbeat.NotRunning;
-    }
-
-    /// A switch bridged to a physical NIC. This is the property that makes a test VM unsafe;
-    /// the switch's name says nothing about it.
-    private static HashSet<string> SwitchesReachingAPhysicalNic(
-        CimSession session, CimOperationOptions options) =>
-        SwitchesReaching(session, "Msvm_ExternalEthernetPort", options);
-
-    private static HashSet<string> SwitchesReachingTheManagementOs(
-        CimSession session, CimOperationOptions options) =>
-        SwitchesReaching(session, "Msvm_InternalEthernetPort", options);
-
-    /// Port to endpoint to active connection to the switch port, whose SystemName is the
-    /// switch. Unverified, and deliberately fail-closed: a traversal that returns nothing
-    /// leaves every switch unclassified, and an unclassified switch is refused rather than
-    /// trusted.
-    private static HashSet<string> SwitchesReaching(
-        CimSession session, string portClass, CimOperationOptions options)
-    {
-        HashSet<string> reached = new(StringComparer.OrdinalIgnoreCase);
-
-        foreach (CimInstance port in session.QueryInstances(
-            Namespace, "WQL", $"SELECT * FROM {portClass}", options))
-        {
-            using (port)
-            {
-                foreach (CimInstance endpoint in session.EnumerateAssociatedInstances(
-                    Namespace, port, "Msvm_EthernetDeviceSAPImplementation",
-                    "Msvm_LANEndpoint", sourceRole: "Antecedent", resultRole: "Dependent",
-                    options))
-                {
-                    using (endpoint)
-                    {
-                        foreach (CimInstance peer in session.EnumerateAssociatedInstances(
-                            Namespace, endpoint, "Msvm_ActiveConnection", "Msvm_LANEndpoint",
-                            sourceRole: "Antecedent", resultRole: "Dependent", options))
-                        {
-                            using (peer)
-                            {
-                                if (CimValues.Text(peer, "SystemName") is { } switchId)
-                                {
-                                    reached.Add(switchId);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        return reached;
     }
 
     private static void ModifyResourceSettings(

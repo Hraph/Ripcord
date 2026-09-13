@@ -207,7 +207,10 @@ internal static class WmiVmInventory
         foreach (CimInstance vlan in session.EnumerateAssociatedInstances(
             Namespace,
             allocation,
-            "Msvm_EthernetPortAllocationSettingDataComponent",
+            // Verified against the reference: there is no
+            // Msvm_EthernetPortAllocationSettingDataComponent — no such class is documented,
+            // so every VLAN read returned nothing and the VLAN rule never fired.
+            "Msvm_EthernetPortSettingDataComponent",
             "Msvm_EthernetSwitchPortVlanSettingData",
             sourceRole: "GroupComponent",
             resultRole: "PartComponent",

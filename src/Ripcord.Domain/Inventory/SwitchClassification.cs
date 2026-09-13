@@ -9,23 +9,24 @@ namespace Ripcord.Domain.Inventory;
 /// apart is a decision.
 public static class SwitchClassification
 {
-    /// Only the external traversal has to be proven, and the asymmetry is the point: External
-    /// is the sole dangerous value, and Internal and Private are treated identically by the
-    /// isolation rule. With external proven, "not External" holds whatever the internal
-    /// traversal did; without it, nothing can be trusted and the switch is unclassified.
+    /// Private is read off an absence — the switch binds neither a physical NIC nor the
+    /// management OS — so it may only be concluded once the switch's own ports were actually
+    /// enumerated. A traversal that returns nothing produces the same evidence as a switch
+    /// with nothing attached, and guessing Private there is the reading that boots a test VM
+    /// onto whatever it is really connected to.
     ///
-    /// Letting the internal traversal help prove the pair would only loosen this. The two
-    /// share their association classes and differ in the port class, so the half that can
-    /// fail on its own is exactly the half that matters.
+    /// A switch with no ports at all is therefore unclassified rather than private: even a
+    /// private switch carries the ports of the VMs on it, so an empty enumeration is a
+    /// failure to look rather than a fact about the switch.
     public static SwitchConnectivity Of(
-        bool reachesAPhysicalNic, bool reachesTheManagementOs, bool externalTraversalProven)
+        bool reachesAPhysicalNic, bool reachesTheManagementOs, bool portsWereEnumerated)
     {
         if (reachesAPhysicalNic)
         {
             return SwitchConnectivity.External;
         }
 
-        if (!externalTraversalProven)
+        if (!portsWereEnumerated)
         {
             return SwitchConnectivity.Unknown;
         }
