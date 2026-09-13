@@ -14,6 +14,13 @@ jobs:
       # The filter keeps the tested surface Linux-only. Note it is not a workaround: a
       # solution-level build here would compile the WMI adapter fine. The boundary is held by
       # HexagonalBoundaryTests, and by NU1201 if the Domain ever targets Windows.
+      # The whole solution, not only the filter. CLAUDE.md states as a guarantee that the
+      # Windows projects compile off Windows; during milestone 3 that was false for seventeen
+      # commits and nothing noticed, because the Linux filter excludes the WMI project and
+      # stayed green throughout. This line is what turns the written guarantee into a checked
+      # one. It compiles the adapter; it does not pretend to test it.
+      - run: dotnet build Ripcord.sln -c Release
+
       - run: dotnet build Ripcord.Linux.slnf -c Release
       - run: dotnet test Ripcord.Linux.slnf -c Release --logger trx
 

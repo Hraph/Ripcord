@@ -1,0 +1,72 @@
+name: release
+
+# Tags only, never a branch push. A release is a deliberate act: the version comes from the
+# tag, so there is no path by which merging something publishes a binary.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # The real target platform. The Windows projects do compile on Linux, but a release
+    # binary is not the place to rely on that: this is the one artefact nobody can rebuild
+    # from the host it fails on.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # SourceLink needs the full history to stamp a commit into InformationalVersion,
+          # and `ripcord version` is what tells an operator which binary is on which host.
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Take the version from the tag
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v',''
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "tag '${{ github.ref_name }}' is not vMAJOR.MINOR.PATCH"
+          }
+          "VERSION=$version" >> $env:GITHUB_ENV
+
+      # The gate. A tag does not make a broken build releasable, and the whole solution is
+      # compiled here — not only the Linux filter — because the WMI adapter ships in this
+      # binary and nothing else ever checks that it builds.
+      - run: dotnet build Ripcord.sln -c Release
+      - run: dotnet test Ripcord.Linux.slnf -c Release
+
+      - name: Publish the single self-contained binary
+        run: >
+          dotnet publish src/Ripcord.Host.Windows/Ripcord.Host.Windows.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true
+          -p:Version=${{ env.VERSION }}
+          -o publish
+
+      # No Authenticode signature yet — that needs a paid certificate. Until then a checksum
+      # is the only way an operator can tell that the file on the host is the file that was
+      # built here, so it ships with the release rather than being available on request.
+      - name: Checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash publish/ripcord.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  ripcord.exe" | Out-File -Encoding ascii publish/ripcord.exe.sha256
+          Write-Host $hash
+
+      - name: Create the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "${{ github.ref_name }}"
+          publish/ripcord.exe publish/ripcord.exe.sha256
+          --title "ripcord ${{ env.VERSION }}"
+          --notes-file docs/RELEASE_NOTES.md
+          --verify-tag
