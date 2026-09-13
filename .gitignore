@@ -31,3 +31,7 @@ Thumbs.db
 
 # Local configuration — never commit a real ripcord.yaml
 ripcord.yaml
+
+# The source specification, which names the real hosts. It is ignored by the global gitignore
+# on the machine it was written on; stated here too, so the protection travels with the clone.
+.claude/
