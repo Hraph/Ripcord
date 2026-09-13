@@ -83,6 +83,17 @@ public class PeerIdentityTests
         }
     }
 
+    /// A dual-stack listener reports an IPv4 peer as `::ffff:192.0.2.11`. That is the same
+    /// host the configuration names, and refusing it would take the pair view down on a
+    /// network change rather than on an attack.
+    [Fact]
+    public void The_peer_arriving_over_ipv6_from_its_own_address_is_still_the_peer() =>
+        Assert.Equal(PeerVerdict.Accepted, Verify(remoteAddress: "::ffff:192.0.2.11"));
+
+    [Fact]
+    public void Another_address_is_still_refused() =>
+        Assert.Equal(PeerVerdict.WrongAddress, Verify(remoteAddress: "::ffff:192.0.2.12"));
+
     private static PeerVerdict Verify(
         string thumbprint = Expected,
         string subject = "CN=HV-PRIMARY-01",

@@ -67,7 +67,7 @@ public static class PeerIdentity
         }
 
         // A stolen key used from anywhere but the peer's address is the case this catches.
-        return Same(remoteAddress, rules.ExpectedAddress)
+        return SameAddress(remoteAddress, rules.ExpectedAddress)
             ? PeerVerdict.Accepted
             : PeerVerdict.WrongAddress;
     }
@@ -84,6 +84,19 @@ public static class PeerIdentity
         PeerVerdict.WrongSubject => "the certificate subject is not the peer's",
         _ => "the certificate did not come from the peer's address",
     };
+
+    /// Compared as addresses, not as text: a dual-stack listener reports an IPv4 peer as
+    /// `::ffff:192.0.2.11`, which is the same host the configuration names and a different
+    /// string. Refusing the real peer over that would be a failure on the one day the pair
+    /// view matters.
+    private static bool SameAddress(string left, string right) =>
+        System.Net.IPAddress.TryParse(left.Trim(), out System.Net.IPAddress? first)
+        && System.Net.IPAddress.TryParse(right.Trim(), out System.Net.IPAddress? second)
+            ? Unmapped(first).Equals(Unmapped(second))
+            : Same(left, right);
+
+    private static System.Net.IPAddress Unmapped(System.Net.IPAddress address) =>
+        address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address;
 
     private static bool Same(string left, string right) =>
         string.Equals(left.Trim(), right.Trim(), StringComparison.OrdinalIgnoreCase);
