@@ -12,9 +12,10 @@ namespace Ripcord.Adapters.Audit;
 /// valid. A host that loses power mid-failover leaves a truncated final line and every line
 /// before it still readable — which is the case this file exists for.
 ///
-/// **Immutability is not enforced here and cannot be.** It comes from an append-only ACL set at
-/// install time. This class simply never offers a way to read or rewrite, so the application is
-/// not the thing standing between the trail and an edit.
+/// **Immutability is not enforced here and cannot be.** It would come from an append-only ACL
+/// applied to the file at install time — which nothing in Ripcord applies, and whose shape is
+/// still an open question (V13). This class simply never offers a way to read or rewrite, so the
+/// application is not the thing standing between the trail and an edit.
 public sealed class JsonLinesAuditLog(string path) : IAuditLog
 {
     private static readonly JsonSerializerOptions Options = new()

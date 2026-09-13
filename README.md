@@ -6,7 +6,6 @@ guided failover.**
 On the day of an incident, the operator has to retype into graphical wizards parameters that
 are already known and written down: target server, port, certificate thumbprint, frequency,
 replication direction. Under pressure, that is where mistakes happen.
-'sw'
 Worse, some steps are invisible in the Microsoft interfaces. After an unplanned failover,
 reversing replication requires marking the original primary as a replica first:
 
@@ -362,10 +361,22 @@ is the better arrangement where one exists.
 `ripcord check-update` asks whether a newer release has been published and reports the version.
 It is **off** unless `updates.check` says otherwise, and refuses rather than silently skipping
 when it is off: these hosts are meant to have no outbound access, and a host somebody believes
-is checking is worse than one that plainly is not. Nothing downloads and nothing installs. It
-addresses the repository by numeric id rather than by `owner/name`, because a rename leaves a
-redirect that stops failing — and starts returning a stranger's releases — the day somebody
-recreates the abandoned name.
+is checking is worse than one that plainly is not. It addresses the repository by numeric id
+rather than by `owner/name`, because a rename leaves a redirect that stops failing — and starts
+returning a stranger's releases — the day somebody recreates the abandoned name.
+
+`ripcord update` installs one. It is off unless `updates.install` says otherwise — a separate
+switch from `updates.check`, because permission to look is not permission to replace the binary
+this host runs its failovers with — and it asks for the node name to be typed. It downloads the
+release and the detached signature beside it, checks that signature against a public key
+compiled into the running binary, and stops there if it does not verify: nothing is moved, and
+the host is where it was. Only then does it set the running binary aside, keeping it, and put
+the new one in its place; if that last move fails the old one goes back. The new version starts
+on the next service start, not on the command that installed it.
+
+Updating one host makes the pair disagree, and a failover spanning both is refused while it
+does. The command prints that consequence above the prompt, every time, and names the host to
+run next.
 
 Install is a copy: the `.exe` and one of the samples from `config/`, renamed `ripcord.yaml`,
 side by side. `--config` overrides the path.

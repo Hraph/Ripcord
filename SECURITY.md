@@ -25,16 +25,31 @@ of them is a report about the deployment rather than about the tool.
   `password_secret` and read from the environment, and a `password:` key is refused by name.
 - **An administrator on either host is out of scope.** They hold Hyper-V; nothing this binary
   does can constrain them. The audit trail records what was known before production moved, and
-  is append-only by an ACL set at install time.
+  it is written append-only — opened to append, never read back, never rewritten. Making it
+  *tamper-evident* is a deployment step somebody applies to the file, not something this binary
+  enforces: nothing in Ripcord sets that ACL, and the shape it should take is still an open
+  question on this project's own list. Do not read the trail as evidence against the
+  administrator of the host that wrote it.
 - **The two hosts authenticate each other, and nothing else is trusted.** The pair channel is
   mutual TLS with both certificates pinned by thumbprint, restricted to the peer's address by
   both the firewall rule and the tool itself. The peer is trusted to *be* the peer, not to be
   well behaved: what it sends is size-capped, parsed into a fixed schema, and stripped of
   control characters before a human sees it.
-- **Nothing is downloaded and nothing is installed.** `ripcord check-update` reports that a
-  newer version exists; fetching and installing it is a human act. The hosts are expected to
-  have no outbound access at all, and every network feature is off unless the configuration
-  switches it on.
+- **A release is installed only if it verifies against a key compiled into the binary.**
+  `ripcord update` fetches a release and its detached signature, checks the signature with
+  ECDSA P-256 over SHA-256 against a public key that is a constant in the host — never a
+  configuration key, so editing `ripcord.yaml` cannot change what this host accepts — and
+  refuses before anything on the host is touched if the signature is absent, malformed or
+  signed by anybody else. The refusal is the feature; there is no mode in which an unverified
+  release is installed. The command is **off** unless `updates.install` says otherwise, it is
+  never unattended, and it replaces the binary only after the operator has typed the node
+  name. The hosts are still expected to have no outbound access at all, and every network
+  feature remains off unless the configuration switches it on.
+
+  **What this does not cover**: the signing key lives in the release workflow's secrets, so an
+  account that can write to the repository can also sign. That adversary is in the table above,
+  and this control does not stop them — it stops a replaced asset and a tampered download. The
+  trade is recorded rather than implied.
 
 ## Verifying a release
 
