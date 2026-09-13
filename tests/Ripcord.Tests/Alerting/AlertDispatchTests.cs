@@ -113,9 +113,10 @@ public class AlertDispatchTests
     }
 
     /// Off means the file is never even opened: a host that notifies nobody must behave
-    /// exactly as it did before this milestone existed.
+    /// exactly as it did before this milestone existed. It is still said out loud, because
+    /// somebody asked for a notification and is entitled to know none is coming.
     [Fact]
-    public async Task Alerting_switched_off_touches_nothing_at_all()
+    public async Task Alerting_switched_off_touches_nothing_but_says_so()
     {
         MemoryAlertStateStore store = new();
         StubNotifier notifier = new();
@@ -126,7 +127,10 @@ public class AlertDispatchTests
         Assert.Equal(AlertAction.Nothing, outcome.Decision.Action);
         Assert.Equal(0, store.Reads);
         Assert.Equal(0, store.Writes);
-        Assert.Empty(outcome.Notes);
+        Assert.Empty(notifier.Sent);
+
+        Assert.Contains(
+            "switched off", Assert.Single(outcome.Notes), StringComparison.Ordinal);
     }
 
     /// The finding is on the console either way. A state file that cannot be written is worth

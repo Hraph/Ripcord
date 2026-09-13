@@ -42,7 +42,12 @@ public sealed record CliEnvironment(
     /// Which binary this is. Normally the one that is running, and injectable so a test can
     /// put two known builds on the two sides of the pair rather than assert against whatever
     /// the test host happened to stamp.
-    BuildIdentity? Build = null);
+    BuildIdentity? Build = null,
+    /// The public half of the key every release is signed with, compiled into the host rather
+    /// than read from the configuration: an attacker who can edit `ripcord.yaml` must not be
+    /// able to change what this host accepts as a genuine binary. Null on a host that carries
+    /// no key, which refuses every install rather than trusting one.
+    string? ReleaseSigningKey = null);
 
 /// Every port the command surface reaches the machine through. Grouped rather than listed one
 /// by one, because each milestone adds another and a composition root nobody can read is a
@@ -61,6 +66,8 @@ public sealed record RipcordPorts(
     INotifier Notifier,
     IAlertStateStore AlertState,
     IReleaseFeed ReleaseFeed,
+    IReleaseSource ReleaseSource,
+    IBinarySwap BinarySwap,
     IClock Clock);
 
 /// Argument parsing and console rendering. No decision lives here: the exit code comes from
@@ -134,6 +141,10 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
             case "deploy-listener":
                 return this.DeployListener(args[1..], output, error);
+
+            case "update":
+                return await this.UpdateAsync(args[1..], output, error, cancellationToken)
+                    .ConfigureAwait(false);
 
             case "check-update":
                 return await this.CheckUpdateAsync(args[1..], output, error, cancellationToken)
@@ -237,16 +248,6 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         TextWriter error,
         CancellationToken cancellationToken)
     {
-        if (!configuration.Alerting.Enabled)
-        {
-            // Asked to notify by a host that notifies nobody. The check itself stands, so the
-            // exit code is untouched — but nothing about this is allowed to be quiet.
-            error.WriteLine(
-                "ripcord: --notify was given, but alerting is switched off in the "
-                + "configuration; nothing will be sent.");
-            return;
-        }
-
         AlertDispatch dispatch = new(ports.AlertState, ports.Notifier, ports.Clock);
 
         AlertOutcome outcome = await dispatch
@@ -304,16 +305,18 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
     private async Task<ExitCode> ServeAsync(
         string[] args, TextWriter error, CancellationToken cancellationToken)
     {
-        if (!TryReadOptions(args, out DeployOptions options, out string? optionError))
+        // Its own parser, not the deployment one: `serve` takes --config and nothing else, and
+        // borrowing a parser that also accepts --dry-run and --remove meant accepting two
+        // options it then ignored. An option that appears to be read and is not is worse on
+        // this command surface than one that is refused.
+        if (!this.TryReadConfigurationPath(args, out string path, out string? optionError))
         {
             error.WriteLine($"ripcord: {optionError}");
             return ExitCode.InvalidConfiguration;
         }
 
         ConfigurationValidation validation = ConfigurationGate.Open(
-            ports.ConfigStore,
-            options.ConfigurationPath ?? environment.DefaultConfigurationPath,
-            environment.MachineName);
+            ports.ConfigStore, path, environment.MachineName);
 
         if (validation.Configuration is not { } configuration)
         {
@@ -1210,6 +1213,116 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         return true;
     }
 
+    /// Replaces this host's binary with a newer published release, once the operator has
+    /// typed the node name. It is the only command that changes the tool rather than the
+    /// infrastructure, and the only one whose consequences land on the *other* host too:
+    /// updating one side makes the pair disagree, and a failover spanning both is refused
+    /// while it does (decision D54). That is said above the prompt, never after it.
+    private async Task<ExitCode> UpdateAsync(
+        string[] args, TextWriter output, TextWriter error, CancellationToken cancellationToken)
+    {
+        if (!TryReadUpdateOptions(args, out UpdateOptions options, out string? optionError))
+        {
+            error.WriteLine($"ripcord: {optionError}");
+            return ExitCode.InvalidConfiguration;
+        }
+
+        UpdatePlanQuery query = new(
+            ports.ConfigStore, ports.ReleaseFeed, this.Pair(), ports.Clock);
+
+        UpdatePlanOutcome outcome = await query
+            .ExecuteAsync(
+                new UpdatePlanRequest(
+                    options.ConfigurationPath ?? environment.DefaultConfigurationPath,
+                    environment.MachineName,
+                    this.LocalBuild),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        // Degradations are never silent, and here one of them is "the consequences could not
+        // be checked" — which the operator has to see before they type anything.
+        foreach (string note in outcome.Notes)
+        {
+            error.WriteLine($"ripcord: {note}");
+        }
+
+        if (outcome.Plan is not { } plan)
+        {
+            WriteFailure(error, new StatusOutcome(
+                outcome.Code, null, outcome.Errors, outcome.FailureMessage, []));
+
+            return outcome.Code;
+        }
+
+        output.Write(UpdateRenderer.Render(plan, this.LocalBuild.Version, outcome.Version));
+
+        if (!plan.ChangesAnything)
+        {
+            return outcome.Code;
+        }
+
+        if (options.DryRun)
+        {
+            output.WriteLine();
+            output.WriteLine("  Nothing was changed. Run without --dry-run to install.");
+            return ExitCode.Success;
+        }
+
+        if (!this.Confirmed(
+            output,
+            error,
+            "This replaces the binary this host runs its failovers with."))
+        {
+            return ExitCode.Refused;
+        }
+
+        UpdateInstallation installation = new(
+            ports.ReleaseSource, ports.BinarySwap, environment.ReleaseSigningKey);
+
+        UpdateResult result = await installation
+            .ApplyAsync(plan, environment.BinaryPath, outcome.Version!, cancellationToken)
+            .ConfigureAwait(false);
+
+        output.Write(UpdateRenderer.RenderResult(result, outcome.Version!));
+
+        return result.Code;
+    }
+
+    private sealed record UpdateOptions(string? ConfigurationPath, bool DryRun);
+
+    private static bool TryReadUpdateOptions(
+        string[] args, out UpdateOptions options, out string? error)
+    {
+        string? path = null;
+        bool dryRun = false;
+        error = null;
+
+        for (int index = 0; index < args.Length; index++)
+        {
+            switch (args[index])
+            {
+                case "--dry-run":
+                    dryRun = true;
+                    break;
+
+                case "--config" when !TryConsumeConfig(args, ref index, ref path, out error):
+                    options = new UpdateOptions(null, false);
+                    return false;
+
+                case "--config":
+                    break;
+
+                default:
+                    error = $"unexpected argument '{args[index]}'.";
+                    options = new UpdateOptions(null, false);
+                    return false;
+            }
+        }
+
+        options = new UpdateOptions(path, dryRun);
+        return true;
+    }
+
     private static void WriteUsage(TextWriter writer)
     {
         writer.WriteLine("ripcord - disaster recovery for a Hyper-V Replica pair");
@@ -1238,6 +1351,10 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         writer.WriteLine("                                     serve the read-only page on");
         writer.WriteLine("                                     127.0.0.1 (off unless the");
         writer.WriteLine("                                     configuration switches it on)");
+        writer.WriteLine("  ripcord update [--config <path>] [--dry-run]");
+        writer.WriteLine("                                     install a newer release on this");
+        writer.WriteLine("                                     host (off unless the configuration");
+        writer.WriteLine("                                     switches it on)");
         writer.WriteLine("  ripcord check-update               is a newer release published");
         writer.WriteLine("                                     (off unless the configuration");
         writer.WriteLine("                                     switches it on)");

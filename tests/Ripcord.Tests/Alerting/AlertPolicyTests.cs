@@ -197,6 +197,22 @@ public class AlertPolicyTests
             StringComparison.Ordinal);
     }
 
+    /// The reason is what a run that stayed otherwise silent prints, so it has to name what
+    /// actually happened. A recovery waiting out the window also sets the held instant, and
+    /// reporting a fresh finding as "the quiet window has ended" describes the wrong event.
+    [Fact]
+    public void A_finding_arriving_after_a_held_recovery_is_reported_as_news()
+    {
+        AlertState notified = Decide(Reports.WithSwitchMismatch(), AlertState.Clear, Noon).State;
+        AlertState heldRecovery = Decide(Reports.Clean(), notified, Midnight).State;
+
+        AlertDecision sent = Decide(
+            Reports.WithSwitchMismatch(), heldRecovery, Midnight.AddHours(8));
+
+        Assert.Equal(AlertAction.Send, sent.Action);
+        Assert.Equal("a critical finding that was not notified before", sent.Reason);
+    }
+
     /// The threshold is a delivery interval, not a decision to skip the window: a repeat that
     /// comes due at 3 a.m. waits for the morning like any other.
     [Fact]

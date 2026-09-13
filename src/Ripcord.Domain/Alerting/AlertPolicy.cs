@@ -143,13 +143,20 @@ public static class AlertPolicy
                 "quiet hours; held until the window ends");
         }
 
+        // The reason names what actually triggered this send, in the order the conditions were
+        // judged. A finding is news even when a held recovery is what was waiting out the
+        // window, and saying "the quiet window has ended" there would describe the wrong
+        // event to whoever reads the line afterwards.
+        string reason = anythingNew
+            ? "a critical finding that was not notified before"
+            : held ? "the quiet window has ended"
+                : "still broken, and the repeat threshold has passed";
+
         return new AlertDecision(
             AlertAction.Send,
             Notification.Raised(request.Report, criticals, raisedAt),
             new AlertState(fingerprint, request.Now, null),
-            held ? "the quiet window has ended"
-                : anythingNew ? "a critical finding that was not notified before"
-                : "still broken, and the repeat threshold has passed");
+            reason);
     }
 
     private static bool IsQuiet(AlertRequest request) =>

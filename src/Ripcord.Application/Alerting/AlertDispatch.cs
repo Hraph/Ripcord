@@ -9,10 +9,7 @@ namespace Ripcord.Application.Alerting;
 /// stderr beside the check report: a notification that could not leave the host is a
 /// degraded state, and degradations are never silent.
 public sealed record AlertOutcome(
-    AlertDecision Decision, Notification? Sent, IReadOnlyList<string> Notes)
-{
-    public static AlertOutcome Silent(AlertDecision decision) => new(decision, null, []);
-}
+    AlertDecision Decision, Notification? Sent, IReadOnlyList<string> Notes);
 
 /// Runs the alerting decision and carries out whatever it decided. Nothing here judges the
 /// pair: the report arrives already judged, and what to do with it is AlertPolicy's.
@@ -30,10 +27,16 @@ public sealed class AlertDispatch(IAlertStateStore store, INotifier notifier, IC
     {
         ArgumentNullException.ThrowIfNull(settings);
 
+        // Asked to notify by a host that notifies nobody. The check itself stands and the exit
+        // code is untouched, but nothing about this is allowed to be quiet: somebody believes
+        // this pair is being watched.
         if (!settings.Enabled)
         {
-            return AlertOutcome.Silent(AlertPolicy.Decide(
-                new AlertRequest(report, settings, AlertState.Clear, clock.LocalNow)));
+            return new AlertOutcome(
+                AlertPolicy.Decide(
+                    new AlertRequest(report, settings, AlertState.Clear, clock.LocalNow)),
+                null,
+                ["alerting is switched off in the configuration; nothing was sent."]);
         }
 
         AlertState previous = store.Read();
