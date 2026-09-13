@@ -2,6 +2,10 @@ name: ci
 
 on: [push, pull_request]
 
+# Nothing here publishes anything, so the token gets nothing beyond the checkout.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Build and test
