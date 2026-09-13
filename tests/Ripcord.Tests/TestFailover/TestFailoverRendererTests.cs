@@ -70,6 +70,7 @@ public class TestFailoverRendererTests
                 null,
                 [new Orphan("VM-DC-01 (test copy)", TimeSpan.FromHours(30), OrphanVerdict.Lingering)],
                 [],
+                [],
                 false,
                 false),
             null);
@@ -92,6 +93,7 @@ public class TestFailoverRendererTests
                     Now)),
                 [],
                 [],
+                [],
                 false,
                 false),
             "vSwitch-ISOLATED");
@@ -100,8 +102,28 @@ public class TestFailoverRendererTests
         Assert.Contains("Nothing was changed.", rendered);
     }
 
+    /// A guest missing a data disk boots its operating system and answers the heartbeat, so
+    /// "booted" on its own would read as "complete". The caveat is what stops that.
+    [Fact]
+    public void An_unconfirmed_disk_set_qualifies_a_successful_boot()
+    {
+        string rendered = TestFailoverRenderer.Render(
+            new TestFailoverReport(
+                Now,
+                null,
+                [],
+                [Result("VM-BACKUP-01", TestFailoverStatus.Booted, TimeSpan.FromSeconds(20))],
+                ["VM-BACKUP-01"],
+                false,
+                false),
+            "vSwitch-ISOLATED");
+
+        Assert.Contains("VM-BACKUP-01", rendered);
+        Assert.Contains("does not mean a complete guest", rendered);
+    }
+
     private static TestFailoverReport Report(params VmTestFailoverResult[] results) =>
-        new(Now, null, [], results, false, false);
+        new(Now, null, [], results, [], false, false);
 
     private static VmTestFailoverResult Result(
         string name, TestFailoverStatus status, TimeSpan? boot) =>

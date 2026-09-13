@@ -47,6 +47,37 @@ public static class TestFailoverPrecondition
         CheckRules.FreeSpaceBelowThreshold,
     ];
 
+    /// Rules that say whether a VM would boot with all of its disks. They deliberately do
+    /// **not** block: neither consumes memory or storage on the target, and neither affects
+    /// whether an isolated copy comes up — refusing on them would refuse a test for a fact
+    /// that does not change the test's validity.
+    ///
+    /// They are surfaced instead, because a guest missing a data disk boots its operating
+    /// system and answers the heartbeat perfectly well. Without this line the report would
+    /// say "booted" about a VM that is silently incomplete, and milestone 3 is meant to be
+    /// the one end-to-end test that does not flatter the infrastructure.
+    private static readonly IReadOnlyList<string> DiskCompletenessRules =
+    [
+        CheckRules.PassthroughDiskOnReplicatedVm,
+        CheckRules.VhdxOutsideRelationship,
+    ];
+
+    /// VMs whose disk set is either known to be incomplete or could not be confirmed.
+    public static IReadOnlyList<string> UnconfirmedDiskSets(CheckReport report)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+
+        return
+        [
+            .. report.Findings
+                .Where(finding => DiskCompletenessRules.Contains(finding.Rule.Id))
+                .Select(finding => finding.Subject)
+                .OfType<string>()
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase),
+        ];
+    }
+
     public static PreconditionRefusal Evaluate(CheckReport report)
     {
         ArgumentNullException.ThrowIfNull(report);

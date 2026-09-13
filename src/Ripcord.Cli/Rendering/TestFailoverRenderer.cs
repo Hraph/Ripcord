@@ -38,6 +38,7 @@ public static class TestFailoverRenderer
 
         AppendRefusal(output, report.Refusal);
         AppendResults(output, report);
+        AppendUnconfirmed(output, report.UnconfirmedDiskSets);
         AppendOrphans(output, report.Orphans);
         AppendVerdict(output, report);
 
@@ -121,6 +122,28 @@ public static class TestFailoverRenderer
                     + "will break the next test until it is removed.",
                 Layout.Indent * 2);
         }
+    }
+
+    /// Deliberately not a refusal. Neither rule affects whether an isolated copy boots, so
+    /// blocking on it would refuse a test for a fact that does not change the test's
+    /// validity — but a green boot must not be read as a complete guest.
+    private static void AppendUnconfirmed(StringBuilder output, IReadOnlyList<string> vmNames)
+    {
+        if (vmNames.Count == 0)
+        {
+            return;
+        }
+
+        AppendHeading(output, "DISK SET NOT CONFIRMED");
+
+        AppendWrapped(
+            output,
+            string.Join(", ", vmNames)
+                + " - the disk set of these VMs is incomplete or could not be read. They boot "
+                + "their operating system either way, so a green boot above does not mean a "
+                + "complete guest.");
+
+        output.AppendLine();
     }
 
     private static void AppendOrphans(StringBuilder output, IReadOnlyList<Orphan> orphans)

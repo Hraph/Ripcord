@@ -1,6 +1,8 @@
 using System.Globalization;
 using Microsoft.Management.Infrastructure;
+using Microsoft.Management.Infrastructure.Options;
 using Ripcord.Domain.Inventory;
+using Ripcord.Domain.Replication;
 using Ripcord.Domain.TestFailover;
 
 namespace Ripcord.Adapters.Wmi;

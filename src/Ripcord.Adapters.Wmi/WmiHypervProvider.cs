@@ -3,6 +3,7 @@ using System.Globalization;
 using Microsoft.Management.Infrastructure;
 using Ripcord.Domain.Inventory;
 using Ripcord.Domain.Replication;
+using Ripcord.Domain.TestFailover;
 using Ripcord.Ports.Replication;
 using Ripcord.Ports;
 
@@ -30,10 +31,133 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
     public Task<HostState> GetLocalStateAsync(CancellationToken cancellationToken) =>
         Task.Run(() => this.ReadLocalState(cancellationToken), cancellationToken);
 
+    public Task<IReadOnlyList<HostSwitch>> GetSwitchesAsync(CancellationToken cancellationToken) =>
+        Task.Run(
+            () =>
+            {
+                using CimSession session = CimSession.Create(computerName: null);
+                return WmiTestFailover.Switches(session, Options(cancellationToken));
+            },
+            cancellationToken);
+
+    public Task<IReadOnlyList<TestVm>> GetTestVmsAsync(CancellationToken cancellationToken) =>
+        Task.Run(
+            () =>
+            {
+                CimOperationOptions options = Options(cancellationToken);
+                using CimSession session = CimSession.Create(computerName: null);
+
+                return WmiTestFailover.TestVms(
+                    session, ReadSwitches(session, options), options);
+            },
+            cancellationToken);
+
+    public Task AttachTestNetworkAsync(
+        string vmName, string? switchName, CancellationToken cancellationToken) =>
+        Task.Run(
+            () =>
+            {
+                CimOperationOptions options = Options(cancellationToken);
+                using CimSession session = CimSession.Create(computerName: null);
+                using CimInstance vm = Vm(session, vmName, options);
+
+                WmiTestFailover.AttachTestNetwork(
+                    session, vm, switchName, ReadSwitches(session, options), options);
+            },
+            cancellationToken);
+
+    public Task<TestVm> StartTestFailoverAsync(
+        string vmName, CancellationToken cancellationToken) =>
+        Task.Run(
+            () =>
+            {
+                CimOperationOptions options = Options(cancellationToken);
+                using CimSession session = CimSession.Create(computerName: null);
+                using CimInstance vm = Vm(session, vmName, options);
+
+                string testVmName = WmiTestFailover.CreateTestVm(session, vm, options);
+
+                using CimInstance testVm = Vm(session, testVmName, options);
+
+                // Read back rather than assumed: what the test VM is actually attached to is
+                // the only thing the isolation rule may be judged on.
+                return new TestVm(
+                    testVmName,
+                    CimTranslation.Instant(CimValues.Instant(testVm, "InstallDate")),
+                    WmiVmInventory.ReadAdapters(
+                        session, testVm, ReadSwitches(session, options), options));
+            },
+            cancellationToken);
+
+    public Task StopTestFailoverAsync(string vmName, CancellationToken cancellationToken) =>
+        Task.Run(
+            () =>
+            {
+                CimOperationOptions options = Options(cancellationToken);
+                using CimSession session = CimSession.Create(computerName: null);
+                using CimInstance vm = Vm(session, vmName, options);
+
+                WmiTestFailover.DestroyTestVm(session, vm, options);
+            },
+            cancellationToken);
+
+    public Task StartTestVmAsync(string testVmName, CancellationToken cancellationToken) =>
+        Task.Run(
+            () =>
+            {
+                CimOperationOptions options = Options(cancellationToken);
+                using CimSession session = CimSession.Create(computerName: null);
+                using CimInstance testVm = Vm(session, testVmName, options);
+
+                WmiTestFailover.Start(session, testVm, options);
+            },
+            cancellationToken);
+
+    public Task<Heartbeat> ReadHeartbeatAsync(
+        string testVmName, CancellationToken cancellationToken) =>
+        Task.Run(
+            () =>
+            {
+                CimOperationOptions options = Options(cancellationToken);
+                using CimSession session = CimSession.Create(computerName: null);
+                using CimInstance testVm = Vm(session, testVmName, options);
+
+                return WmiTestFailover.ReadHeartbeat(session, testVm, options);
+            },
+            cancellationToken);
+
+    /// By ElementName, which is what the operator and the configuration call a VM. The name
+    /// is escaped for WQL: a quote in a VM name would otherwise change the query rather than
+    /// fail to match.
+    private static CimInstance Vm(
+        CimSession session, string name, CimOperationOptions options)
+    {
+        string escaped = name.Replace("'", "''", StringComparison.Ordinal);
+
+        foreach (CimInstance instance in session.QueryInstances(
+            Namespace,
+            "WQL",
+            "SELECT ElementName, InstallDate, ReplicationMode FROM Msvm_ComputerSystem "
+                + $"WHERE ElementName = '{escaped}'",
+            options))
+        {
+            if (CimTranslation.IsVirtualMachine(CimValues.Instant(instance, "InstallDate")))
+            {
+                return instance;
+            }
+
+            instance.Dispose();
+        }
+
+        throw new InvalidOperationException($"no VM on this host is called '{name}'");
+    }
+
+    private CimOperationOptions Options(CancellationToken cancellationToken) =>
+        new() { Timeout = timeout, CancellationToken = cancellationToken };
+
     private HostState ReadLocalState(CancellationToken cancellationToken)
     {
-        CimOperationOptions options =
-            new() { Timeout = timeout, CancellationToken = cancellationToken };
+        CimOperationOptions options = this.Options(cancellationToken);
 
         using CimSession session = CimSession.Create(computerName: null);
 

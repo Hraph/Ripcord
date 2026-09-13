@@ -62,6 +62,7 @@ public sealed record TestFailoverReport(
     PreconditionRefusal? Refusal,
     IReadOnlyList<Orphan> Orphans,
     IReadOnlyList<VmTestFailoverResult> Results,
+    IReadOnlyList<string> UnconfirmedDiskSets,
     bool DryRun,
     bool Interrupted)
 {
@@ -137,14 +138,15 @@ public sealed class TestFailoverSequence(
             // Interrupted before the precondition was even evaluated. Nothing was touched,
             // and saying so is the whole purpose of exit 4 — letting this escape would reach
             // the CLI's generic handler and report a local access failure instead.
-            return new TestFailoverReport(startedAt, null, [], [], plan.DryRun, true);
+            return new TestFailoverReport(startedAt, null, [], [], [], plan.DryRun, true);
         }
 
         PreconditionRefusal refusal = TestFailoverPrecondition.Evaluate(plan.Check);
 
         if (refusal.Refuses)
         {
-            return new TestFailoverReport(startedAt, refusal, orphans, [], plan.DryRun, false);
+            return new TestFailoverReport(
+                startedAt, refusal, orphans, [], Unconfirmed(plan), plan.DryRun, false);
         }
 
         if (plan.DryRun)
@@ -154,6 +156,7 @@ public sealed class TestFailoverSequence(
                 null,
                 orphans,
                 [.. plan.VmNames.Select(Planned)],
+                Unconfirmed(plan),
                 true,
                 false);
         }
@@ -180,8 +183,13 @@ public sealed class TestFailoverSequence(
         }
 
         return new TestFailoverReport(
-            startedAt, null, orphans, results, false, interrupted);
+            startedAt, null, orphans, results, Unconfirmed(plan), false, interrupted);
     }
+
+    /// Named in the report rather than blocking: a guest missing a data disk still boots and
+    /// still answers the heartbeat, so "booted" would otherwise read as "complete".
+    private static IReadOnlyList<string> Unconfirmed(TestFailoverPlan plan) =>
+        TestFailoverPrecondition.UnconfirmedDiskSets(plan.Check);
 
     /// Reported even when the run is refused: a test VM left behind by an earlier run is
     /// exactly what the operator needs to know about when this one will not start.

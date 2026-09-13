@@ -55,6 +55,40 @@ internal static class WmiVmInventory
         }
     }
 
+    /// The adapters of a VM that has no replication relationship — a test copy. Same mapping
+    /// as the replicated case, reached without one.
+    public static IReadOnlyList<VirtualAdapter>? ReadAdapters(
+        CimSession session,
+        CimInstance vm,
+        IReadOnlyDictionary<string, string> switches,
+        CimOperationOptions options)
+    {
+        try
+        {
+            using CimInstance? settings = Settings(session, vm, options);
+
+            return settings is null ? null : Adapters(session, settings, switches, options);
+        }
+        catch (CimException)
+        {
+            // Null rather than empty: "could not be read" is not "has no network", and the
+            // isolation rule refuses on the first while clearing the second.
+            return null;
+        }
+    }
+
+    /// The live allocation instances, for the one operation that writes to them. Every other
+    /// caller gets the flattened read-only view instead.
+    public static IEnumerable<CimInstance> AdapterAllocations(
+        CimSession session, CimInstance vm, CimOperationOptions options)
+    {
+        using CimInstance? settings = Settings(session, vm, options);
+
+        return settings is null
+            ? []
+            : [.. Components(session, settings, "Msvm_EthernetPortAllocationSettingData", options)];
+    }
+
     private static CimInstance? Settings(
         CimSession session, CimInstance vm, CimOperationOptions options)
     {
