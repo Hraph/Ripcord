@@ -369,6 +369,9 @@ public static class FakeScenarios
                 PrimaryHost()),
             publishedBy);
 
+    /// A primary copy is the one serving production, so it is running. Stated rather than left
+    /// null: a sequence re-derives its position from whether the VM is off, and a fake that
+    /// reports nothing would make every scenario unplaceable.
     private static VmReplicationState Primary(
         string name, ReplicationHealth health, DateTimeOffset lastReplication) =>
         new(
@@ -378,8 +381,12 @@ public static class FakeScenarios
             health,
             lastReplication,
             0,
-            Facts(name));
+            Facts(name),
+            VmPowerState.Running);
 
+    /// A replica sits switched off until something fails over to it. Two copies of the same VM
+    /// running at once is the split brain every mutating command halts on, so the healthy pair
+    /// has to say plainly that this one is not running.
     private static VmReplicationState Replica(
         string name, ReplicationHealth health, DateTimeOffset lastReplication, long pendingBytes) =>
         new(
@@ -389,7 +396,8 @@ public static class FakeScenarios
             health,
             lastReplication,
             pendingBytes,
-            Facts(name));
+            Facts(name),
+            VmPowerState.Off);
 
     /// The hardware `ripcord check` compares across the pair. `VM-BACKUP-01` carries the
     /// pass-through disk that is a permanent property of this infrastructure (decision D19).

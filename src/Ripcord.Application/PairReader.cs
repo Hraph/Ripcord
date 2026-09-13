@@ -78,6 +78,32 @@ public sealed class PairReader(
             local.Notes);
     }
 
+    /// Re-reads this host and republishes its snapshot, after something has changed it.
+    ///
+    /// `status` and `check` publish on their way through, which is enough while every command
+    /// is a read. A mutating command is not: once a failover has acted here, the peer is still
+    /// holding the snapshot from before, and the peer is the only place the other half of the
+    /// sequence can observe what this half did. Republishing is what keeps the read-only
+    /// channel sufficient — the alternative being a channel that mutates the peer, which
+    /// decision D49 rejected.
+    ///
+    /// Called whatever the outcome, because a failed run is when the other host most needs an
+    /// accurate view of this one.
+    public async Task RepublishAsync(
+        RipcordConfiguration configuration, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        LocalRead local = await localState
+            .ReadAsync(configuration, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (local.State is { } state)
+        {
+            this.Publish(state, configuration);
+        }
+    }
+
     /// A snapshot this host cannot publish is not a reason to fail the command: both callers
     /// are reads, and the peer simply keeps seeing the previous snapshot until this is fixed.
     /// It is the one write in an otherwise read-only command, and it touches nothing but

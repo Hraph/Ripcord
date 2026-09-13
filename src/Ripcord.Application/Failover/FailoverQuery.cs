@@ -133,6 +133,12 @@ public sealed class FailoverQuery(
                 cancellationToken)
             .ConfigureAwait(false);
 
+        // The other host reads this one only through the snapshot, so a sequence that acted
+        // and did not republish leaves the peer looking at the state from before it ran.
+        // Deliberately after the run and regardless of its outcome: a failed run is when an
+        // accurate view of this host matters most.
+        await RepublishAsync(pairReader, configuration, cancellationToken).ConfigureAwait(false);
+
         return new FailoverOutcome(
             run.Code, run, plan, configuration, [], null, refusal);
     }
@@ -161,6 +167,25 @@ public sealed class FailoverQuery(
         [.. refusal.Proceeded
             .Where(finding => finding.Verdict == FindingVerdict.Unevaluable)
             .Select(finding => $"{finding.Rule.Id}: {finding.Observed}")];
+
+    /// Publishing is never a reason to fail the command: the failover has already happened,
+    /// and replacing its outcome with a snapshot-writing error would lose the part the operator
+    /// needs. The consequence shows up as a stale peer in `status`, which is visible.
+    private static async Task RepublishAsync(
+        PairReader pairReader,
+        RipcordConfiguration configuration,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await pairReader.RepublishAsync(configuration, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _ = exception;
+        }
+    }
 
     private static FailoverOutcome Failed(ExitCode code, string message) =>
         new(code, null, null, null, [], message);
