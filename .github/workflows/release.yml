@@ -40,6 +40,11 @@ jobs:
     name: Work out the version
     runs-on: ubuntu-latest
 
+    # Reading the log and some text. A bound because there was none: a step that stops to ask
+    # a question waits six hours before anybody is told, and this is the workflow that ends by
+    # publishing a binary two hosts will be pointed at.
+    timeout-minutes: 10
+
     outputs:
       version: ${{ steps.resolve.outputs.version }}
       tag: ${{ steps.resolve.outputs.tag }}
@@ -247,6 +252,10 @@ jobs:
     # binary is not the place to rely on that: this is the one artefact nobody can rebuild
     # from the host it fails on.
     runs-on: windows-latest
+
+    # A self-contained publish, a signature and an upload. Generous enough for a slow runner,
+    # short enough that a wedged step is noticed the same afternoon.
+    timeout-minutes: 30
 
     env:
       VERSION: ${{ needs.version.outputs.version }}
