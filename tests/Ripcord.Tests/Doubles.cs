@@ -9,9 +9,11 @@ namespace Ripcord.Tests;
 
 /// Nothing in Ripcord calls DateTime.Now, so every test has to supply one. Shared because
 /// four copies of three lines is four places to drift.
-public sealed class FixedClock(DateTimeOffset now) : IClock
+public sealed class FixedClock(DateTimeOffset now, DateTimeOffset? localNow = null) : IClock
 {
     public DateTimeOffset UtcNow => now;
+
+    public DateTimeOffset LocalNow => localNow ?? now;
 }
 
 /// For the commands that never listen or deploy but have to be handed something.

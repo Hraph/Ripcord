@@ -414,5 +414,7 @@ public class TestFailoverSequenceTests
                 return current;
             }
         }
+
+        public DateTimeOffset LocalNow => this.UtcNow;
     }
 }
