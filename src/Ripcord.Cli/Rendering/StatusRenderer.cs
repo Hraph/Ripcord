@@ -34,7 +34,7 @@ public static class StatusRenderer
         output.AppendLine();
         AppendHost(output, "PEER", view.Peer, offlineAfter, now, view.PeerCapturedAt);
 
-        return output.ToString();
+        return Layout.Rendered(output);
     }
 
     private static string Banner(DateTimeOffset now) =>

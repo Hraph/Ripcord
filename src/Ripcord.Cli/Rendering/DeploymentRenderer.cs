@@ -25,7 +25,7 @@ public static class DeploymentRenderer
             output.AppendLine(removing
                 ? "  Nothing to remove: this host has no listener deployed."
                 : "  Nothing to do: this host already matches the configuration.");
-            return output.ToString();
+            return Layout.Rendered(output);
         }
 
         int number = 1;
@@ -39,7 +39,7 @@ public static class DeploymentRenderer
             number++;
         }
 
-        return output.ToString();
+        return Layout.Rendered(output);
     }
 
     /// What was actually done, including the step that failed. A half-applied plan has to be
@@ -65,6 +65,6 @@ public static class DeploymentRenderer
             output.AppendLine("  the cause is fixed: it resumes from where it stopped.");
         }
 
-        return output.ToString();
+        return Layout.Rendered(output);
     }
 }

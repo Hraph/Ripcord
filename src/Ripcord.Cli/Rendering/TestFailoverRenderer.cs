@@ -51,7 +51,7 @@ public static class TestFailoverRenderer
         AppendOrphans(output, report.Orphans);
         AppendVerdict(output, report);
 
-        return output.ToString();
+        return Layout.Rendered(output);
     }
 
     private static void AppendRefusal(StringBuilder output, PreconditionRefusal? refusal)

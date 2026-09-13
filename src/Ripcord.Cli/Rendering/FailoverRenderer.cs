@@ -58,7 +58,7 @@ public static class FailoverRenderer
             AppendBlock(output, "ACTION REQUIRED NOW", manual);
         }
 
-        return output.ToString();
+        return Layout.Rendered(output);
     }
 
     private static void AppendSteps(StringBuilder output, FailoverRunReport report)

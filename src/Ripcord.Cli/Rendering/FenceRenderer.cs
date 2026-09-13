@@ -37,13 +37,13 @@ public static class FenceRenderer
         if (outcome.Plan is not { } plan)
         {
             AppendBlock(output, "NOT FENCED", outcome.FailureMessage ?? "nothing was read");
-            return output.ToString();
+            return Layout.Rendered(output);
         }
 
         if (plan.Halt is { } halt)
         {
             AppendBlock(output, "HALTED", halt);
-            return output.ToString();
+            return Layout.Rendered(output);
         }
 
         AppendRows(output, outcome, plan, dryRun);
@@ -79,7 +79,7 @@ public static class FenceRenderer
                 string.Join(", ", plan.Absent));
         }
 
-        return output.ToString();
+        return Layout.Rendered(output);
     }
 
     private static void AppendRows(

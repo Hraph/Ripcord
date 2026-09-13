@@ -34,7 +34,7 @@ public static class CheckRenderer
 
         AppendFeasibility(output, report);
 
-        return output.ToString();
+        return Layout.Rendered(output);
     }
 
     private static void AppendHeader(StringBuilder output, CheckReport report)

@@ -77,6 +77,14 @@ public class StatusRendererTests
                 HostReachability.Reachable()),
             capturedAt);
 
+    /// The layout is 75 columns and one line ending, on Windows as in the Linux container.
+    /// A carriage return the framework added is a 76th column and a byte the fixture tests
+    /// cannot see — which is exactly how it reached a release build unnoticed.
+    [Theory]
+    [MemberData(nameof(EveryFixture))]
+    public void Nothing_rendered_carries_the_hosts_own_line_ending(PairView view) =>
+        Assert.DoesNotContain('\r', Render(view));
+
     /// No line may exceed the fixed width, whatever the data — that is what makes the output
     /// readable without a terminal wide enough to be generous.
     [Theory]
