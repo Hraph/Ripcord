@@ -58,10 +58,7 @@ public static class ConfigurationValidator
         StorageSettings? storage = ValidateStorage(document.Storage, errors);
         AlertingSettings? alerting = ValidateAlerting(document.Alerting, errors);
 
-        // Nothing to validate: one switch, off unless the file says otherwise.
-        UpdateSettings updates = document.Updates is { } asked
-            ? new UpdateSettings(asked.Check)
-            : UpdateSettings.Disabled();
+        UpdateSettings? updates = ValidateUpdates(document.Updates, errors);
         DashboardSettings? dashboard = ValidateDashboard(document.Dashboard, listener, errors);
         IReadOnlyList<VmSettings> vms = ValidateVms(document.Vms, errors);
 
@@ -80,6 +77,7 @@ public static class ConfigurationValidator
             || storage is null
             || alerting is null
             || dashboard is null
+            || updates is null
             ? ConfigurationValidation.Invalid(errors)
             : ConfigurationValidation.Valid(new RipcordConfiguration(
                 node, peer, listener, replication, storage, alerting, updates, dashboard,
@@ -625,10 +623,19 @@ public static class ConfigurationValidator
         // Not merely non-empty: it is compared against the address a connection came from, and
         // it lands in a firewall rule. A host name would refuse every connection, and the word
         // "any" would open the port to everyone.
-        if (complete && !System.Net.IPAddress.TryParse(address, out _))
+        //
+        // Parsing is not enough on its own. IPAddress accepts the shorthand forms — `192.0.2`
+        // is read as 192.0.0.2 — so a typo becomes a different, valid address rather than an
+        // error: the firewall would open to a host nobody named and the listener would refuse
+        // the real peer. Requiring the text to be what the address renders back to is what
+        // turns that into the typo it is.
+        if (complete
+            && (!System.Net.IPAddress.TryParse(address, out System.Net.IPAddress? parsed)
+                || !string.Equals(
+                    parsed.ToString(), address, StringComparison.OrdinalIgnoreCase)))
         {
             errors.Add(new ConfigurationError(
-                "peer.address", $"'{address}' is not an IP address"));
+                "peer.address", $"'{address}' is not an IP address written in full"));
             complete = false;
         }
 
@@ -643,6 +650,31 @@ public static class ConfigurationValidator
             ? new PeerSettings(
                 hostname, address, TimeSpan.FromSeconds(peer.OfflineAfterSec!.Value))
             : null;
+    }
+
+    /// Two switches, off unless the file says otherwise. The only thing to validate is that
+    /// they do not contradict each other: the release to install is the one looking found, so
+    /// installing without looking is refused by name rather than quietly treated as off — the
+    /// operator who wrote it believes this host updates itself.
+    private static UpdateSettings? ValidateUpdates(
+        UpdatesDocument? updates, List<ConfigurationError> errors)
+    {
+        if (updates is null)
+        {
+            return UpdateSettings.Disabled();
+        }
+
+        if (updates.Install && !updates.Check)
+        {
+            errors.Add(new ConfigurationError(
+                "updates.install",
+                "cannot be set without updates.check: the release to install is the one "
+                + "checking finds"));
+
+            return null;
+        }
+
+        return new UpdateSettings(updates.Check, updates.Install);
     }
 
     /// Off unless the file switches it on, and refused rather than corrected when a figure is

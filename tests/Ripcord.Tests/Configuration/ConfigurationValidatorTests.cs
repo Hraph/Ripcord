@@ -183,6 +183,36 @@ public class ConfigurationValidatorTests
             paths);
     }
 
+    /// Not merely non-empty: the address is compared against where a connection came from and
+    /// it lands in a firewall rule, so a host name would refuse every connection and the word
+    /// "any" would open the port to everyone.
+    [Theory]
+    [InlineData("hv-primary-01")]
+    [InlineData("any")]
+    [InlineData("192.0.2.11/32")]
+    // Accepted by IPAddress.TryParse as 192.0.0.2 — a typo that becomes a different valid
+    // address is the one this configuration cannot afford, because it lands in a firewall rule.
+    [InlineData("192.0.2")]
+    [InlineData("192.000.2.11")]
+    public void A_peer_address_that_is_not_an_ip_address_is_refused(string address)
+    {
+        ConfigurationDocument document = Valid();
+        document.Peer!.Address = address;
+
+        Assert.Equal("peer.address", Assert.Single(Validate(document).Errors).Path);
+    }
+
+    [Theory]
+    [InlineData("192.0.2.11")]
+    [InlineData("2001:db8::11")]
+    public void An_address_written_in_full_is_accepted(string address)
+    {
+        ConfigurationDocument document = Valid();
+        document.Peer!.Address = address;
+
+        Assert.Empty(Validate(document).Errors);
+    }
+
     [Fact]
     public void A_missing_section_reports_the_section_not_each_of_its_fields()
     {
