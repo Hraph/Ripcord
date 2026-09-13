@@ -51,6 +51,10 @@ public static class ConfigurationValidator
         IReadOnlyList<Acknowledgement> acknowledgements =
             ValidateAcknowledgements(document.Checks, vms, errors);
 
+        // Validated here rather than inside the replication section: the names are checked
+        // against the VM list, which is not known until it has been validated itself.
+        replication = ValidateUnattended(document.Replication, replication, vms, errors);
+
         return errors.Count > 0
             || node is null
             || peer is null
@@ -60,6 +64,48 @@ public static class ConfigurationValidator
             ? ConfigurationValidation.Invalid(errors)
             : ConfigurationValidation.Valid(new RipcordConfiguration(
                 node, peer, listener, replication, storage, vms, acknowledgements));
+    }
+
+    /// Authorising a VM to be tested with no human present is the one place the typed
+    /// confirmation is waived, so a name that matches nothing is refused rather than ignored:
+    /// an operator who believes a VM is authorised when it is not will find the scheduled
+    /// task silently doing nothing.
+    private static ReplicationSettings? ValidateUnattended(
+        ReplicationDocument? document,
+        ReplicationSettings? replication,
+        IReadOnlyList<VmSettings> vms,
+        List<ConfigurationError> errors)
+    {
+        const string Path = "replication.unattended_test_failover_vms";
+
+        if (replication is null || document?.UnattendedTestFailoverVms is not { } declared)
+        {
+            return replication;
+        }
+
+        List<string> authorised = [];
+
+        foreach (string entry in declared)
+        {
+            string name = entry?.Trim() ?? "";
+
+            if (name.Length == 0)
+            {
+                errors.Add(new ConfigurationError(Path, "an entry names no VM"));
+                continue;
+            }
+
+            if (!vms.Any(vm => string.Equals(vm.Name, name, StringComparison.OrdinalIgnoreCase)))
+            {
+                errors.Add(new ConfigurationError(
+                    Path, $"'{name}' is not a VM in this configuration"));
+                continue;
+            }
+
+            authorised.Add(name);
+        }
+
+        return replication with { UnattendedTestFailoverVmsOrNone = authorised };
     }
 
     private static void ValidateSchemaVersion(int? version, List<ConfigurationError> errors)

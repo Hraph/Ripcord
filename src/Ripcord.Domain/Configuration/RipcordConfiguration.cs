@@ -35,7 +35,8 @@ public sealed record ReplicationSettings(
     int LagWarningMultiplier,
     TimeSpan HealthWarningAfter,
     string? TestFailoverSwitch = null,
-    TimeSpan? TestFailoverOrphanAfterOverride = null)
+    TimeSpan? TestFailoverOrphanAfterOverride = null,
+    IReadOnlyList<string>? UnattendedTestFailoverVmsOrNone = null)
 {
     /// Hyper-V health flickers to Warning for a single missed cycle. Five minutes is long
     /// enough that a blip does not wake anyone and short enough to catch a real stall.
@@ -47,6 +48,14 @@ public sealed record ReplicationSettings(
 
     public TimeSpan TestFailoverOrphanAfter =>
         this.TestFailoverOrphanAfterOverride ?? DefaultOrphanAfter;
+
+    /// Unattended running is an authorisation, so the empty list is the default and means no
+    /// VM may be tested without a human typing the node name.
+    public IReadOnlyList<string> UnattendedTestFailoverVms =>
+        this.UnattendedTestFailoverVmsOrNone ?? [];
+
+    public bool AuthorisedUnattended(string vmName) =>
+        this.UnattendedTestFailoverVms.Contains(vmName, StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed record StorageSettings(

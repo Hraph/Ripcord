@@ -100,6 +100,26 @@ public class PreconditionTests
             .Refuses);
     }
 
+    /// Unattended, the gate tightens rather than loosens. Nobody is watching, so a finding
+    /// nobody could evaluate is not something an operator will glance at and judge — it stops
+    /// the run. This is the counterweight to skipping the typed confirmation.
+    [Fact]
+    public void Unattended_any_unevaluable_finding_refuses()
+    {
+        CheckReport report = Report(Pairs.Healthy(Now).WithTargetHost(
+            facts => facts with { Certificate = null }));
+
+        Assert.False(TestFailoverPrecondition.Evaluate(report).Refuses);
+        Assert.True(TestFailoverPrecondition.Evaluate(report, unattended: true).Refuses);
+    }
+
+    /// And a clean report is still clean: the tightening must not refuse a healthy pair.
+    [Fact]
+    public void Unattended_a_clean_report_still_does_not_refuse()
+    {
+        Assert.False(TestFailoverPrecondition.Evaluate(Report(), unattended: true).Refuses);
+    }
+
     /// The list is the judgement, and it is meant to be read. Every entry names a rule that
     /// exists, so a rename cannot silently empty the gate.
     [Fact]

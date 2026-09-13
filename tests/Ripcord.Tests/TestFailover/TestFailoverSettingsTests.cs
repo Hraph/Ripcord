@@ -91,6 +91,46 @@ public class TestFailoverSettingsTests
         return document;
     }
 
+    /// Unattended running is an authorisation, not a default. Absent, no VM may be tested
+    /// without a human typing the node name.
+    [Fact]
+    public void No_vm_is_authorised_for_unattended_running_by_default()
+    {
+        Assert.Empty(Valid(ValidDocument.Create()).Replication.UnattendedTestFailoverVms);
+    }
+
+    [Fact]
+    public void The_authorised_vms_are_carried_through()
+    {
+        Assert.Equal(
+            ["VM-LEGACY-01"],
+            Valid(WithUnattended("VM-LEGACY-01")).Replication.UnattendedTestFailoverVms);
+    }
+
+    /// A name that matches no VM is an operator who believes something is authorised when it
+    /// is not — the same failure as a misspelt acknowledgement rule id.
+    [Fact]
+    public void An_authorised_vm_that_is_not_in_the_configuration_is_refused()
+    {
+        ConfigurationError error = Assert.Single(Errors(WithUnattended("VM-TYPO-01")));
+
+        Assert.Equal("replication.unattended_test_failover_vms", error.Path);
+        Assert.Contains("VM-TYPO-01", error.Message);
+    }
+
+    [Fact]
+    public void A_blank_entry_is_refused()
+    {
+        Assert.NotEmpty(Errors(WithUnattended("  ")));
+    }
+
+    private static ConfigurationDocument WithUnattended(params string[] names)
+    {
+        ConfigurationDocument document = ValidDocument.Create();
+        document.Replication!.UnattendedTestFailoverVms = [.. names];
+        return document;
+    }
+
     private static ConfigurationDocument With(string testFailoverSwitch)
     {
         ConfigurationDocument document = ValidDocument.Create();

@@ -78,7 +78,11 @@ public static class TestFailoverPrecondition
         ];
     }
 
-    public static PreconditionRefusal Evaluate(CheckReport report)
+    /// Unattended, the gate tightens rather than loosens. The list above exists because a
+    /// human reading the report can weigh an unevaluable certificate expiry and proceed;
+    /// nobody is reading it at 2am, so every unevaluable finding stops the run. That is the
+    /// counterweight to skipping the typed confirmation, not a separate policy.
+    public static PreconditionRefusal Evaluate(CheckReport report, bool unattended = false)
     {
         ArgumentNullException.ThrowIfNull(report);
 
@@ -88,6 +92,6 @@ public static class TestFailoverPrecondition
             // Acknowledgements are attached to violations only, by design, so nothing here
             // can be waved through: an operator cannot silence an admission of ignorance.
             [.. report.Unevaluated.Where(finding =>
-                BlockingWhenUnevaluated.Contains(finding.Rule.Id))]);
+                unattended || BlockingWhenUnevaluated.Contains(finding.Rule.Id))]);
     }
 }

@@ -43,6 +43,8 @@ public sealed class ReplicationDocument
 
     public int? TestFailoverOrphanAfterHours { get; set; }
 
+    public List<string>? UnattendedTestFailoverVms { get; set; }
+
     public int? ExpectedFrequencySec { get; set; }
 
     public int? LagWarningMultiplier { get; set; }
