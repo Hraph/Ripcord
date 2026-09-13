@@ -37,7 +37,7 @@ public sealed record FailoverProgress(
     {
         ArgumentNullException.ThrowIfNull(plan);
 
-        int reached = FurthestReached(onTarget);
+        int reached = FurthestReached(plan, onTarget);
         List<StepProgress> steps = [];
 
         foreach (FailoverStep step in plan.Steps)
@@ -61,17 +61,51 @@ public sealed record FailoverProgress(
             Explain(next, blocked, reached));
     }
 
-    /// The highest step number the target's own state proves has happened. Each of these is a
-    /// condition the target could not be in unless every earlier step had run.
-    private static int FurthestReached(VmReplicationState? onTarget) =>
-        onTarget switch
+    /// The highest step number the target's own state proves has happened. Each piece of
+    /// evidence is a condition the target could not be in unless every earlier step had run.
+    ///
+    /// Evidence names an **action**, and the plan is then asked where that action sits. The
+    /// unplanned plan reaches a failed-over target in one step where the planned one takes
+    /// three, so a position derived from a step number would place it two steps too far along;
+    /// and evidence for an action a plan does not contain — a reversal, in an unplanned run —
+    /// falls through to the next-strongest reading rather than promoting the position to a
+    /// step that is not there.
+    private static int FurthestReached(FailoverPlan plan, VmReplicationState? onTarget)
+    {
+        if (onTarget is null)
         {
-            null => 0,
-            { PowerState: VmPowerState.Running } => 5,
-            { Role: ReplicationRole.Primary } => 4,
-            { State: ReplicationState.Recovered or ReplicationState.Committed } => 3,
-            _ => 0,
-        };
+            return 0;
+        }
+
+        foreach (FailoverAction proven in Evidence(onTarget))
+        {
+            if (plan.Steps.FirstOrDefault(step => step.Action == proven) is { } step)
+            {
+                return step.Number;
+            }
+        }
+
+        return 0;
+    }
+
+    /// Strongest reading first: a running VM proves the start and everything before it.
+    private static IEnumerable<FailoverAction> Evidence(VmReplicationState onTarget)
+    {
+        if (onTarget.PowerState == VmPowerState.Running)
+        {
+            yield return FailoverAction.StartVm;
+        }
+
+        if (onTarget.Role == ReplicationRole.Primary)
+        {
+            yield return FailoverAction.ReverseReplication;
+        }
+
+        if (onTarget.State is ReplicationState.Recovered or ReplicationState.Committed)
+        {
+            yield return FailoverAction.StartFailover;
+        }
+    }
 
     private static StepState StateOf(
         FailoverStep step, int reached, VmReplicationState? onSource)

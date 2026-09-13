@@ -150,4 +150,52 @@ public class FailoverProgressTests
     private static VmReplicationState Target(
         ReplicationRole role, ReplicationState state, VmPowerState? power) =>
         new(Vm, role, state, ReplicationHealth.Normal, null, null, null, power);
+
+    /// The evidence is read as an *action*, never as a step number: the unplanned plan reaches
+    /// the same state in three steps rather than six, and a position derived from "step 3 has
+    /// happened" would place it two steps too far along.
+    [Fact]
+    public void An_unplanned_plan_places_a_failed_over_target_at_its_own_step_numbers()
+    {
+        FailoverPlan plan = FailoverPlan.Unplanned("VM-DC-01", "HV-PRIMARY-01", "HV-REPLICA-01");
+
+        FailoverProgress progress = FailoverProgress.Of(
+            plan, null, Target(ReplicationRole.Replica, ReplicationState.Recovered, VmPowerState.Off));
+
+        Assert.Equal(StepState.Done, progress.Steps[0].State);
+        Assert.Equal(2, progress.NextStep!.Number);
+        Assert.Equal(FailoverAction.StartVm, progress.NextStep.Action);
+    }
+
+    /// Nothing has happened on the replica yet, so the sequence starts at its first step —
+    /// with no shutdown to wait on, because the host that would do it is gone.
+    [Fact]
+    public void An_unplanned_plan_with_an_untouched_replica_starts_at_step_one()
+    {
+        FailoverPlan plan = FailoverPlan.Unplanned("VM-DC-01", "HV-PRIMARY-01", "HV-REPLICA-01");
+
+        FailoverProgress progress = FailoverProgress.Of(
+            plan,
+            null,
+            Target(ReplicationRole.Replica, ReplicationState.Replicating, VmPowerState.Off));
+
+        Assert.True(progress.CanResume);
+        Assert.Equal(1, progress.NextStep!.Number);
+    }
+
+    /// A running VM on the target proves the start, and the failover before it. The unplanned
+    /// plan has no reverse step, so the "role is primary" evidence simply does not apply — it
+    /// must not silently promote the position to a step this plan does not contain.
+    [Fact]
+    public void An_unplanned_plan_with_a_running_target_has_only_the_verification_left()
+    {
+        FailoverPlan plan = FailoverPlan.Unplanned("VM-DC-01", "HV-PRIMARY-01", "HV-REPLICA-01");
+
+        FailoverProgress progress = FailoverProgress.Of(
+            plan,
+            null,
+            Target(ReplicationRole.Replica, ReplicationState.Recovered, VmPowerState.Running));
+
+        Assert.Equal(FailoverAction.VerifyNetwork, progress.NextStep!.Action);
+    }
 }

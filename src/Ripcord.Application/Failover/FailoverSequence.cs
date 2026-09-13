@@ -73,10 +73,19 @@ public sealed record FailoverTiming(TimeSpan RestoreDeadline, int RestoreAttempt
 ///
 /// Where it has got to is re-derived from `FailoverProgress`, never from a stored cursor, so
 /// running this twice is safe and running it on the wrong host is refused rather than obeyed.
-public sealed class PlannedFailoverSequence(
+public sealed class FailoverSequence(
     IHypervProvider provider, IAuditLog audit, IClock clock, FailoverTiming timing)
 {
-    private const string Operation = "failover --scenario planned";
+    /// The command as the operator typed it, for the audit trail. Read from the plan rather
+    /// than passed in, so a trail can never name an operation other than the one that ran.
+    private static string Label(FailoverOperation operation) =>
+        operation switch
+        {
+            FailoverOperation.UnplannedFailover => "failover --scenario unplanned",
+            FailoverOperation.Failback => "failback",
+            FailoverOperation.Reprotect => "reprotect",
+            _ => "failover --scenario planned",
+        };
 
     public async Task<FailoverRunReport> RunAsync(
         FailoverPlan plan,
@@ -137,7 +146,7 @@ public sealed class PlannedFailoverSequence(
         // nothing at all in exactly the case the record exists for. If the trail cannot be
         // written, the failover does not start: the exception is deliberately not caught.
         audit.Append(this.Entry(
-            request, AuditStage.Starting,
+            request, plan.Operation, AuditStage.Starting,
             $"about to run this host's steps for {request.VmName}"));
 
         List<ExecutedStep> results = [];
@@ -174,7 +183,7 @@ public sealed class PlannedFailoverSequence(
                         request, results, performed, step.Step, cancellationToken)
                     .ConfigureAwait(false);
 
-                this.Record(request, unwound);
+                this.Record(request, plan.Operation, unwound);
 
                 return unwound;
             }
@@ -183,18 +192,19 @@ public sealed class PlannedFailoverSequence(
         FailoverRunReport report = new(
             request.VmName, results, ExitCode.Success, NextHost(results));
 
-        this.Record(request, report);
+        this.Record(request, plan.Operation, report);
 
         return report;
     }
 
     /// The outcome, written whatever the outcome was. A failed run is the one somebody reads.
-    private void Record(FailoverRequest request, FailoverRunReport report)
+    private void Record(
+        FailoverRequest request, FailoverOperation operation, FailoverRunReport report)
     {
         try
         {
             audit.Append(this.Entry(
-                request, AuditStage.Finished,
+                request, operation, AuditStage.Finished,
                 $"exit {(int)report.Code}: {report.Continuation}"));
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
@@ -206,12 +216,16 @@ public sealed class PlannedFailoverSequence(
         }
     }
 
-    private AuditEntry Entry(FailoverRequest request, AuditStage stage, string detail) =>
+    private AuditEntry Entry(
+        FailoverRequest request,
+        FailoverOperation operation,
+        AuditStage stage,
+        string detail) =>
         new(
             clock.UtcNow,
             request.User,
             request.MachineName,
-            Operation,
+            Label(operation),
             request.VmName,
             stage,
             detail,
@@ -300,8 +314,14 @@ public sealed class PlannedFailoverSequence(
             // Nothing this invocation did needs undoing, but a mutating call was attempted and
             // failed — so "nothing changed" cannot be asserted, and 4 would assert it.
             return new FailoverRunReport(
-                request.VmName, results, ExitCode.IntermediateState,
-                "the step failed before anything else had been done here");
+                request.VmName,
+                results,
+                ExitCode.IntermediateState,
+                performed.Count == 0
+                    ? "the step failed before anything else had been done here"
+                    : $"'{request.VmName}' is failed over to this host but did not start",
+                null,
+                performed.Count == 0 ? null : StartByHand(request.VmName));
         }
 
         Compensation rollback = await this.RestoreAsync(undo, request, cancellationToken)
@@ -328,11 +348,16 @@ public sealed class PlannedFailoverSequence(
                 // The VM was shut down and nothing else happened. Put it back on.
                 FailoverAction.ShutDownVm => FailoverAction.StartVm,
 
-                // Deliberately no arm for StartFailover. Undoing a failover would only arise if
-                // steps 3 and 4 ran in one invocation, which cannot happen while the replica
-                // cannot observe the primary's prepare (V35) — so an arm for it would be a
-                // branch no test can reach. It belongs here when the cross-host handoff is
-                // closed, and not before.
+                // Deliberately no arm for StartFailover, and for two different reasons.
+                //
+                // In a planned sequence it would only arise if steps 3 and 4 ran in one
+                // invocation, which cannot happen while the replica cannot observe the
+                // primary's prepare (V35) — a branch no test can reach.
+                //
+                // In an unplanned one it is reachable and is still not undone. Cancelling the
+                // failover would discard the recovery point that had just been brought up and
+                // leave production down — the outage the command was typed to end. The VM stays
+                // failed over here and the operator is handed the command to start it.
                 _ => null,
             };
 
@@ -361,6 +386,13 @@ public sealed class PlannedFailoverSequence(
 
         return last;
     }
+
+    /// Handed over when the failover took and the start did not. Production is down, so the
+    /// operator gets the command rather than a description of the problem.
+    private static string StartByHand(string vmName) =>
+        $"'{vmName}' is failed over to this host but did not start, and the failover was "
+            + "deliberately not cancelled — cancelling it would discard the recovery point and "
+            + $"leave production down. Start it here: Start-VM -Name '{vmName}'";
 
     /// Printed when the restore has run out of attempts. Production is down at this point, so
     /// the operator needs the command itself rather than a description of the problem.

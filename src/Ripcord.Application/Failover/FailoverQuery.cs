@@ -116,7 +116,7 @@ public sealed class FailoverQuery(
         VmReplicationState? onSource = Find(SourceOf(view, report), command.VmName);
         VmReplicationState? onTarget = Find(TargetOf(view, report), command.VmName);
 
-        FailoverRunReport run = await new PlannedFailoverSequence(
+        FailoverRunReport run = await new FailoverSequence(
                 provider, audit, clock, timing)
             .RunAsync(
                 plan,

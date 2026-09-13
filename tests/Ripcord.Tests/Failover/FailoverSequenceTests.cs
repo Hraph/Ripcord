@@ -12,7 +12,7 @@ namespace Ripcord.Tests.Failover;
 /// each invocation carries out its own half and stops — and every failure path has to leave the
 /// pair somewhere a human can understand, because the alternative is production down with no
 /// account of why.
-public class PlannedFailoverSequenceTests
+public class FailoverSequenceTests
 {
     private const string Vm = "VM-DC-01";
     private const string Primary = "HV-PRIMARY-01";
@@ -300,7 +300,7 @@ public class PlannedFailoverSequenceTests
     {
         InMemoryAuditLog audit = new();
 
-        await new PlannedFailoverSequence(
+        await new FailoverSequence(
                 Provider(VmPowerState.Running), audit, new FixedClock(Now),
                 FailoverTiming.ForTests)
             .RunAsync(
@@ -354,6 +354,64 @@ public class PlannedFailoverSequenceTests
 
         Assert.Empty(audit.Entries);
     }
+
+    /// The disaster path, on the host that is still alive. Three steps, all here, and the
+    /// operator is not sent anywhere afterwards — there is nowhere to go.
+    [Fact]
+    public async Task An_unplanned_run_does_this_hosts_three_steps_and_finishes()
+    {
+        FakeHypervProvider provider = Provider(VmPowerState.Off);
+
+        FailoverRunReport report = await Run(
+            provider, Replica, UnplannedFresh(), plan: UnplannedPlan);
+
+        Assert.Equal([$"failover:{Vm}", $"start:{Vm}"], provider.Calls);
+        Assert.Equal(ExitCode.Success, report.Code);
+    }
+
+    /// Nothing is undone when the start fails after the failover has taken, and the absence is
+    /// the decision. Cancelling now would discard the recovery point the failover just brought
+    /// up and leave production down — the outage this command was typed to end. So the VM stays
+    /// failed over here and the operator is handed the command to start it.
+    [Fact]
+    public async Task An_unplanned_run_does_not_undo_the_failover_when_the_start_fails()
+    {
+        FakeHypervProvider provider = Provider(VmPowerState.Off);
+        provider.StartRealVmFailure = new InvalidOperationException("no capacity");
+
+        FailoverRunReport report = await Run(
+            provider, Replica, UnplannedFresh(), plan: UnplannedPlan);
+
+        Assert.DoesNotContain($"cancel:{Vm}", provider.Calls);
+        Assert.Equal(ExitCode.IntermediateState, report.Code);
+        Assert.Contains("Start-VM", report.ManualRecovery);
+        Assert.Null(report.Rollback);
+    }
+
+    /// The trail has to name the operation that ran. Half a sequence executed by each host is
+    /// read back afterwards by somebody working out what happened, and "planned" against an
+    /// unplanned failover is the one word that would mislead them.
+    [Fact]
+    public async Task The_trail_names_the_scenario_that_ran()
+    {
+        InMemoryAuditLog audit = new();
+
+        await Run(
+            Provider(VmPowerState.Off), Replica, UnplannedFresh(),
+            audit: audit, plan: UnplannedPlan);
+
+        Assert.Equal("failover --scenario unplanned", audit.Entries[0].Operation);
+    }
+
+    private static readonly FailoverPlan UnplannedPlan =
+        FailoverPlan.Unplanned(Vm, Primary, Replica);
+
+    /// The primary reports nothing at all, which is the shape of the scenario: it is gone.
+    private static FailoverProgress UnplannedFresh() =>
+        FailoverProgress.Of(
+            UnplannedPlan,
+            null,
+            State(Vm, ReplicationRole.Replica, ReplicationState.Replicating, VmPowerState.Off));
 
     private static FakeHypervProvider Provider(
         VmPowerState power,
@@ -417,11 +475,12 @@ public class PlannedFailoverSequenceTests
         FailoverProgress progress,
         bool dryRun = false,
         SplitBrain? splitBrain = null,
-        InMemoryAuditLog? audit = null) =>
-        new PlannedFailoverSequence(
+        InMemoryAuditLog? audit = null,
+        FailoverPlan? plan = null) =>
+        new FailoverSequence(
             provider, audit ?? new InMemoryAuditLog(), new FixedClock(Now), FailoverTiming.ForTests)
         .RunAsync(
-            Plan,
+            plan ?? Plan,
             progress,
             splitBrain ?? new SplitBrain(SplitBrainVerdict.NotSuspected, null),
             new FailoverRequest(Vm, machineName, Switch, dryRun),

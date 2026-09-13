@@ -33,7 +33,8 @@ public sealed record FailoverStep(
 /// this invocation cannot carry out. Printing only the local half would hide the fact that the
 /// operator has to move to the other host, which is the single thing they most need to know
 /// before starting.
-public sealed record FailoverPlan(string VmName, IReadOnlyList<FailoverStep> Steps)
+public sealed record FailoverPlan(
+    string VmName, IReadOnlyList<FailoverStep> Steps, FailoverOperation Operation)
 {
     /// The planned sequence. Reversal happens here, at step 4, and exactly once — a failback
     /// that reverses again inverts the pair and trips milestone 2's direction rule.
@@ -56,17 +57,42 @@ public sealed record FailoverPlan(string VmName, IReadOnlyList<FailoverStep> Ste
 
             new FailoverStep(6, FailoverAction.VerifyNetwork, replica,
                 "Confirm the adapter is connected to the expected switch"),
-        ]);
+        ],
+        FailoverOperation.PlannedFailover);
+
+    /// The disaster path. Three steps, all on the replica, and every step the planned sequence
+    /// runs on the primary is absent — not omitted for brevity, but because that host is the
+    /// reason this command is being typed. A plan listing a step the dead host has to carry out
+    /// would stall on it for ever, on the one path where stalling means production stays down.
+    ///
+    /// Replication is **not** reversed. Reversing needs the original primary to accept the new
+    /// direction and it is not there to accept anything; putting the pair back under protection
+    /// is `reprotect`, run when it returns. `primary` is still named because the operator has
+    /// to be told what to do when that happens.
+    public static FailoverPlan Unplanned(string vmName, string primary, string replica) =>
+        new(vmName,
+        [
+            new FailoverStep(1, FailoverAction.StartFailover, replica,
+                $"Bring {vmName} up on this host from the last replicated point"),
+
+            new FailoverStep(2, FailoverAction.StartVm, replica, $"Start {vmName}"),
+
+            new FailoverStep(3, FailoverAction.VerifyNetwork, replica,
+                "Confirm the adapter is connected to the expected switch"),
+        ],
+        FailoverOperation.UnplannedFailover);
 
     public bool Equals(FailoverPlan? other) =>
         other is not null
         && this.VmName == other.VmName
+        && this.Operation == other.Operation
         && Structural.Same(this.Steps, other.Steps);
 
     public override int GetHashCode()
     {
         HashCode hash = new();
         hash.Add(this.VmName);
+        hash.Add(this.Operation);
         Structural.Add(ref hash, this.Steps);
         return hash.ToHashCode();
     }
