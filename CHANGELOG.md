@@ -19,6 +19,12 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
   host. Milestone 1b designed the fix and it was never built; it is built now, in the
   composition root only. Same binary, same verb, and a verb that returns on its own stops the
   service rather than leaving it reported as running with nothing behind it.
+- `ripcord service restart` — the one move that follows every configuration edit, since the
+  listener reads `ripcord.yaml` only when it starts. A service that is not running is started
+  rather than restarted, because `sc stop` on a stopped service is an error and an operator
+  asking for the configuration to take effect means the same thing either way. No typed
+  confirmation: it is over in a second and changes nothing that outlives it, and a confirmation
+  asked for that becomes the reflex the failover ones must not be.
 - **`deploy-listener` is now `ripcord service`**, and bare it changes nothing: it says whether
   the service is installed, whether it is running and the command line it is registered with.
   `ripcord service install` and `ripcord service remove` are the two things that change it —

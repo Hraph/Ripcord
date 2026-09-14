@@ -812,7 +812,7 @@ function Invoke-Install {
     Write-Host '  Then do the same on the other host.'
     Write-Host ''
     Write-Host '  The listener reads the configuration once, when it starts. After any later'
-    Write-Host '  edit: Restart-Service ripcord.'
+    Write-Host '  edit: ripcord service restart.'
     Write-Host ''
 }
 

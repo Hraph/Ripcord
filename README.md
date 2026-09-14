@@ -183,7 +183,7 @@ stick is not more trusted than a download.
 | `-Force` | Reinstall over an existing binary. It never replaces an existing `ripcord.yaml`. |
 
 **The listener reads `ripcord.yaml` once, when the service starts.** Editing the file later
-changes nothing until `Restart-Service ripcord` — the running listener goes on serving the
+changes nothing until `ripcord service restart` — the running listener goes on serving the
 configuration it was started with, and the peer sees no difference. `ripcord status` and
 `ripcord check`, being commands rather than the service, read the file every time they run, so
 the two can disagree until the service is restarted.
