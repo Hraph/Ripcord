@@ -30,6 +30,10 @@ public sealed class ConfigurationDocument
 
     /// Absent on a host that serves no page, which is the default.
     public DashboardDocument? Dashboard { get; set; }
+
+    /// Read even when the rest of the file is refused: the log is where the refusal is
+    /// explained, so it cannot wait for the file to be valid.
+    public DiagnosticsDocument? Diagnostics { get; set; }
 }
 
 /// No address key: the page is served on the loopback interface by construction, so
@@ -189,4 +193,17 @@ public sealed class VmDocument
 
     /// Absent on every VM that fails over like the rest, which is most of them.
     public string? Failover { get; set; }
+}
+
+/// Absent on a host nobody has had to debug yet, which is every host until the day it is not.
+/// The whole block is optional and so is every key in it; what it cannot do is stop a command.
+public sealed class DiagnosticsDocument
+{
+    /// Nullable on purpose: the log is on unless the file says otherwise, so "the key is
+    /// absent" and "the key says false" have to be different answers.
+    public bool? Enabled { get; set; }
+
+    public string? Path { get; set; }
+
+    public int? MaxSizeMb { get; set; }
 }

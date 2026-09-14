@@ -27,6 +27,7 @@ public class HexagonalBoundaryTests
         ["Ripcord.Adapters.Pairing"] = ["Ripcord.Domain", "Ripcord.Ports"],
         ["Ripcord.Adapters.Notify"] = ["Ripcord.Domain", "Ripcord.Ports"],
         ["Ripcord.Adapters.Audit"] = ["Ripcord.Domain", "Ripcord.Ports"],
+        ["Ripcord.Adapters.Diagnostics"] = ["Ripcord.Domain", "Ripcord.Ports"],
         ["Ripcord.Adapters.Dashboard"] = ["Ripcord.Domain", "Ripcord.Ports"],
         ["Ripcord.Adapters.Update"] = ["Ripcord.Domain", "Ripcord.Ports"],
         ["Ripcord.Adapters.Wmi"] = ["Ripcord.Domain", "Ripcord.Ports"],
@@ -35,6 +36,7 @@ public class HexagonalBoundaryTests
             "Ripcord.Cli", "Ripcord.Adapters.Wmi", "Ripcord.Adapters.Yaml",
             "Ripcord.Adapters.Pairing", "Ripcord.Adapters.Audit", "Ripcord.Adapters.Notify",
             "Ripcord.Adapters.Dashboard", "Ripcord.Adapters.Update",
+            "Ripcord.Adapters.Diagnostics",
         ],
         ["Ripcord.Tests"] =
         [
@@ -42,6 +44,7 @@ public class HexagonalBoundaryTests
             "Ripcord.Cli", "Ripcord.Adapters.Fake", "Ripcord.Adapters.Yaml",
             "Ripcord.Adapters.Pairing", "Ripcord.Adapters.Audit", "Ripcord.Adapters.Notify",
             "Ripcord.Adapters.Dashboard", "Ripcord.Adapters.Update",
+            "Ripcord.Adapters.Diagnostics",
         ],
     };
 

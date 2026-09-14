@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\src\Ripcord.Adapters.Notify\Ripcord.Adapters.Notify.csproj" />
     <ProjectReference Include="..\..\src\Ripcord.Adapters.Pairing\Ripcord.Adapters.Pairing.csproj" />
     <ProjectReference Include="..\..\src\Ripcord.Adapters.Audit\Ripcord.Adapters.Audit.csproj" />
+    <ProjectReference Include="..\..\src\Ripcord.Adapters.Diagnostics\Ripcord.Adapters.Diagnostics.csproj" />
     <ProjectReference Include="..\..\src\Ripcord.Adapters.Dashboard\Ripcord.Adapters.Dashboard.csproj" />
     <ProjectReference Include="..\..\src\Ripcord.Adapters.Update\Ripcord.Adapters.Update.csproj" />
   </ItemGroup>
