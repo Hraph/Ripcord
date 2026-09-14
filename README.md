@@ -48,7 +48,7 @@ so the replica cannot observe that the primary's half has run, and refuses rathe
 It is question Q5, and it is pinned by a test rather than left silent.
 
 Progress and decisions: [`docs/TRACKING.md`](docs/TRACKING.md).
-Per-milestone detail: [`docs/milestones/`](docs/milestones/).
+Command reference: [`docs/commands/`](docs/commands/).
 Specification review before coding: [`docs/COHERENCE.md`](docs/COHERENCE.md).
 
 ## Layout
@@ -117,20 +117,12 @@ WMI adapter has its own manual test level.
 
 ## Configuration
 
-`ripcord.yaml`, next to the binary, so updating means replacing the `.exe` while the
-configuration stays. It is **not** symmetric: `node` and `peer` are swapped between the two
-hosts, and Ripcord validates `node.hostname` against the machine's real name so a
-copied-and-not-edited file is refused rather than producing an inverted view.
+One `ripcord.yaml` per host, beside the binary. The two are mirror images — the `node` and
+`peer` blocks swapped — and copying one across without swapping them is refused at startup, by
+name. Every command validates the whole file first and reports every error at once.
 
-Two samples ship in [`config/`](config/): [`ripcord.primary.yaml`](config/ripcord.primary.yaml)
-and [`ripcord.dr.yaml`](config/ripcord.dr.yaml). Both are parsed and validated by the test
-suite, so a sample that stops being valid breaks the build.
-
-Startup validation reports **every** error at once rather than failing on the first, and it
-answers one question only: "can this file be read?". Whether reality matches the file — the
-switch exists, the target has the RAM, the certificate is still valid — is `ripcord check`.
-
-The machine names, addresses and thumbprints throughout this repository are pseudonymous.
+The reference is [`docs/configuration.md`](docs/configuration.md); the shipped samples in
+[`config/`](config) carry a comment on every key and are the place to start.
 
 ## Installation
 
@@ -197,265 +189,31 @@ Updating an installed host is [`ripcord update`](#commands), not this script.
 
 ## Commands
 
-```
-ripcord status [--config <path>]              read both sides of the pair
-ripcord check [--config <path>] [--notify [--dry-run]]
-                                              would a failover work right now
-ripcord test-failover (--vm <name> | --all) [--dry-run] [--unattended]
-                                              boot a replica in isolation, then destroy it
-ripcord failover --scenario planned|unplanned (--vm <name> | --all | --priority P1)
-                                              move a VM to the other host
-ripcord failback (--vm <name> | --all | --priority P1) [--dry-run]
-                                              move it back once the pair is protected again
-ripcord fence [--dry-run]                     stop this host's VMs starting themselves
-ripcord serve [--config <path>]               run the read-only pair listener
-ripcord dashboard [--config <path>]           serve the read-only page on 127.0.0.1
-ripcord service [install|remove] [--dry-run]  the listener: what it is doing,
-                                              and the two things that change it
-ripcord check-update [--config <path>]        is a newer release published
-ripcord version                               version and commit hash
-```
+One page per command, in [`docs/commands/`](docs/commands/) — what it answers, what it refuses,
+and what its exit code means.
 
-`ripcord service install` reconciles rather than installs: it compares the host with the configuration
-and applies only the difference, so re-running it on a correct host does nothing, a moved
-binary or a changed port becomes an update, and `--remove` is the same list read backwards.
-Nothing mutating happens without `--dry-run` first showing the plan and the operator then
-typing the node name.
+| | | |
+|---|---|---|
+| [`status`](docs/commands/status.md) | what both hosts are doing | read-only |
+| [`check`](docs/commands/check.md) | would a failover work right now | read-only |
+| [`service`](docs/commands/service.md) | the listener: state, install, remove, restart | bare form read-only |
+| [`serve`](docs/commands/serve.md) | the listener itself | read-only |
+| [`dashboard`](docs/commands/dashboard.md) | the same answer, in a browser | read-only |
+| [`test-failover`](docs/commands/test-failover.md) | boot a replica in isolation, then destroy it | mutating |
+| [`failover`](docs/commands/failover.md) | move a VM to the other host | mutating |
+| [`failback`](docs/commands/failback.md) | move it home again | mutating |
+| [`fence`](docs/commands/fence.md) | stop a returning host starting its old copies | mutating |
+| [`update`](docs/commands/update.md) | install a newer release here | mutating |
+| [`check-update`](docs/commands/check-update.md) | is a newer release published | read-only |
+| [`version`](docs/commands/version.md) | which binary is this | read-only |
 
-`failover` drives **only the host it is run on**. Each invocation carries out the steps the plan
-assigns to this machine, then names the other host and prints the exact command to type there.
-That is a deliberate refusal to build a channel that mutates the peer: in an unplanned failover
-the primary is dead by definition, so a cross-host execution path is unavailable in precisely the
-case the tool exists for. Where the sequence has got to is re-derived from what both hosts
-report, never from a stored position, so running it twice is safe and running it on the wrong
-host is refused rather than obeyed.
+Every mutating command takes `--dry-run` and prints its whole plan without touching anything.
+None of them changes a thing until a word is typed in full. The exit codes are the same
+everywhere and are listed once, in [the command index](docs/commands/README.md#exit-codes).
 
-`fence` is the command that is easy to leave out and expensive to forget. After an unplanned
-failover the original primary still holds a copy of every VM that moved, set to start itself,
-and both hosts sit on the same external switch on the same subnet — so restoring its power
-boots the old domain controller beside the failed-over one, with the same identity and the same
-address. `fence` records each VM's `AutomaticStartAction`, sets it to `Nothing`, and names any
-copy it could not confirm switched off. The unplanned failover prints the instruction to run it,
-on the host it has to be run on, before the operator leaves the screen.
-
-A VM can be kept out of sweeps with `failover: manual` in its configuration block. The backup VM
-is set that way: it boots without its 4 TB repository, and depending on the backup product it
-may start writing fresh full backups into the target's `D:` — the volume already carrying the
-replica disks and the failover undo data. Filling it puts the failed-over VMs into
-paused-critical, the domain controller included. Failing it over is still possible; it has to be
-named.
-
-The pair channel carries one thing in one direction: this host's published state. It has no
-verb, no parameter and no request body, so there is nothing to abuse — and the service that
-answers it never touches Hyper-V, it serves a file the privileged command wrote.
-
-`status` describes; it does not judge — that is `check`. Output is fixed at 75 columns with no
-colour, because the real reading conditions are a 1024×768 KVM during an incident.
-
-```
-RIPCORD STATUS                                      2026-09-12 14:00:00 UTC
-
-LOCAL   HV-REPLICA-01                                             REACHABLE
-  VM                   ROLE     STATE            HEALTH       LAG   PENDING
-  -------------------------------------------------------------------------
-  VM-DC-01             Replica  Resynchronizing  Critical   6h00m     16 GB
-  VM-LEGACY-01         Replica  Replicating      Warning    9m00s    256 MB
-  VM-BACKUP-01         None     Disabled         Unknown        -         -
-
-PEER    HV-PRIMARY-01                                               OFFLINE
-  No peer channel configured on this node.
-  Unreachable since: never contacted
-```
-
-| Exit code | Meaning |
-|---|---|
-| 0 | success — **including an unreachable peer** |
-| 1 | at least one critical rule violated (`check` only) |
-| 2 | invalid invocation, or invalid or missing configuration |
-| 3 | local access failure (WMI, privileges, timeout) |
-| 4 | refused, or interrupted — **nothing was changed** |
-| 5 | a mutating operation left the host between two states — a human has to look |
-
-The last two are what separate "it did not run" from "it ran half way". A deployment or a
-failover that stops part-way exits 5 and says where it stopped; one that fails before touching
-anything exits 3 or 4 and says nothing was changed. Re-running is safe in both cases: every
-mutating command re-derives where it is from what the hosts report.
-
-An unreachable peer is a degraded state, not an error: a scheduled `ripcord status` must not
-alert because the other host is down.
-
-### `ripcord dashboard`
-
-The same `check`, in a browser, for reading rather than typing. It is **off unless the
-configuration switches it on**, and it is served on `127.0.0.1` and nowhere else — the address
-is written in the code, not read from the file, so there is no key that can widen it onto the
-network.
-
-```yaml
-dashboard:
-  enabled: true
-  port: 7080
-  refresh_sec: 30
-```
-
-The page is one self-contained document: no script, no stylesheet, no image, nothing fetched
-from anywhere. These hosts have no outbound access by design, and a page that degrades to
-unstyled markup the moment the network goes degrades exactly when it is being read. It reloads
-itself through a `<meta>` refresh, so it keeps working with scripting switched off.
-
-It serves a read of `/` and nothing else — every other verb is refused, every other path is
-absent, and nothing on it changes anything. A failover still needs a human typing a node name
-into a terminal.
-
-A reading that failed becomes a page saying the reading failed. There is no stderr anybody is
-watching and no exit code to carry it, so the alternative is a page still showing the previous
-state, which is the one thing a dashboard must never do.
-
-Browse to `http://127.0.0.1:7080/`, not `http://localhost:7080/` — `localhost` resolves to the
-IPv6 loopback first on a modern Windows, and the page is served on the IPv4 one only.
-
-If `HttpListener` refuses to bind under a non-elevated account, reserve the URL once:
-
-```
-netsh http add urlacl url=http://127.0.0.1:7080/ user=DOMAIN\account
-```
-
-### `ripcord check`
-
-`check` answers one question: if it goes down now, does it hold? Each finding states what was
-observed, what that means **on the day of the failover**, and the command that fixes it —
-never executing it. The middle line is the one that matters: "incorrect vSwitch" helps nobody,
-"this VM will boot with no network on the target" triggers action.
-
-```
-RIPCORD CHECK                                       2026-09-13 14:00:00 UTC
-ripcord 0.1.0+0000000
-
-  Mode:       NORMAL
-  Source:     HV-PRIMARY-01 (holds the primary copies)
-  Target:     HV-REPLICA-01 (a failover would land here)
-  Verdict:    NOT READY - 1 critical, 1 warning, 3 info, 0 not checked
-
-CRITICAL (1)
----------------------------------------------------------------------------
-  [replica-switch-mismatch] VM-DC-01
-    Observed:   Network Adapter on HV-REPLICA-01 is on 'vSwitch-OLD',
-                expected 'vSwitch-PROD'
-    On the day: this VM boots onto the wrong network on the target; the
-                host-level switch check still passes, so nothing else would
-                report it
-    Fix:        Connect-VMNetworkAdapter -VMName VM-DC-01 -Name 'Network
-                Adapter' -SwitchName 'vSwitch-PROD'
-
-FEASIBILITY - HV-REPLICA-01
----------------------------------------------------------------------------
-  Usable memory: 8192 MB
-  VM                   PRI    STARTUP       MAX       MIN  BOOTS
-  -------------------------------------------------------------------------
-  VM-DC-01             P1     2048 MB   4096 MB   1024 MB  yes
-  VM-LEGACY-01         P1     2048 MB   4096 MB   1024 MB  yes
-  VM-BACKUP-01         P2     2048 MB   4096 MB   1024 MB  yes
-  Headroom after the VMs that would boot: 2048 MB
-```
-
-Three things are deliberate in that output.
-
-**A rule whose data is missing is listed under `NOT CHECKED`, never treated as satisfied.** A
-reassuring false negative is the worst outcome this tool can produce. `NOT CHECKED` sits above
-the warnings, and its count is in the headline, because the exit code cannot carry it: code 1
-means "a critical rule is violated", and overloading it would make `check` unusable as the
-gate the later milestones depend on.
-
-**Permanent criticals are acknowledged, with a mandatory expiry.** The pass-through disk on
-`VM-BACKUP-01` is an accepted, unfixable property of this infrastructure. Without a way to
-accept it, `check` exits 1 forever and every milestone that gates on it dies with it. An
-acknowledgement names a rule and optionally a VM, carries a reason and a date, and is still
-printed — accepted, not hidden. Once the date passes the finding counts again and says why it
-came back. The rules whose violation means the service would not come back at all —
-`startup-ram-exceeds-target`, `p1-startup-ram-sum-exceeds-target`,
-`vhdx-outside-relationship` — can never be acknowledged.
-
-**The operating mode is derived from observed state.** While the pair runs on the disaster
-recovery side, "replication direction inverted" is true by definition. Reporting it as a
-critical would make `check` red for the whole incident and block the failback meant to end it,
-so `FAILED OVER` suppresses that rule and the header says so instead. A *partial* inversion —
-some VMs primary on one host and some on the other — is still critical.
-
-The PENDING column renders `-` when Hyper-V answers the statistics call asynchronously:
-Ripcord declines to poll a job for one column. See
-[milestone 1](docs/milestones/milestone-1.md).
-
-### Alerting
-
-Hyper-V Replica surfaces plenty of state and pushes none of it: a resync can run for three weeks
-with nobody knowing. `ripcord check --notify` is the delivery half, and nothing else — the
-trigger is the same code 1 the command already returns, so there is no second detection path
-and no second opinion about whether the pair is healthy.
-
-```
-schtasks /Create /TN "Ripcord check" /SC MINUTE /MO 15 /RL HIGHEST /RU SYSTEM ^
-  /TR "\"C:\Program Files\Ripcord\ripcord.exe\" check --notify"
-```
-
-Four rules decide what actually leaves the host, and all four exist because an alert nobody
-reads is worse than no alert at all.
-
-- **Transitions, not runs.** A critical finding that was not in the last notification is sent at
-  once. The same one on the next run is not: a mail every fifteen minutes becomes a filter rule
-  within a week, and then the criticals go unread too.
-- **A repeat threshold**, 24 hours by default, after which a still-broken pair is mentioned
-  again.
-- **Quiet hours**, in the host's local time. An alert raised inside the window is **held and
-  delivered when the window ends**, never dropped. One that clears before the window ends is
-  dropped, because nothing was ever sent to correct.
-- **Grouping.** Everything wrong with the pair goes in one message, with each finding's
-  implication on the day of the failover and the command that fixes it — not a dump of the
-  check output. The pair recovering is itself a transition and is notified once.
-
-Delivery never changes the exit code: a relay that is down must not be reported as a pair that
-is broken. A notification that was held, refused or never attempted is printed on stderr beside
-the report, and what was sent is remembered in `alert-state.json` next to the binary — written
-only after the transport accepted it, so a relay that was down for a minute does not cost a
-day's silence. `check --notify --dry-run` shows what would go where and writes nothing.
-
-The SMTP password is never in `ripcord.yaml`; `password_secret` names an environment variable
-the service reads it from, and a `password:` key in the file is refused by name. On a host
-running the check as SYSTEM that means a machine-wide variable — readable by administrators,
-which is the trade-off — so an internal relay that accepts from this subnet without credentials
-is the better arrangement where one exists.
-
-`ripcord check-update` asks whether a newer release has been published and reports the version.
-It is **off** unless `updates.check` says otherwise, and refuses rather than silently skipping
-when it is off: these hosts are meant to have no outbound access, and a host somebody believes
-is checking is worse than one that plainly is not. It addresses the repository by numeric id
-rather than by `owner/name`, because a rename leaves a redirect that stops failing — and starts
-returning a stranger's releases — the day somebody recreates the abandoned name.
-
-What `check-update` finds is **written down beside the binary**, and `status` and `check` then
-say one line about it. Neither of them looks: no command makes a network call while it runs,
-because these hosts have no outbound access and a fifteen-second timeout in front of a command
-somebody typed during an incident is worse than not knowing. So the line appears only if
-something looked earlier — schedule it beside the alerting task:
-
-```
-schtasks /create /tn "ripcord check-update" /tr "\"C:\Program Files\Ripcord\ripcord.exe\" check-update" /sc daily /st 06:00 /ru SYSTEM
-```
-
-`ripcord update` installs one. It is off unless `updates.install` says otherwise — a separate
-switch from `updates.check`, because permission to look is not permission to replace the binary
-this host runs its failovers with — and it asks for the node name to be typed. It downloads the
-release and the detached signature beside it, checks that signature against a public key
-compiled into the running binary, and stops there if it does not verify: nothing is moved, and
-the host is where it was. Only then does it set the running binary aside, keeping it, and put
-the new one in its place; if that last move fails the old one goes back. The new version starts
-on the next service start, not on the command that installed it.
-
-Updating one host makes the pair disagree, and a failover spanning both is refused while it
-does. The command prints that consequence above the prompt, every time, and names the host to
-run next.
-
-Install is a copy: the `.exe` and one of the samples from `config/`, renamed `ripcord.yaml`,
-side by side. `--config` overrides the path.
+Further reading: [alerting](docs/alerting.md), [`ripcord.yaml`](docs/configuration.md),
+[releasing and updating a pair](docs/RELEASING.md),
+[the threat model](SECURITY.md).
 
 ## License
 

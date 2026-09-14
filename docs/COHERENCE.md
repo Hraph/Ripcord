@@ -105,7 +105,7 @@ Three options:
 3. **Milestone 1 is local-only.** `ripcord status` runs on one host and shows one side. The
    pair view arrives with option 2, later.
 
-**Decided**: option 3 for milestone 1, then option 2 as [milestone 1b](milestones/milestone-1b.md).
+**Decided**: option 3 for milestone 1, then option 2 as milestone 1b.
 It keeps the first deliverable honest — a single-host status view that works is already better
 than `Get-VMReplication` — and it avoids standing up a credentialed remote channel the
 specification explicitly does not want, only to remove it later.

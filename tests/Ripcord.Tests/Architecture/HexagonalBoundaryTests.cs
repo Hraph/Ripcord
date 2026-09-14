@@ -3,7 +3,7 @@ using System.Xml.Linq;
 namespace Ripcord.Tests.Architecture;
 
 /// The hexagonal boundary is a test, not an intention. These assertions encode the project
-/// table in docs/milestones/milestone-0.md; changing the architecture means changing them
+/// table this project was built to; changing the architecture means changing them
 /// deliberately rather than by accident.
 ///
 /// They parse the .csproj files rather than reflecting over assemblies: an unused

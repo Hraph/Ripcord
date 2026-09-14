@@ -1,0 +1,50 @@
+# Commands
+
+One page per verb. Each says what the command answers, what it refuses, and what its exit code
+means — in that order, because that is the order they matter in at three in the morning.
+
+| Command | What it answers | Changes anything |
+|---|---|---|
+| [`status`](status.md) | what both hosts are doing right now | no |
+| [`check`](check.md) | would a failover work, if it had to happen now | no |
+| [`service`](service.md) | is the listener installed and running, and from where | only with `install`, `remove`, `restart` |
+| [`serve`](serve.md) | — it *is* the listener | no |
+| [`dashboard`](dashboard.md) | the same answer as `check`, in a browser | no |
+| [`test-failover`](test-failover.md) | would this VM actually boot on the other host | yes, and undoes it |
+| [`failover`](failover.md) | move a VM to the other host | yes |
+| [`failback`](failback.md) | move it home again | yes |
+| [`fence`](fence.md) | stop a returning host from starting its old copies | yes |
+| [`update`](update.md) | install a newer release on this host | yes |
+| [`check-update`](check-update.md) | is a newer release published | no |
+| [`version`](version.md) | which binary is this | no |
+
+Every command takes `--config <path>`; without it the configuration is `ripcord.yaml` beside
+the binary. Every mutating command takes `--dry-run`, and every one of them prints the plan and
+stops when given it.
+
+## Exit codes
+
+They are the same everywhere, and a scheduled task can act on them.
+
+| Code | Meaning |
+|---|---|
+| 0 | success — **including an unreachable peer**, which is a degraded state and not an error |
+| 1 | at least one critical rule is violated (`check`), or a test failover did not come up |
+| 2 | invalid invocation, or invalid or missing configuration |
+| 3 | local access failure — WMI, privileges, a timeout |
+| 4 | refused, or interrupted — **nothing was changed** |
+| 5 | a mutating operation left the host between two states — **a human has to look** |
+
+The last two are the ones that matter after a failure. 4 says the host is where it was; 5 says
+it is not, and names what to do about it. Re-running is safe either way: every mutating command
+re-derives where it is from what the hosts report, never from a stored position.
+
+## Two rules that shape all of this
+
+**Read-only by default.** Nothing mutates without a word typed in full — the node name for a
+failover, the verb for a service. There is no `--force` anywhere, and no flag that skips a
+verification.
+
+**Never silent.** A degraded state is printed, not swallowed. A rule that could not be
+evaluated is listed as unevaluated, never as satisfied: a reassuring false negative is the
+worst thing this tool can produce.

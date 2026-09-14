@@ -2,7 +2,7 @@
 
 Disaster recovery tool for a Hyper-V Replica host pair.
 Source specification: `.claude/ripcord-prompt.md` (reference; do not change without approval).
-Progress tracking: `docs/TRACKING.md`. Per-milestone detail: `docs/milestones/`.
+Progress tracking: `docs/TRACKING.md`. Command reference: `docs/commands/`.
 
 ## Language
 

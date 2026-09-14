@@ -1,0 +1,46 @@
+# `ripcord update`
+
+Install a newer release on this host.
+
+```
+ripcord update [--config <path>] [--dry-run]
+```
+
+Off unless `updates.install` says so — a **separate switch** from `updates.check`, because
+permission to look is not permission to replace the binary this host runs its failovers with.
+
+## What it does, in order
+
+Download the release and the detached signature beside it. **Verify that signature against a
+public key compiled into the running binary**, and stop there if it does not verify: nothing is
+moved and the host is where it was. Only then set the running binary aside — keeping it — and
+put the new one in its place. If that last move fails, the old one goes back.
+
+The key is compiled in rather than read from `ripcord.yaml`, so an attacker who can edit the
+configuration cannot change what this host accepts as genuine. A release with no signature, one
+that does not verify, or a host carrying no key at all are all refusals: there is no mode in
+which an unverified release is installed.
+
+The new version runs from the next service start, not from the command that installed it.
+
+## The consequence it prints every time
+
+Updating one host makes the pair disagree, and a failover spanning both is refused while it
+does. The command prints that above the prompt, in every pair state, and names the host to run
+next. It warns rather than refuses: the operator may be updating *because* of what went wrong,
+and what they must not do is find out afterwards.
+
+`ripcord status` shows both builds, so the skew is visible without being refused by it first.
+
+## The trust this rests on
+
+The signing key lives in the release workflow's secret. That stops a replaced asset and a
+tampered download; it does **not** stop an account with write access to the repository. That
+boundary is stated in [`SECURITY.md`](../../SECURITY.md) rather than implied.
+
+## Exit codes
+
+**3** when the download failed and the host was untouched. **4** when the signature did not
+verify, or a move failed before anything was set aside, or the rollback succeeded. **5** when
+the binary was set aside, a later move failed, *and* the rollback failed too — the message
+names the file to rename by hand.
