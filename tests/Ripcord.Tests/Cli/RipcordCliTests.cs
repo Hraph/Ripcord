@@ -420,6 +420,56 @@ public class RipcordCliTests
         Assert.DoesNotContain("intermediate state", run.Output, StringComparison.Ordinal);
     }
 
+    /// The one move that follows every configuration edit. The listener reads `ripcord.yaml`
+    /// once, when it starts, so an edited file changes nothing until this has run.
+    [Fact]
+    public async Task Service_restart_stops_and_starts_a_running_listener()
+    {
+        FakeDeploymentExecutor executor = new(Deployed());
+
+        CliRun run = await Run(["service", "restart"], deploymentExecutor: executor);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Equal([DeploymentAction.RestartService], executor.Applied);
+    }
+
+    /// `sc stop` on a stopped service is an error, and an operator asking for the
+    /// configuration to take effect means the same thing either way.
+    [Fact]
+    public async Task Service_restart_starts_a_listener_that_was_not_running()
+    {
+        FakeDeploymentExecutor executor = new(Deployed() with { ServiceRunning = false });
+
+        CliRun run = await Run(["service", "restart"], deploymentExecutor: executor);
+
+        Assert.Equal([DeploymentAction.StartService], executor.Applied);
+    }
+
+    [Fact]
+    public async Task Service_restart_on_a_host_with_no_service_says_so_and_does_nothing()
+    {
+        FakeDeploymentExecutor executor = new();
+
+        CliRun run = await Run(["service", "restart"], deploymentExecutor: executor);
+
+        Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
+        Assert.Empty(executor.Applied);
+        Assert.Contains("no listener service", run.Error, StringComparison.Ordinal);
+    }
+
+    /// It mutates, so it rehearses — and the rehearsal changes nothing.
+    [Fact]
+    public async Task Service_restart_dry_run_changes_nothing()
+    {
+        FakeDeploymentExecutor executor = new(Deployed());
+
+        CliRun run = await Run(["service", "restart", "--dry-run"], deploymentExecutor: executor);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Empty(executor.Applied);
+        Assert.Contains("Nothing was changed", run.Output, StringComparison.Ordinal);
+    }
+
     /// The command is a noun, and bare it changes nothing. Rule 3: an operator looking at a
     /// host must not be one keystroke from installing a service on it.
     [Fact]

@@ -76,6 +76,12 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             ("sc.exe", $"start {DeploymentPlan.ServiceName}"),
         ],
 
+        DeploymentAction.RestartService =>
+        [
+            ("sc.exe", $"stop {DeploymentPlan.ServiceName}"),
+            ("sc.exe", $"start {DeploymentPlan.ServiceName}"),
+        ],
+
         DeploymentAction.UpdateService =>
         [
             ("sc.exe", $"stop {DeploymentPlan.ServiceName}"),

@@ -31,6 +31,11 @@ public enum DeploymentAction
 {
     CreateService,
 
+    /// Stop, then start. The listener reads `ripcord.yaml` once, when it starts, so an edited
+    /// configuration changes nothing until this has run — and the operator who just edited the
+    /// file is the one who needs it, not a deployment.
+    RestartService,
+
     /// Separate from creating it. `sc create` and `sc start` are two things that can fail
     /// independently, and a step that does both reports neither: a create that succeeded
     /// followed by a start that did not would be reported as nothing having been done, on a
@@ -61,6 +66,35 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps)
     public const string FirewallRuleName = "Ripcord listener";
 
     public bool ChangesAnything => Steps.Count > 0;
+
+    /// Putting an edited configuration into effect, which is not a deployment: nothing about
+    /// the host changes, the listener simply reads the file again.
+    ///
+    /// A service that is not running is started rather than restarted — `sc stop` on a stopped
+    /// service is an error, and an operator asking for the configuration to take effect means
+    /// the same thing either way.
+    public static DeploymentPlan ToRestart(ObservedDeployment observed)
+    {
+        ArgumentNullException.ThrowIfNull(observed);
+
+        if (!observed.ServiceInstalled)
+        {
+            return new DeploymentPlan([]);
+        }
+
+        return new DeploymentPlan(
+        [
+            observed.ServiceRunning
+                ? new DeploymentStep(
+                    DeploymentAction.RestartService,
+                    $"Restart the '{ServiceName}' service",
+                    "the listener reads the configuration once, when it starts")
+                : new DeploymentStep(
+                    DeploymentAction.StartService,
+                    $"Start the '{ServiceName}' service",
+                    "it is installed and not running"),
+        ]);
+    }
 
     /// Re-running a correct deployment yields an empty plan: an installer that reinstalls
     /// every time is one nobody dares run twice. A wrong binary path, port or peer address is

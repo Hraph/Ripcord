@@ -466,6 +466,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             "" => this.ServiceState(args, output, error),
             "install" => this.Deploy(args[1..], output, error, removing: false),
             "remove" => this.Deploy(args[1..], output, error, removing: true),
+            "restart" => this.Restart(args[1..], output, error),
             _ => Unknown(verb, error),
         };
     }
@@ -474,7 +475,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
     {
         error.WriteLine(
             $"ripcord: 'service {verb}' is not a thing to do to the service. "
-            + "It is 'install' or 'remove', and neither is needed to look.");
+            + "It is 'install', 'remove' or 'restart', and none of them is needed to look.");
 
         return ExitCode.InvalidConfiguration;
     }
@@ -504,6 +505,62 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         output.Write(DeploymentRenderer.RenderState(observed, desired, outcome.Plan));
 
         return ExitCode.Success;
+    }
+
+    /// Putting an edited configuration into effect. Not a deployment: nothing about the host
+    /// changes, the listener simply reads the file again — which it only does when it starts.
+    ///
+    /// No typed confirmation. It is over in a second, it changes nothing that outlives it, and
+    /// the pair view on the other host goes offline for that second and comes back. Asking an
+    /// operator to type a node name for that is how a confirmation becomes a reflex, and a
+    /// reflex is what the failover ones must not be.
+    private ExitCode Restart(string[] args, TextWriter output, TextWriter error)
+    {
+        if (!TryReadOptions(args, out DeployOptions options, out string? optionError))
+        {
+            error.WriteLine($"ripcord: {optionError}");
+            return ExitCode.InvalidConfiguration;
+        }
+
+        ListenerDeployment deployment = new(ports.ConfigStore, ports.DeploymentExecutor);
+
+        DeploymentOutcome outcome = deployment.Plan(new DeploymentRequest(
+            options.ConfigurationPath ?? environment.DefaultConfigurationPath,
+            environment.MachineName,
+            environment.BinaryPath,
+            Remove: false));
+
+        if (outcome.Observed is not { } observed || outcome.Desired is not { } desired)
+        {
+            WriteDeploymentFailure(error, outcome);
+            return outcome.Code;
+        }
+
+        DeploymentPlan plan = DeploymentPlan.ToRestart(observed);
+
+        if (!plan.ChangesAnything)
+        {
+            error.WriteLine(
+                "ripcord: there is no listener service on this host to restart. "
+                + "Install it with 'ripcord service install'.");
+
+            return ExitCode.InvalidConfiguration;
+        }
+
+        output.Write(DeploymentRenderer.Render(plan, desired, removing: false, observed));
+
+        if (options.DryRun)
+        {
+            output.WriteLine("  Nothing was changed. Re-run without --dry-run to apply.");
+            return ExitCode.Success;
+        }
+
+        DeploymentResult result = deployment.Apply(plan, desired);
+
+        output.Write(DeploymentRenderer.RenderResult(
+            result.Applied, result.Failed, result.FailureMessage));
+
+        return result.Code;
     }
 
     private ExitCode Deploy(string[] args, TextWriter output, TextWriter error, bool removing)
@@ -1407,6 +1464,9 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         writer.WriteLine("                                     running, and from where");
         writer.WriteLine("  ripcord service install [--dry-run]");
         writer.WriteLine("  ripcord service remove [--dry-run]");
+        writer.WriteLine("  ripcord service restart [--dry-run]");
+        writer.WriteLine("                                     after editing ripcord.yaml: the");
+        writer.WriteLine("                                     listener reads it only at start");
         writer.WriteLine("  ripcord test-failover (--vm <name> | --all) [--dry-run]");
         writer.WriteLine("                        [--unattended]");
         writer.WriteLine("                                     boot a replica in isolation, then destroy it");
