@@ -20,7 +20,7 @@ public class DeploymentPlanTests
 
         Assert.Equal(
             [DeploymentAction.CreateService, DeploymentAction.CreateFirewallRule,
-             DeploymentAction.GrantSnapshotAccess],
+             DeploymentAction.GrantSnapshotAccess, DeploymentAction.StartService],
             plan.Steps.Select(step => step.Action));
         Assert.True(plan.ChangesAnything);
     }
@@ -148,11 +148,47 @@ public class DeploymentPlanTests
         }
     }
 
+    /// Installed, pointing at the right binary, and stopped. The plan that only compared
+    /// paths called this host correct, so re-running the command did nothing and the listener
+    /// stayed down — while the other host reported the pair offline, which reads as a network
+    /// fault rather than as a service somebody has to start.
+    [Fact]
+    public void A_service_that_is_installed_and_stopped_is_started()
+    {
+        DeploymentPlan plan = DeploymentPlan.For(
+            Desired, Matching() with { ServiceRunning = false });
+
+        DeploymentStep step = Assert.Single(plan.Steps);
+
+        Assert.Equal(DeploymentAction.StartService, step.Action);
+        Assert.Contains("not running", step.Reason, StringComparison.Ordinal);
+    }
+
+    /// Creating the service and starting it are two steps, not one. `sc create` can succeed
+    /// and `sc start` fail — the service does not answer, the binary is wrong, the account
+    /// cannot log on — and a single step reporting both would tell the operator nothing was
+    /// done on a host that now holds a registered service.
+    [Fact]
+    public void A_bare_host_is_given_the_service_and_then_told_to_start_it()
+    {
+        DeploymentPlan plan = DeploymentPlan.For(Desired, ObservedDeployment.Nothing);
+
+        Assert.Equal(
+            [DeploymentAction.CreateService, DeploymentAction.StartService],
+            plan.Steps.Select(step => step.Action).Where(action =>
+                action is DeploymentAction.CreateService or DeploymentAction.StartService));
+
+        // And the start is last of all: after the firewall rule and after the access it needs
+        // to the file it serves.
+        Assert.Equal(DeploymentAction.StartService, plan.Steps[^1].Action);
+    }
+
     private static ObservedDeployment Matching() => new(
         ServiceInstalled: true,
         ServiceBinaryPath: @"D:\Ripcord\ripcord.exe",
         FirewallRuleInstalled: true,
         FirewallPort: 7443,
         FirewallRemoteAddress: "192.0.2.11",
-        SnapshotReadableByService: true);
+        SnapshotReadableByService: true,
+        ServiceRunning: true);
 }

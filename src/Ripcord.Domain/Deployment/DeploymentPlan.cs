@@ -15,7 +15,13 @@ public sealed record ObservedDeployment(
     bool FirewallRuleInstalled,
     int? FirewallPort,
     string? FirewallRemoteAddress,
-    bool SnapshotReadableByService)
+    bool SnapshotReadableByService,
+
+    /// Whether the service is running, as distinct from installed. A listener that is
+    /// registered and stopped serves nothing, and the pair view on the other host degrades to
+    /// "offline" — which reads as a network problem rather than as a service somebody has to
+    /// start.
+    bool ServiceRunning = false)
 {
     public static ObservedDeployment Nothing { get; } =
         new(false, null, false, null, null, false);
@@ -24,6 +30,12 @@ public sealed record ObservedDeployment(
 public enum DeploymentAction
 {
     CreateService,
+
+    /// Separate from creating it. `sc create` and `sc start` are two things that can fail
+    /// independently, and a step that does both reports neither: a create that succeeded
+    /// followed by a start that did not would be reported as nothing having been done, on a
+    /// host that now holds a registered service.
+    StartService,
     UpdateService,
     RemoveService,
     CreateFirewallRule,
@@ -60,6 +72,9 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps)
 
         List<DeploymentStep> steps = [];
 
+        // Set when the service will need starting, and acted on last — see below.
+        string? start = null;
+
         // Order matters: the service exists before the port is opened, so the port is never
         // open onto nothing.
         if (!observed.ServiceInstalled)
@@ -69,6 +84,8 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps)
                 $"Create the '{ServiceName}' service running '{desired.BinaryPath} serve' "
                 + $"as {ServiceAccount}",
                 "no service is installed on this host"));
+
+            start = "a service that is registered and stopped serves nothing";
         }
         else if (!SamePath(observed.ServiceBinaryPath, desired.BinaryPath))
         {
@@ -76,6 +93,13 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps)
                 DeploymentAction.UpdateService,
                 $"Point the '{ServiceName}' service at '{desired.BinaryPath} serve'",
                 $"it currently runs '{observed.ServiceBinaryPath}'"));
+        }
+        else if (!observed.ServiceRunning)
+        {
+            // The case a plan that only compared paths could not see: installed, correct, and
+            // stopped. Re-running the command is then what starts it, which is what an
+            // operator expects of a command that reconciles.
+            start = "it is installed and not running";
         }
 
         if (!observed.FirewallRuleInstalled)
@@ -101,6 +125,16 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps)
                 DeploymentAction.GrantSnapshotAccess,
                 $"Grant {ServiceAccount} read access to '{desired.SnapshotPath}'",
                 "the service account cannot read the snapshot it is meant to serve"));
+        }
+
+        // Started last, after the rule that lets the peer in and the access it needs to the
+        // file it serves. Starting it first would bring up a listener that cannot read its own
+        // snapshot, and the peer would be told this host has nothing to say rather than that
+        // it is half-deployed.
+        if (start is not null)
+        {
+            steps.Add(new DeploymentStep(
+                DeploymentAction.StartService, $"Start the '{ServiceName}' service", start));
         }
 
         return new DeploymentPlan(steps);

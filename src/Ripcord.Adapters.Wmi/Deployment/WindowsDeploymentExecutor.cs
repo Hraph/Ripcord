@@ -67,6 +67,10 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
                 $"create {DeploymentPlan.ServiceName} "
                 + $"binPath= \"\\\"{desired.BinaryPath}\\\" serve\" start= auto "
                 + $"obj= \"{DeploymentPlan.ServiceAccount}\""),
+        ],
+
+        DeploymentAction.StartService =>
+        [
             ("sc.exe", $"start {DeploymentPlan.ServiceName}"),
         ],
 
