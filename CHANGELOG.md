@@ -19,6 +19,13 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
   host. Milestone 1b designed the fix and it was never built; it is built now, in the
   composition root only. Same binary, same verb, and a verb that returns on its own stops the
   service rather than leaving it reported as running with nothing behind it.
+- `ripcord deploy-listener` says what is on the host before what would change about it: whether
+  the service is installed, whether it is **running**, the command line it is registered with,
+  the firewall rule and the snapshot access. Installed and running are two facts — a registered
+  service that is stopped serves nothing, and the other host reports the pair offline, which
+  reads as a network fault rather than as a service somebody has to start. The running state is
+  read from `Win32_Service.Started`, a boolean, rather than from `sc query`, whose words are in
+  the language of the host.
 - A service that stops because its own verb failed now exits with that code, and writes what
   happened to `listener.log` beside the binary. It exited 0 whatever it decided, so Windows
   could not tell a configuration that will never load from an operator stopping the service on
