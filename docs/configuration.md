@@ -78,6 +78,9 @@ expiry: without one, an acknowledgement is a rule deleted by the back door.
 
 **`dashboard`** — see [`dashboard`](commands/dashboard.md). Off by default, no address key.
 
+**`diagnostics`** — see [the diagnostic log](diagnostics.md). **On** by default, unlike every
+other optional block, and the only section that refuses nothing it is given.
+
 ## After an edit
 
 The listener reads this file **once, when it starts**: run

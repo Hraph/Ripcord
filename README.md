@@ -72,6 +72,7 @@ prints its whole plan without touching anything. The exit codes are the same eve
 listed once, in [the command index](docs/commands/README.md#exit-codes).
 
 Also: [alerting](docs/alerting.md) · [`ripcord.yaml`](docs/configuration.md) ·
+[the diagnostic log](docs/diagnostics.md) ·
 [releasing and updating a pair](docs/RELEASING.md) · [the threat model](SECURITY.md).
 
 ## Where it stands

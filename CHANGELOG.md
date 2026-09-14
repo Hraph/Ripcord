@@ -11,6 +11,23 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ## Unreleased
 
+### Added
+
+- **A diagnostic log**, `ripcord.log` beside the binary, on by default and configurable under
+  `diagnostics` in `ripcord.yaml`. Every command records what it ran and what it exited with;
+  every failure the console only had room for one sentence about records the exception behind
+  it — type, message and stack. It is written to be sent: URLs are cut down to their host and
+  anything whose key names a password or a token is removed. It refuses nothing and rotates
+  once, because a log that stops a command has become the outage. See `docs/diagnostics.md`.
+
+### Fixed
+
+- **`ripcord status` failed outright when one optional column could not be read.** The pending
+  replication size comes from `GetReplicationStatisticsEx`, whose embedded-instance parameter
+  was written blind against the MOF; a host that refuses it was left reporting nothing at all
+  about a pair that was replicating perfectly well. The column now degrades to unknown — as it
+  already did for a VM with no relationship — and the CIM error goes to the log.
+
 ### Changed
 
 - **The changelog no longer gates a release.** It is used when it describes the version being

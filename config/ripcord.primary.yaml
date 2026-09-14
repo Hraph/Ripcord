@@ -50,9 +50,11 @@ listener:
   port: 7443
   local_certificate_thumbprint: "1111AAAA2222BBBB3333CCCC4444DDDD5555EEEE"
   peer_certificate_thumbprint: "AAAA1111BBBB2222CCCC3333DDDD4444EEEE5555"
-  # Written by `ripcord status`, served by the listener. The service account gets read access
-  # to this one file and nothing else.
-  snapshot_path: "D:\\Ripcord\\state.json"
+  # Written by `ripcord status`, served by the listener. Left out, it sits beside this file,
+  # with the log and the audit trail. The service account is granted read access to the folder
+  # holding it: the snapshot is rewritten by moving a new file over the old one, which would
+  # drop an entry set on the file itself.
+  # snapshot_path: "D:\\Ripcord\\state.json"
 
 vms:
   - name: VM-DC-01
@@ -140,3 +142,19 @@ storage:
 #   port: 7080
 #   # Each refresh re-reads Hyper-V. Between 5 and 86400 seconds.
 #   refresh_sec: 30
+
+# The diagnostic log. Unlike everything above it, this section is on by default and refuses
+# nothing: a value out of range is replaced rather than reported, because a host that will not
+# run because its log size is silly is a host with no log and no command either.
+#
+# What goes in it: every command with its arguments and its exit code, and the full exception
+# behind any failure the console only had room for one sentence about. That is the file to send
+# when something is wrong on a host nobody can attach a debugger to. Webhook URLs and anything
+# whose key names a password or a token are removed on the way in, so it can be sent as it is.
+#
+# Defaults, applied when this block is absent: `ripcord.log` beside the binary, 5 MB, rotated
+# once into `ripcord.log.1` and no further.
+# diagnostics:
+#   enabled: true
+#   path: D:\Ripcord\ripcord.log
+#   max_size_mb: 5

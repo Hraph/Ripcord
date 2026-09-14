@@ -41,6 +41,9 @@ peer's *published* view, with its age, and marks it `STALE` past `peer.offline_a
 
 A host with the listener switched off degrades to the local half rather than failing.
 
+When it exits **3**, the console says which read failed and `ripcord.log` says why — the
+exception, its type and its stack. See [the diagnostic log](../diagnostics.md).
+
 ## Exit codes
 
 Always **0** on a successful read, including when the peer is unreachable — a scheduled

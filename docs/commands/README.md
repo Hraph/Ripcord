@@ -39,6 +39,13 @@ The last two are the ones that matter after a failure. 4 says the host is where 
 it is not, and names what to do about it. Re-running is safe either way: every mutating command
 re-derives where it is from what the hosts report, never from a stored position.
 
+## When one line is not enough
+
+Every command writes what it ran, what it exited with, and the full exception behind any
+failure to `ripcord.log` beside the binary. The console has room for one sentence; that file
+has the type, the stack and the CIM error, and it is written to be sent — secrets are taken out
+on the way in. See [the diagnostic log](../diagnostics.md).
+
 ## Two rules that shape all of this
 
 **Read-only by default.** Nothing mutates without a word typed in full — the node name for a
