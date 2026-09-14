@@ -50,6 +50,11 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         {
             (int code, string output) = Run(file, arguments);
 
+            if (code != 0 && ServiceCommand.LeavesNothingToDo(change.Action, code))
+            {
+                continue;
+            }
+
             if (code != 0)
             {
                 throw new InvalidOperationException(
@@ -148,9 +153,11 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
     /// words in the host's language, and a French Windows would answer something this code
     /// would read as "not running" for ever.
     ///
-    /// Unreadable is reported as not running. The consequence is one redundant `sc start` on a
-    /// service that is already up, which does nothing; the opposite default would leave a
-    /// stopped listener alone and call the deployment correct.
+    /// Unreadable is reported as not running: the opposite default would leave a stopped
+    /// listener alone and call the deployment correct. The cost is one redundant `sc start`,
+    /// which `sc` reports as a failure (1056) and `ServiceCommand` reads as the state the step
+    /// was asking for — so a transient failure to read this does not turn a healthy host into
+    /// a deployment that reports itself broken.
     private static bool ServiceIsStarted()
     {
         try
