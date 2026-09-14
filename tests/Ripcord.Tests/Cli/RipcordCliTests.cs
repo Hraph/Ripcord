@@ -352,7 +352,7 @@ public class RipcordCliTests
         Assert.Equal(ExitCode.Success, run.Code);
         Assert.Equal(
             [DeploymentAction.CreateService, DeploymentAction.CreateFirewallRule,
-             DeploymentAction.GrantSnapshotAccess],
+             DeploymentAction.GrantSnapshotAccess, DeploymentAction.StartService],
             executor.Applied);
     }
 
@@ -472,7 +472,8 @@ public class RipcordCliTests
         FirewallRuleInstalled: true,
         FirewallPort: 7443,
         FirewallRemoteAddress: "192.0.2.11",
-        SnapshotReadableByService: true);
+        SnapshotReadableByService: true,
+        ServiceRunning: true);
 
     private const string DefaultConfigPath = "/opt/ripcord/ripcord.yaml";
 
