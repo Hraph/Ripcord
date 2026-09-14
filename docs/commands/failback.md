@@ -16,8 +16,7 @@ are identical.
 
 After an **unplanned** failover the pair is not protected: replication was never reversed, so
 there is nothing to fail back *from*. Re-establishing it is `reprotect`, which **is not
-built** — see the designed-but-unbuilt list in [`TRACKING.md`](../TRACKING.md). Until it
-exists, that step is done by hand, and `failback` is refused by the precondition that notices
+built**. Until it exists, that step is done by hand, and `failback` is refused by the precondition that notices
 the pair is unprotected.
 
 ## Exit codes

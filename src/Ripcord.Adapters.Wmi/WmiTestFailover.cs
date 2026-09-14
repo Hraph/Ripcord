@@ -16,7 +16,7 @@ namespace Ripcord.Adapters.Wmi;
 /// Microsoft `hyperv_v2` reference and have never met a host; milestone 1 established that
 /// three such assumptions out of three were wrong. They are gathered here rather than spread
 /// through the file so a single session on the real hardware can correct them in one place.
-/// See the V-items in `docs/TRACKING.md`.
+/// One of the facts this adapter asserts from documentation and has never observed.
 internal static class WmiTestFailover
 {
     private const string Namespace = @"root\virtualization\v2";

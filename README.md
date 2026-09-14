@@ -40,14 +40,14 @@ is not.
 Microsoft reference, and a round of checking names against that reference found four that did
 not exist — including one whose absence meant a critical rule had never fired at all. Treat the
 adapters as unverified until the lab says otherwise; the outstanding facts are listed as V-items
-in [`docs/TRACKING.md`](docs/TRACKING.md).
+in the project's own tracking notes, which are not published.
 
 One limitation worth knowing before reading further: **a planned failover cannot yet cross from
 the primary to the replica.** `Start-VMFailover -Prepare` leaves no state this binary can name,
 so the replica cannot observe that the primary's half has run, and refuses rather than assuming.
 It is question Q5, and it is pinned by a test rather than left silent.
 
-Progress and decisions: [`docs/TRACKING.md`](docs/TRACKING.md).
+Known gaps are named where they matter: each command page says what it cannot do.
 Command reference: [`docs/commands/`](docs/commands/).
 Specification review before coding: [`docs/COHERENCE.md`](docs/COHERENCE.md).
 
