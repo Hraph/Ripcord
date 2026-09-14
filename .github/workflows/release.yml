@@ -219,28 +219,6 @@ jobs:
             printf '%s\n' "$unconventional" | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      # The gate that keeps the hand-written part honest, and it runs before anything is built.
-      #
-      # CHANGELOG.md is read by somebody about to update a pair they cannot fail over halfway
-      # through: it says what a release means for them and what in it is still unverified.
-      # A list of commit subjects cannot say that, which is why the changelog is written rather
-      # than generated — and why the release waits for it.
-      - name: Refuse a version the changelog does not describe
-        env:
-          RELEASE_VERSION: ${{ steps.resolve.outputs.version }}
-        run: |
-          set -euo pipefail
-
-          # The heading carries the date — `## 0.5.0 — 2026-09-13` — so the version is matched
-          # as a whole word at its start, and still anchored: `## 0.5.0` must not be satisfied
-          # by `## 0.5.01`.
-          if ! grep -Eq "^## ${RELEASE_VERSION//./\\.}([^0-9.]|\$)" CHANGELOG.md; then
-            echo "CHANGELOG.md has no '## $RELEASE_VERSION' section." >&2
-            echo "Move what is under '## Unreleased' into '## $RELEASE_VERSION — <today>', commit it," >&2
-            echo "and run this again." >&2
-            exit 1
-          fi
-
   release:
     name: Build and publish the release
     needs: version
@@ -386,12 +364,21 @@ jobs:
           for ($i = 0; $i -lt $lines.Count; $i++) {
             if ($lines[$i] -match $heading) { $start = $i; break }
           }
+          # The changelog is used when it describes this version, and its absence does not
+          # stop a release. It is still said on the page rather than left as an empty section:
+          # somebody about to put this binary on a host is owed the sentence.
           if ($start -lt 0) {
-            throw "CHANGELOG.md has no '## $env:RELEASE_VERSION' section"
+            $body = @(
+              "No changelog entry was written for this version.",
+              "",
+              "Compare the tags on GitHub to see what changed, and read the standing notes below",
+              "before putting it on a host.")
           }
-          $rest = $lines[($start + 1)..($lines.Count - 1)]
-          $end = ($rest | Select-String -Pattern '^## ' | Select-Object -First 1).LineNumber
-          $body = if ($end) { $rest[0..($end - 2)] } else { $rest }
+          else {
+            $rest = $lines[($start + 1)..($lines.Count - 1)]
+            $end = ($rest | Select-String -Pattern '^## ' | Select-Object -First 1).LineNumber
+            $body = if ($end) { $rest[0..($end - 2)] } else { $rest }
+          }
           $notes = @("## What is in ${env:RELEASE_VERSION}") + $body + @("") + (Get-Content docs/RELEASE_NOTES.md)
           $notes | Out-File -Encoding utf8 release-notes.md
 

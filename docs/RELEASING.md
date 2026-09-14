@@ -87,7 +87,8 @@ so it takes an explicit `version` input. A range with nothing but `docs`, `test`
 
 Then:
 
-1. Update `CHANGELOG.md`: move `Unreleased` into `## <version> — <date>`.
+1. Update `CHANGELOG.md`: move `Unreleased` into `## <version> — <date>`. Nothing enforces
+   this; the release page simply says so when it is skipped.
 2. Commit and push it to `main`.
 3. Run the workflow again with `dry_run` **off**.
 
@@ -110,8 +111,12 @@ hatch, not the usual route.
 `CHANGELOG.md` is read by somebody about to update a pair they cannot fail over halfway through.
 It says what a release means for them and what in it is still unverified — neither of which a
 list of commit subjects can say. So the workflow puts the commits in the run summary as the raw
-material, and **refuses to release a version the changelog does not describe**. That check runs
-before anything is compiled, on both routes in.
+material, and the changelog stays hand-written.
+
+**It does not gate the release.** A version the changelog describes has its section on the
+release page; one it does not describe is released anyway, with "no changelog entry was written
+for this version" where the section would have been. Said rather than left blank, because
+somebody about to put that binary on a host is owed the sentence.
 
 ### Why the tag is not pushed from a job
 

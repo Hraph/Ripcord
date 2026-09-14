@@ -11,6 +11,14 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ## Unreleased
 
+### Changed
+
+- **The changelog no longer gates a release.** It is used when it describes the version being
+  released and skipped when it does not — with "no changelog entry was written for this
+  version" on the release page in place of the section, rather than an empty one. Twice in one
+  evening the gate stopped a release for a file that was behind the code, which is a cost paid
+  every time to catch something a reader of the release page can see for themselves.
+
 ### Fixed
 
 - **The listener service could never start.** `sc start` waits for the service control manager
