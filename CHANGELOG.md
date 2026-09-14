@@ -235,7 +235,8 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ### Notes
 
-- Milestone 7 was gated on an evaluation of Windows Admin Center, recorded in
-  `docs/milestones/milestone-7.md`. WAC is supported and its Virtualization Mode does cover
+- `ripcord dashboard` was gated on an evaluation of Windows Admin Center, which was carried
+  out before any of it was written. WAC is supported and its Virtualization Mode does cover
   Hyper-V Replica, but it is still public preview, it assumes live connectivity to both hosts,
-  and it has no equivalent of the pre-failover check. The milestone proceeds.
+  and it has no equivalent of the pre-failover check — so it does not answer for a pair whose
+  peer is down, which is the case this tool exists for.
