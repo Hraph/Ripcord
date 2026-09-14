@@ -5,9 +5,9 @@ using Ripcord.Ports.Updates;
 
 namespace Ripcord.Adapters.Update;
 
-/// The latest published release, read from the GitHub API. It reads a version string and
-/// stops there: nothing downloads, nothing installs, so the worst this can produce is a wrong
-/// version number rather than a hostile binary running with Hyper-V privileges.
+/// The latest published release, read from the GitHub API. It reads a version string and stops
+/// there — downloading and installing are `ripcord update`, behind a second switch and a
+/// signature check — so the worst *this* can produce is a wrong version number.
 ///
 /// **The repository is addressed by numeric id, never by `owner/name`.** A rename leaves a
 /// permanent redirect that HttpClient follows, so the obvious form keeps working right up to

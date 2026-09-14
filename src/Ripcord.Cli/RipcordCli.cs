@@ -264,9 +264,11 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         }
     }
 
-    /// Reports that a newer release exists, and nothing more: download and install stay
-    /// manual, with the signature verified by hand. Switched off unless the configuration
-    /// says otherwise — a host with no outbound access is the design, not a limitation.
+    /// Reports that a newer release exists, and nothing more. Installing it is `ripcord
+    /// update`, which is a separate switch in the configuration as well as a separate verb:
+    /// permission to look is not permission to replace the binary this host fails over with.
+    /// Switched off unless the configuration says otherwise — a host with no outbound access
+    /// is the design, not a limitation.
     private async Task<ExitCode> CheckUpdateAsync(
         string[] args, TextWriter output, TextWriter error, CancellationToken cancellationToken)
     {
