@@ -15,7 +15,10 @@ public sealed record UpdateOutcome(
     ExitCode Code,
     UpdateStatus? Status,
     IReadOnlyList<ConfigurationError> Errors,
-    string? FailureMessage);
+    string? FailureMessage,
+    /// The tag the feed named, whether or not it is newer than this build. Carried so the
+    /// answer can be written down: it is what every later command reads instead of looking.
+    string? Version = null);
 
 /// Asks whether a newer release exists, when the operator has said this host may ask. It
 /// reports and stops there: nothing downloads, nothing installs, and the exposure stays
@@ -66,6 +69,7 @@ public sealed class UpdateQuery(IConfigStore configStore, IReleaseFeed feed)
                 : ExitCode.Success,
             status,
             [],
-            null);
+            null,
+            lookup.Version);
     }
 }

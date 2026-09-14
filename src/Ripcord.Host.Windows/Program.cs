@@ -98,6 +98,8 @@ internal static class Program
                     $"ripcord/{BuildInfo.VersionWithCommit}",
                     DownloadTimeout,
                     HttpReleaseSource.DefaultMaximumBytes),
+                new FileUpdateNoticeStore(
+                    Path.Combine(AppContext.BaseDirectory, "update-notice.json")),
                 new FileBinarySwap(),
                 clock),
             new CliEnvironment(

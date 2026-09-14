@@ -189,6 +189,7 @@ public sealed class UpdateCliTests
                 new MemoryAlertStateStore(),
                 feed ?? StubReleaseFeed.Publishing("0.2.0"),
                 source ?? Source.Genuine(),
+                new MemoryUpdateNoticeStore(),
                 swap ?? new Swap(),
                 new FixedClock(Now)),
             new CliEnvironment(

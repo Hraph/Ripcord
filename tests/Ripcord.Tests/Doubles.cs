@@ -85,3 +85,13 @@ public sealed class NoBinarySwap : IBinarySwap
     {
     }
 }
+
+/// Remembers what it was told, which is all the real one does across two processes.
+public sealed class MemoryUpdateNoticeStore(UpdateNotice? known = null) : IUpdateNoticeStore
+{
+    public UpdateNotice? Notice { get; private set; } = known;
+
+    public UpdateNotice? Read() => this.Notice;
+
+    public void Write(UpdateNotice notice) => this.Notice = notice;
+}

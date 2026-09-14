@@ -21,7 +21,11 @@ public static class StatusRenderer
     private const int LagColumn = 6;
     private const int PendingColumn = 8;
 
-    public static string Render(PairView view, TimeSpan offlineAfter, DateTimeOffset now)
+    public static string Render(
+        PairView view,
+        TimeSpan offlineAfter,
+        DateTimeOffset now,
+        string? updateNotice = null)
     {
         ArgumentNullException.ThrowIfNull(view);
 
@@ -29,12 +33,28 @@ public static class StatusRenderer
 
         output.AppendLine(Banner(now));
         output.AppendLine(VersionLine());
+        AppendUpdateNotice(output, updateNotice);
         output.AppendLine();
         AppendHost(output, "LOCAL", view.Local, offlineAfter, now);
         output.AppendLine();
         AppendHost(output, "PEER", view.Peer, offlineAfter, now, view.PeerCapturedAt);
 
         return Layout.Rendered(output);
+    }
+
+    /// Beside the version line, because that is what it is about, and below the banner
+    /// rather than above it: an update is never the most important thing on this screen.
+    internal static void AppendUpdateNotice(StringBuilder output, string? notice)
+    {
+        if (notice is null)
+        {
+            return;
+        }
+
+        foreach (string line in Layout.Wrap(notice, Layout.Width - Layout.Indent))
+        {
+            output.AppendLine(Layout.Spaces(Layout.Indent) + line);
+        }
     }
 
     private static string Banner(DateTimeOffset now) =>

@@ -13,6 +13,11 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ### Fixed
 
+- `status` and `check` say one line when a newer release has been found — by `check-update`,
+  which now writes what it saw beside the binary. No command makes a network call of its own:
+  on hosts meant to have no outbound access, checking at startup would put a fifteen-second
+  timeout in front of every command, including the ones typed during an outage.
+
 - **`install.ps1` could not be parsed, so the one-liner in the README died at load.** An
   operator warning added in 0.2.0 was written with its `+` at the start of a continuation
   line; PowerShell ends a statement at the newline unless the line *ends* with the operator, so

@@ -430,6 +430,16 @@ is checking is worse than one that plainly is not. It addresses the repository b
 rather than by `owner/name`, because a rename leaves a redirect that stops failing — and starts
 returning a stranger's releases — the day somebody recreates the abandoned name.
 
+What `check-update` finds is **written down beside the binary**, and `status` and `check` then
+say one line about it. Neither of them looks: no command makes a network call while it runs,
+because these hosts have no outbound access and a fifteen-second timeout in front of a command
+somebody typed during an incident is worse than not knowing. So the line appears only if
+something looked earlier — schedule it beside the alerting task:
+
+```
+schtasks /create /tn "ripcord check-update" /tr "\"C:\Program Files\Ripcord\ripcord.exe\" check-update" /sc daily /st 06:00 /ru SYSTEM
+```
+
 `ripcord update` installs one. It is off unless `updates.install` says otherwise — a separate
 switch from `updates.check`, because permission to look is not permission to replace the binary
 this host runs its failovers with — and it asks for the node name to be typed. It downloads the

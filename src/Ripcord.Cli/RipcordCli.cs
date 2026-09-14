@@ -67,6 +67,7 @@ public sealed record RipcordPorts(
     IAlertStateStore AlertState,
     IReleaseFeed ReleaseFeed,
     IReleaseSource ReleaseSource,
+    IUpdateNoticeStore UpdateNotices,
     IBinarySwap BinarySwap,
     IClock Clock);
 
@@ -186,7 +187,10 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         if (outcome.Rendered is { } rendered)
         {
             output.Write(StatusRenderer.Render(
-                rendered.View, rendered.Configuration.Peer.OfflineAfter, ports.Clock.UtcNow));
+                rendered.View,
+                rendered.Configuration.Peer.OfflineAfter,
+                ports.Clock.UtcNow,
+                this.KnownUpdate()));
             return outcome.Code;
         }
 
@@ -220,7 +224,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         if (outcome.Report is { } report)
         {
-            output.Write(CheckRenderer.Render(report));
+            output.Write(CheckRenderer.Render(report, this.KnownUpdate()));
 
             if (options.Notify)
             {
@@ -280,6 +284,14 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
                     path, environment.MachineName, this.LocalBuild.Version),
                 cancellationToken)
             .ConfigureAwait(false);
+
+        // Written down rather than only printed: nothing on these hosts looks on its own and
+        // no other command looks while it runs, so this is the only way `status` and `check`
+        // can mention a release at all.
+        if (outcome.Version is { Length: > 0 } published)
+        {
+            ports.UpdateNotices.Write(new UpdateNotice(published, ports.Clock.UtcNow));
+        }
 
         if (outcome.Code == ExitCode.Success && outcome.Status is { } status)
         {
@@ -1015,6 +1027,13 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
     /// in exactly the way nobody thinks to check.
     internal BuildIdentity LocalBuild =>
         environment.Build ?? new BuildIdentity(BuildInfo.Version, BuildInfo.CommitHash);
+
+    /// What the last look found, if it is still worth saying. No network: a command run
+    /// during an incident on a host with no outbound access must not wait fifteen seconds to
+    /// find out about a release.
+    private string? KnownUpdate() =>
+        Domain.Updates.UpdateNotices.For(
+            ports.UpdateNotices.Read(), this.LocalBuild.Version, ports.Clock.UtcNow);
 
     private bool Confirmed(TextWriter output, TextWriter error, string consequence)
     {

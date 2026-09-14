@@ -248,6 +248,7 @@ public class TestFailoverCliTests
                 new MemoryAlertStateStore(),
                 StubReleaseFeed.Unreachable(),
                 new NoReleaseSource(),
+                new MemoryUpdateNoticeStore(),
                 new NoBinarySwap(),
                 new FixedClock(Now)),
             new CliEnvironment(

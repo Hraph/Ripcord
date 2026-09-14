@@ -18,13 +18,13 @@ public static class CheckRenderer
 
     private const int LabelColumn = 12;
 
-    public static string Render(CheckReport report)
+    public static string Render(CheckReport report, string? updateNotice = null)
     {
         ArgumentNullException.ThrowIfNull(report);
 
         StringBuilder output = new();
 
-        AppendHeader(output, report);
+        AppendHeader(output, report, updateNotice);
         AppendNotes(output, report);
 
         AppendSection(output, "CRITICAL", report.Of(Severity.Critical));
@@ -37,10 +37,12 @@ public static class CheckRenderer
         return Layout.Rendered(output);
     }
 
-    private static void AppendHeader(StringBuilder output, CheckReport report)
+    private static void AppendHeader(
+        StringBuilder output, CheckReport report, string? updateNotice)
     {
         output.AppendLine(Layout.Banner("RIPCORD CHECK", Now(report)));
         output.AppendLine($"ripcord {BuildInfo.VersionWithCommit}");
+        StatusRenderer.AppendUpdateNotice(output, updateNotice);
         output.AppendLine();
 
         // The mode is the first thing to read: every other line means something different

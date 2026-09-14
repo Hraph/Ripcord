@@ -14,6 +14,7 @@ using Ripcord.Domain.Pairing;
 using Ripcord.Ports.Dashboard;
 using Ripcord.Ports.Deployment;
 using Ripcord.Ports.Alerting;
+using Ripcord.Domain.Updates;
 using Ripcord.Ports.Updates;
 using Ripcord.Ports.Pairing;
 
@@ -592,6 +593,69 @@ public class RipcordCliTests
         Assert.Contains("WMI refused the query", server.Page!, StringComparison.Ordinal);
     }
 
+    /// Nothing on these hosts looks for a release on its own, and no command looks while it
+    /// runs — a fifteen-second timeout on a host with no outbound access, in front of a
+    /// command somebody typed during an incident, is the thing this design exists to avoid.
+    /// So `check-update` writes down what it found, and everything else reads that.
+    [Fact]
+    public async Task Check_update_writes_down_what_it_found()
+    {
+        MemoryUpdateNoticeStore notices = new();
+
+        await Run(
+            ["check-update"],
+            configStore: new RecordingConfigStore(updates: true),
+            releaseFeed: StubReleaseFeed.Publishing("9.9.9"),
+            updateNotices: notices);
+
+        Assert.Equal("9.9.9", notices.Notice!.Version);
+    }
+
+    [Fact]
+    public async Task Status_mentions_a_release_somebody_looked_for_earlier()
+    {
+        CliRun run = await Run(
+            ["status"],
+            updateNotices: new MemoryUpdateNoticeStore(new UpdateNotice("9.9.9", Now.AddDays(-1))));
+
+        Assert.Contains("9.9.9 is available", run.Output, StringComparison.Ordinal);
+        Assert.Contains("ripcord update", run.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Check_mentions_it_too()
+    {
+        CliRun run = await Run(
+            ["check"],
+            updateNotices: new MemoryUpdateNoticeStore(new UpdateNotice("9.9.9", Now.AddDays(-1))));
+
+        Assert.Contains("9.9.9 is available", run.Output, StringComparison.Ordinal);
+    }
+
+    /// A host that has never looked says nothing at all, which is every host until somebody
+    /// switches `updates.check` on and schedules it.
+    [Fact]
+    public async Task A_host_that_never_looked_says_nothing_about_updates()
+    {
+        CliRun run = await Run(["status"]);
+
+        Assert.DoesNotContain("is available", run.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("ripcord update", run.Output, StringComparison.Ordinal);
+    }
+
+    /// The file still names the release this host just installed. Repeating it would send
+    /// somebody to run an update that has already happened.
+    [Fact]
+    public async Task A_release_this_host_already_runs_is_not_mentioned()
+    {
+        CliRun run = await Run(
+            ["status"],
+            updateNotices: new MemoryUpdateNoticeStore(
+                new UpdateNotice(BuildInfo.Version, Now.AddDays(-1))));
+
+        Assert.DoesNotContain("is available", run.Output, StringComparison.Ordinal);
+    }
+
     private static async Task<CliRun> Run(
         string[] args,
         string machineName = FakeScenarios.LocalHostName,
@@ -604,6 +668,7 @@ public class RipcordCliTests
         IReleaseFeed? releaseFeed = null,
         IDashboardServer? dashboardServer = null,
         IReleaseSource? releaseSource = null,
+        IUpdateNoticeStore? updateNotices = null,
         IBinarySwap? binarySwap = null,
         CancellationToken cancellationToken = default)
     {
@@ -627,6 +692,7 @@ public class RipcordCliTests
                 alertState ?? new MemoryAlertStateStore(),
                 releaseFeed ?? StubReleaseFeed.Unreachable(),
                 releaseSource ?? new NoReleaseSource(),
+                updateNotices ?? new MemoryUpdateNoticeStore(),
                 binarySwap ?? new NoBinarySwap(),
                 new FixedClock(Now)),
             new CliEnvironment(
