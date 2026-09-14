@@ -140,8 +140,8 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
                 return await this.DashboardAsync(args[1..], output, error, cancellationToken)
                     .ConfigureAwait(false);
 
-            case "deploy-listener":
-                return this.DeployListener(args[1..], output, error);
+            case "service":
+                return this.Service(args[1..], output, error);
 
             case "update":
                 return await this.UpdateAsync(args[1..], output, error, cancellationToken)
@@ -451,13 +451,70 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
                     outcome.Errors.Select(error => $"{error.Path} {error.Message}".Trim()))
                 : "the pair could not be read");
 
-    private ExitCode DeployListener(string[] args, TextWriter output, TextWriter error)
+    /// The listener service: what it is doing, and the two things that change it.
+    ///
+    /// Bare, it reports and changes nothing — rule 3, and the question an operator asks first.
+    /// `install` and `remove` are words rather than flags because both mutate a host that may
+    /// be running a domain controller, and a word is harder to type by accident than a flag
+    /// next to the one you meant.
+    private ExitCode Service(string[] args, TextWriter output, TextWriter error)
+    {
+        string verb = args.Length > 0 && !args[0].StartsWith('-') ? args[0] : "";
+
+        return verb switch
+        {
+            "" => this.ServiceState(args, output, error),
+            "install" => this.Deploy(args[1..], output, error, removing: false),
+            "remove" => this.Deploy(args[1..], output, error, removing: true),
+            _ => Unknown(verb, error),
+        };
+    }
+
+    private static ExitCode Unknown(string verb, TextWriter error)
+    {
+        error.WriteLine(
+            $"ripcord: 'service {verb}' is not a thing to do to the service. "
+            + "It is 'install' or 'remove', and neither is needed to look.");
+
+        return ExitCode.InvalidConfiguration;
+    }
+
+    /// Read-only, and the reason this command is a noun. Installed and running are two facts,
+    /// and an operator asking "is the listener up" must not have to read a deployment plan
+    /// backwards to find out.
+    private ExitCode ServiceState(string[] args, TextWriter output, TextWriter error)
+    {
+        if (!TryReadConfigurationPath(args, out string path, out string? optionError))
+        {
+            error.WriteLine($"ripcord: {optionError}");
+            return ExitCode.InvalidConfiguration;
+        }
+
+        ListenerDeployment deployment = new(ports.ConfigStore, ports.DeploymentExecutor);
+
+        DeploymentOutcome outcome = deployment.Plan(new DeploymentRequest(
+            path, environment.MachineName, environment.BinaryPath, Remove: false));
+
+        if (outcome.Observed is not { } observed || outcome.Desired is not { } desired)
+        {
+            WriteDeploymentFailure(error, outcome);
+            return outcome.Code;
+        }
+
+        output.Write(DeploymentRenderer.RenderState(observed, desired, outcome.Plan));
+
+        return ExitCode.Success;
+    }
+
+    private ExitCode Deploy(string[] args, TextWriter output, TextWriter error, bool removing)
     {
         if (!TryReadOptions(args, out DeployOptions options, out string? optionError))
         {
             error.WriteLine($"ripcord: {optionError}");
             return ExitCode.InvalidConfiguration;
         }
+
+        options = options with { Remove = removing };
 
         ListenerDeployment deployment = new(ports.ConfigStore, ports.DeploymentExecutor);
 
@@ -1200,7 +1257,6 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
     {
         string? path = null;
         bool dryRun = false;
-        bool remove = false;
         error = null;
 
         for (int index = 0; index < args.Length; index++)
@@ -1209,10 +1265,6 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             {
                 case "--dry-run":
                     dryRun = true;
-                    break;
-
-                case "--remove":
-                    remove = true;
                     break;
 
                 case "--config" when !TryConsumeConfig(args, ref index, ref path, out error):
@@ -1229,7 +1281,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             }
         }
 
-        options = new DeployOptions(path, dryRun, remove);
+        options = new DeployOptions(path, dryRun, Remove: false);
         return true;
     }
 
@@ -1351,8 +1403,10 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         writer.WriteLine("  ripcord check [--config <path>]    would a failover work right now");
         writer.WriteLine("                [--notify [--dry-run]]");
         writer.WriteLine("                                     notify on a new critical finding");
-        writer.WriteLine("  ripcord deploy-listener [--dry-run] [--remove]");
-        writer.WriteLine("                                     install or remove the pair listener");
+        writer.WriteLine("  ripcord service                    is the listener installed and");
+        writer.WriteLine("                                     running, and from where");
+        writer.WriteLine("  ripcord service install [--dry-run]");
+        writer.WriteLine("  ripcord service remove [--dry-run]");
         writer.WriteLine("  ripcord test-failover (--vm <name> | --all) [--dry-run]");
         writer.WriteLine("                        [--unattended]");
         writer.WriteLine("                                     boot a replica in isolation, then destroy it");

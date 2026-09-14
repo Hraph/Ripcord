@@ -51,6 +51,31 @@ public static class DeploymentRenderer
         return Layout.Rendered(output);
     }
 
+    /// The service on its own: what is there, and one line about what is not.
+    ///
+    /// `ripcord service` is read-only and is the question an operator asks first. It says what
+    /// would change only by naming the command that would show it — a plan printed by a
+    /// command that changes nothing reads like a command that is about to.
+    public static string RenderState(
+        ObservedDeployment observed, DesiredDeployment desired, DeploymentPlan? plan)
+    {
+        ArgumentNullException.ThrowIfNull(observed);
+        ArgumentNullException.ThrowIfNull(desired);
+
+        StringBuilder output = new();
+
+        output.AppendLine("RIPCORD LISTENER");
+        output.AppendLine();
+
+        AppendObserved(output, observed);
+
+        output.AppendLine(plan is null || !plan.ChangesAnything
+            ? "  It matches the configuration."
+            : $"  {plan.Steps.Count} step(s) would change it: ripcord service install --dry-run");
+
+        return Layout.Rendered(output);
+    }
+
     /// What is on the host now, before what would change about it.
     ///
     /// Installed and running are two facts, not one: a service that is registered and stopped

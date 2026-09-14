@@ -311,11 +311,11 @@ public class RipcordCliTests
     /// `--dry-run` is the output that gets read on the day, so it has to say exactly what
     /// would change, and change nothing.
     [Fact]
-    public async Task Deploy_listener_dry_run_lists_the_steps_and_changes_nothing()
+    public async Task Service_dry_run_lists_the_steps_and_changes_nothing()
     {
         FakeDeploymentExecutor executor = new();
 
-        CliRun run = await Run(["deploy-listener", "--dry-run"], deploymentExecutor: executor);
+        CliRun run = await Run(["service", "install", "--dry-run"], deploymentExecutor: executor);
 
         Assert.Equal(ExitCode.Success, run.Code);
         Assert.Contains("service", run.Output, StringComparison.OrdinalIgnoreCase);
@@ -327,12 +327,12 @@ public class RipcordCliTests
     /// Rule 3: no mutating operation without explicit typed confirmation. A wrong answer
     /// leaves the host untouched.
     [Fact]
-    public async Task Deploy_listener_changes_nothing_until_the_node_name_is_typed()
+    public async Task Service_changes_nothing_until_the_node_name_is_typed()
     {
         FakeDeploymentExecutor executor = new();
 
         CliRun run = await Run(
-            ["deploy-listener"], deploymentExecutor: executor, typed: "yes");
+            ["service", "install"], deploymentExecutor: executor, typed: "yes");
 
         Assert.Equal(ExitCode.Refused, run.Code);
         Assert.Empty(executor.Applied);
@@ -340,12 +340,12 @@ public class RipcordCliTests
     }
 
     [Fact]
-    public async Task Deploy_listener_applies_every_step_once_confirmed()
+    public async Task Service_applies_every_step_once_confirmed()
     {
         FakeDeploymentExecutor executor = new();
 
         CliRun run = await Run(
-            ["deploy-listener"],
+            ["service", "install"],
             deploymentExecutor: executor,
             typed: FakeScenarios.LocalHostName);
 
@@ -364,7 +364,7 @@ public class RipcordCliTests
         FakeDeploymentExecutor executor = new();
 
         await Run(
-            ["deploy-listener"],
+            ["service", "install"],
             deploymentExecutor: executor,
             typed: FakeScenarios.LocalHostName.ToLowerInvariant());
 
@@ -372,12 +372,12 @@ public class RipcordCliTests
     }
 
     [Fact]
-    public async Task Deploy_listener_remove_undoes_the_deployment_in_reverse()
+    public async Task Service_remove_undoes_the_deployment_in_reverse()
     {
         FakeDeploymentExecutor executor = new(Deployed());
 
         CliRun run = await Run(
-            ["deploy-listener", "--remove"],
+            ["service", "remove"],
             deploymentExecutor: executor,
             typed: FakeScenarios.LocalHostName);
 
@@ -392,12 +392,12 @@ public class RipcordCliTests
     /// exit code 5 — not 3, which says the tool could not read the host and implies the host
     /// is where it was.
     [Fact]
-    public async Task Deploy_listener_that_fails_after_a_step_reports_an_intermediate_state()
+    public async Task Service_that_fails_after_a_step_reports_an_intermediate_state()
     {
         FakeDeploymentExecutor executor = new(failOnStep: 1);
 
         CliRun run = await Run(
-            ["deploy-listener"], deploymentExecutor: executor, typed: FakeScenarios.LocalHostName);
+            ["service", "install"], deploymentExecutor: executor, typed: FakeScenarios.LocalHostName);
 
         Assert.Equal(ExitCode.IntermediateState, run.Code);
         Assert.Single(executor.Applied);
@@ -407,12 +407,12 @@ public class RipcordCliTests
     /// Failing on the first step is the other case entirely: nothing was applied, so nothing
     /// is half-done, and sending the operator to look for damage would be a wrong answer.
     [Fact]
-    public async Task Deploy_listener_that_fails_on_the_first_step_says_nothing_changed()
+    public async Task Service_that_fails_on_the_first_step_says_nothing_changed()
     {
         FakeDeploymentExecutor executor = new(failOnStep: 0);
 
         CliRun run = await Run(
-            ["deploy-listener"], deploymentExecutor: executor, typed: FakeScenarios.LocalHostName);
+            ["service", "install"], deploymentExecutor: executor, typed: FakeScenarios.LocalHostName);
 
         Assert.Equal(ExitCode.LocalAccessFailure, run.Code);
         Assert.Empty(executor.Applied);
@@ -420,15 +420,71 @@ public class RipcordCliTests
         Assert.DoesNotContain("intermediate state", run.Output, StringComparison.Ordinal);
     }
 
+    /// The command is a noun, and bare it changes nothing. Rule 3: an operator looking at a
+    /// host must not be one keystroke from installing a service on it.
+    [Fact]
+    public async Task Service_on_its_own_reports_and_changes_nothing()
+    {
+        FakeDeploymentExecutor executor = new(Deployed());
+
+        CliRun run = await Run(["service"], deploymentExecutor: executor);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Contains("RIPCORD LISTENER", run.Output, StringComparison.Ordinal);
+        Assert.Contains("service    running", run.Output, StringComparison.Ordinal);
+        Assert.Contains("It matches the configuration", run.Output, StringComparison.Ordinal);
+        Assert.Empty(executor.Applied);
+    }
+
+    /// It says what is missing by naming the command that would show it, rather than printing
+    /// a plan — a plan printed by a command that changes nothing reads like one that is about
+    /// to.
+    [Fact]
+    public async Task Service_on_a_bare_host_names_the_command_that_would_change_it()
+    {
+        CliRun run = await Run(["service"]);
+
+        Assert.Contains("service    not installed", run.Output, StringComparison.Ordinal);
+        Assert.Contains(
+            "ripcord service install --dry-run", run.Output, StringComparison.Ordinal);
+    }
+
+    /// Neither `install` nor `remove` is needed to look, and a word that is neither is refused
+    /// rather than read as one of them.
+    [Theory]
+    [InlineData("start")]
+    [InlineData("deploy")]
+    [InlineData("instal")]
+    public async Task Service_refuses_a_word_that_is_not_one_of_the_two(string word)
+    {
+        FakeDeploymentExecutor executor = new();
+
+        CliRun run = await Run(["service", word], deploymentExecutor: executor);
+
+        Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
+        Assert.Empty(executor.Applied);
+    }
+
+    /// `--remove` was a flag on the old verb. It is a word now, and the flag must not linger
+    /// as something that parses and does nothing.
+    [Fact]
+    public async Task Service_install_refuses_the_old_remove_flag()
+    {
+        CliRun run = await Run(["service", "install", "--remove"]);
+
+        Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
+        Assert.Contains("unexpected argument", run.Error, StringComparison.Ordinal);
+    }
+
     /// The question an operator asks first, and which nothing answered: is the listener
     /// actually running? Installed and running are two facts — a registered service that is
     /// stopped serves nothing, and the peer then reports this pair offline, which reads as a
     /// network fault rather than as a service somebody has to start.
     [Fact]
-    public async Task Deploy_listener_says_what_is_on_the_host_before_what_would_change()
+    public async Task Service_says_what_is_on_the_host_before_what_would_change()
     {
         CliRun run = await Run(
-            ["deploy-listener", "--dry-run"], deploymentExecutor: new FakeDeploymentExecutor(Deployed()));
+            ["service", "install", "--dry-run"], deploymentExecutor: new FakeDeploymentExecutor(Deployed()));
 
         Assert.Contains("ON THIS HOST", run.Output, StringComparison.Ordinal);
         Assert.Contains("service    running", run.Output, StringComparison.Ordinal);
@@ -439,10 +495,10 @@ public class RipcordCliTests
     }
 
     [Fact]
-    public async Task Deploy_listener_says_so_when_the_service_is_installed_and_stopped()
+    public async Task Service_says_so_when_the_service_is_installed_and_stopped()
     {
         CliRun run = await Run(
-            ["deploy-listener", "--dry-run"],
+            ["service", "install", "--dry-run"],
             deploymentExecutor: new FakeDeploymentExecutor(
                 Deployed() with { ServiceRunning = false }));
 
@@ -451,20 +507,20 @@ public class RipcordCliTests
     }
 
     [Fact]
-    public async Task Deploy_listener_on_a_bare_host_says_the_service_is_not_installed()
+    public async Task Service_on_a_bare_host_says_the_service_is_not_installed()
     {
-        CliRun run = await Run(["deploy-listener", "--dry-run"]);
+        CliRun run = await Run(["service", "install", "--dry-run"]);
 
         Assert.Contains("service    not installed", run.Output, StringComparison.Ordinal);
     }
 
     /// Re-running a correct deployment must be safe and obviously uneventful.
     [Fact]
-    public async Task Deploy_listener_on_an_already_correct_host_does_nothing()
+    public async Task Service_on_an_already_correct_host_does_nothing()
     {
         FakeDeploymentExecutor executor = new(Deployed());
 
-        CliRun run = await Run(["deploy-listener"], deploymentExecutor: executor);
+        CliRun run = await Run(["service", "install"], deploymentExecutor: executor);
 
         Assert.Equal(ExitCode.Success, run.Code);
         Assert.Contains("already matches", run.Output, StringComparison.OrdinalIgnoreCase);
@@ -478,7 +534,7 @@ public class RipcordCliTests
     {
         FakeDeploymentExecutor executor = new();
 
-        CliRun run = await Run(["deploy-listener", "--dryrun"], deploymentExecutor: executor);
+        CliRun run = await Run(["service", "install", "--dryrun"], deploymentExecutor: executor);
 
         Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
         Assert.Empty(executor.Applied);
