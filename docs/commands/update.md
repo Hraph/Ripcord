@@ -40,7 +40,8 @@ boundary is stated in [`SECURITY.md`](../../SECURITY.md) rather than implied.
 
 ## Exit codes
 
-**3** when the download failed and the host was untouched. **4** when the signature did not
-verify, or a move failed before anything was set aside, or the rollback succeeded. **5** when
-the binary was set aside, a later move failed, *and* the rollback failed too — the message
-names the file to rename by hand.
+**3** when the download failed, or a move failed before anything had been set aside — either
+way the host is untouched. **4** when the signature did not verify, or a move failed after the
+set-aside and the rollback put the old binary back. **5** when the binary was set aside, a
+later move failed, *and* the rollback failed too — the message names the file to rename by
+hand.

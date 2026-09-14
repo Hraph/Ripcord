@@ -42,8 +42,8 @@ correct host does nothing. A moved binary, a changed port or a changed peer addr
 update rather than a teardown. `remove` is the same list read backwards — and it leaves the
 snapshot file alone, because an uninstaller that deletes data is one people are afraid to run.
 
-Five steps at most, in this order: create the service, open the port to the peer only, grant
-the service account read access to the snapshot, **and start the service last** — after the
+Four steps at most, in this order: create or repoint the service, open the port to the peer
+only, grant the service account read access to the snapshot, **and start the service last** — after the
 rule that lets the peer in and the access it needs to the file it serves.
 
 Nothing happens until the node name is typed in full.

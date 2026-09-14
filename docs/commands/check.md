@@ -12,7 +12,9 @@ Three things, always: what was observed, what it means **on the day of the failo
 command that fixes it — never executed. The second is the one that matters. "Incorrect vSwitch"
 helps nobody; "this VM would boot with no network on the target" gets somebody out of bed.
 
-Twenty-two rules, in four severities. Criticals set the exit code; warnings never do — a
+Twenty-two rules, in three severities — critical, warning, information. A rule that could not
+be evaluated is not a fourth severity; it is a separate answer, and the next paragraph is about
+it. Criticals set the exit code; warnings never do — a
 scheduled task that failed on a warning would be switched off within a week, and then the
 criticals would go unread too.
 
