@@ -15,7 +15,12 @@ public sealed record DeploymentOutcome(
     DeploymentPlan? Plan,
     DesiredDeployment? Desired,
     IReadOnlyList<ConfigurationError> Errors,
-    string? FailureMessage);
+    string? FailureMessage,
+
+    /// What the host looked like when the plan was worked out. Carried so the command can say
+    /// what is there as well as what would change — an operator asking "is the listener
+    /// running" should not have to read a plan backwards to find out.
+    ObservedDeployment? Observed = null);
 
 /// Works out what deploying the listener on this host would change. Deciding is separate from
 /// doing on purpose: `--dry-run` runs exactly this and stops.
@@ -59,7 +64,8 @@ public sealed class ListenerDeployment(IConfigStore configStore, IDeploymentExec
                 request.Remove ? DeploymentPlan.ToRemove(observed) : DeploymentPlan.For(desired, observed),
                 desired,
                 [],
-                null);
+                null,
+                observed);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {

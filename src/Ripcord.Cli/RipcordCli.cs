@@ -473,7 +473,8 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             return outcome.Code;
         }
 
-        output.Write(DeploymentRenderer.Render(plan, desired, options.Remove));
+        output.Write(
+            DeploymentRenderer.Render(plan, desired, options.Remove, outcome.Observed));
 
         if (!plan.ChangesAnything)
         {

@@ -8,7 +8,11 @@ namespace Ripcord.Cli.Rendering;
 /// status page, for the same reason.
 public static class DeploymentRenderer
 {
-    public static string Render(DeploymentPlan plan, DesiredDeployment desired, bool removing)
+    public static string Render(
+        DeploymentPlan plan,
+        DesiredDeployment desired,
+        bool removing,
+        ObservedDeployment? observed = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(desired);
@@ -19,6 +23,11 @@ public static class DeploymentRenderer
             ? "RIPCORD LISTENER REMOVAL"
             : "RIPCORD LISTENER DEPLOYMENT");
         output.AppendLine();
+
+        if (observed is not null)
+        {
+            AppendObserved(output, observed);
+        }
 
         if (!plan.ChangesAnything)
         {
@@ -40,6 +49,34 @@ public static class DeploymentRenderer
         }
 
         return Layout.Rendered(output);
+    }
+
+    /// What is on the host now, before what would change about it.
+    ///
+    /// Installed and running are two facts, not one: a service that is registered and stopped
+    /// serves nothing, and the other host then reports this pair offline — which reads as a
+    /// network fault rather than as a service somebody has to start. The command line is
+    /// printed with it because a second copy of the binary in another directory is how a pair
+    /// ends up running two versions.
+    private static void AppendObserved(StringBuilder output, ObservedDeployment observed)
+    {
+        output.AppendLine("  ON THIS HOST");
+
+        output.AppendLine(observed.ServiceInstalled
+            ? $"    service    {(observed.ServiceRunning ? "running" : "STOPPED")}"
+                + $"     {observed.ServiceBinaryPath} serve"
+            : "    service    not installed");
+
+        output.AppendLine(observed.FirewallRuleInstalled
+            ? $"    firewall   inbound TCP {observed.FirewallPort} "
+                + $"from {observed.FirewallRemoteAddress}"
+            : "    firewall   no rule");
+
+        output.AppendLine(observed.SnapshotReadableByService
+            ? $"    snapshot   readable by {DeploymentPlan.ServiceAccount}"
+            : $"    snapshot   not readable by {DeploymentPlan.ServiceAccount}");
+
+        output.AppendLine();
     }
 
     /// What was actually done, including the step that failed. A half-applied plan has to be

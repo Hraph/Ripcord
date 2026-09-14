@@ -420,6 +420,44 @@ public class RipcordCliTests
         Assert.DoesNotContain("intermediate state", run.Output, StringComparison.Ordinal);
     }
 
+    /// The question an operator asks first, and which nothing answered: is the listener
+    /// actually running? Installed and running are two facts — a registered service that is
+    /// stopped serves nothing, and the peer then reports this pair offline, which reads as a
+    /// network fault rather than as a service somebody has to start.
+    [Fact]
+    public async Task Deploy_listener_says_what_is_on_the_host_before_what_would_change()
+    {
+        CliRun run = await Run(
+            ["deploy-listener", "--dry-run"], deploymentExecutor: new FakeDeploymentExecutor(Deployed()));
+
+        Assert.Contains("ON THIS HOST", run.Output, StringComparison.Ordinal);
+        Assert.Contains("service    running", run.Output, StringComparison.Ordinal);
+
+        // The command line with it: a second copy of the binary in another directory is how a
+        // pair ends up running two versions of the sequences.
+        Assert.Contains($"{BinaryPath} serve", run.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Deploy_listener_says_so_when_the_service_is_installed_and_stopped()
+    {
+        CliRun run = await Run(
+            ["deploy-listener", "--dry-run"],
+            deploymentExecutor: new FakeDeploymentExecutor(
+                Deployed() with { ServiceRunning = false }));
+
+        Assert.Contains("service    STOPPED", run.Output, StringComparison.Ordinal);
+        Assert.Contains("Start the 'ripcord' service", run.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Deploy_listener_on_a_bare_host_says_the_service_is_not_installed()
+    {
+        CliRun run = await Run(["deploy-listener", "--dry-run"]);
+
+        Assert.Contains("service    not installed", run.Output, StringComparison.Ordinal);
+    }
+
     /// Re-running a correct deployment must be safe and obviously uneventful.
     [Fact]
     public async Task Deploy_listener_on_an_already_correct_host_does_nothing()

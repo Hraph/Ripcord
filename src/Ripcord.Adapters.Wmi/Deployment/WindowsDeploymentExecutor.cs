@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using Microsoft.Management.Infrastructure;
 using Ripcord.Domain.Deployment;
 using Ripcord.Ports.Deployment;
 
@@ -36,7 +37,8 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             ruleInstalled,
             ruleInstalled ? PortIn(ruleOutput) : null,
             ruleInstalled ? ValueAfter(ruleOutput, "RemoteIP") : null,
-            SnapshotReadable(desired.SnapshotPath));
+            SnapshotReadable(desired.SnapshotPath),
+            imagePath is not null && ServiceIsStarted());
     }
 
     public void Apply(DeploymentStep change, DesiredDeployment desired)
@@ -132,6 +134,40 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         File.Exists(snapshotPath)
         && AccessControl.GrantsRead(
             Run("icacls", $"\"{snapshotPath}\"").Output, DeploymentPlan.ServiceAccount);
+
+    /// Whether the service is running.
+    ///
+    /// `Win32_Service.Started` — a boolean — rather than `sc query`'s state, for the same
+    /// reason the image path comes from the registry: `sc` prints its labels and its state
+    /// words in the host's language, and a French Windows would answer something this code
+    /// would read as "not running" for ever.
+    ///
+    /// Unreadable is reported as not running. The consequence is one redundant `sc start` on a
+    /// service that is already up, which does nothing; the opposite default would leave a
+    /// stopped listener alone and call the deployment correct.
+    private static bool ServiceIsStarted()
+    {
+        try
+        {
+            using CimSession session = CimSession.Create(computerName: null);
+
+            CimInstance? service = session
+                .QueryInstances(
+                    @"root\cimv2",
+                    "WQL",
+                    $"SELECT Started FROM Win32_Service WHERE Name = '{DeploymentPlan.ServiceName}'")
+                .FirstOrDefault();
+
+            using (service)
+            {
+                return service?.CimInstanceProperties["Started"]?.Value is true;
+            }
+        }
+        catch (CimException)
+        {
+            return false;
+        }
+    }
 
     /// `netsh`'s field labels are localised too, so an unparseable rule is reported as not
     /// matching rather than as matching. That costs one redundant rule rewrite per run on a
