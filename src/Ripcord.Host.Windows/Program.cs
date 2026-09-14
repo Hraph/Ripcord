@@ -145,7 +145,7 @@ internal static class Program
     ///
     /// `Stop-Service` cancels the token the listener is already built around, so shutting down
     /// is the path that was already there rather than a second one.
-    private static async Task RunAsServiceAsync(RipcordCli cli, string[] args)
+    private static async Task<ExitCode> RunAsServiceAsync(RipcordCli cli, string[] args)
     {
         // Qualified: this project's own namespace is Ripcord.Host.Windows, so a bare `Host`
         // binds to Ripcord.Host and the error names a namespace nobody wrote.
@@ -155,10 +155,40 @@ internal static class Program
         builder.Services.AddWindowsService(options =>
             options.ServiceName = DeploymentPlan.ServiceName);
 
+        // A service has no console. Everything the verb writes would go to a stream nobody can
+        // read, and a listener that refused to start would leave Services.msc saying "Stopped"
+        // and nothing anywhere else — which is the silence rule 5 exists against.
+        //
+        // Truncated at each start: the file holds the run somebody is asking about, rather
+        // than every run since the host was built.
+        await using StreamWriter log = new(
+            new FileStream(
+                Path.Combine(AppContext.BaseDirectory, "listener.log"),
+                FileMode.Create,
+                FileAccess.Write,
+                FileShare.Read))
+        {
+            AutoFlush = true,
+        };
+
+        ServiceOutcome outcome = new();
+
         builder.Services.AddHostedService(provider => new ListenerService(
-            cli, args, provider.GetRequiredService<IHostApplicationLifetime>()));
+            cli, args, log, outcome, provider.GetRequiredService<IHostApplicationLifetime>()));
 
         await builder.Build().RunAsync().ConfigureAwait(false);
+
+        return outcome.Code;
+    }
+
+    /// What the verb decided, carried back out of the hosted service.
+    ///
+    /// The process exit code is the only thing Windows reads: its recovery policy fires on an
+    /// abnormal stop, and a service that exits 0 because its configuration will never load is
+    /// indistinguishable from one an operator stopped on purpose.
+    private sealed class ServiceOutcome
+    {
+        public ExitCode Code { get; set; } = ExitCode.Success;
     }
 
     /// Runs one CLI verb for as long as the service is running.
@@ -168,14 +198,29 @@ internal static class Program
     /// nothing behind it. The service manager then says it stopped, which is true and visible,
     /// where a running service serving nothing is neither.
     private sealed class ListenerService(
-        RipcordCli cli, string[] args, IHostApplicationLifetime lifetime) : BackgroundService
+        RipcordCli cli,
+        string[] args,
+        TextWriter log,
+        ServiceOutcome outcome,
+        IHostApplicationLifetime lifetime) : BackgroundService
     {
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             try
             {
-                await cli.RunAsync(args, Console.Out, Console.Error, stoppingToken)
+                outcome.Code = await cli
+                    .RunAsync(args, log, log, stoppingToken)
                     .ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                // Written before it is rethrown. The crash alone gives Windows the abnormal
+                // stop it needs; the line gives the operator the reason, which the crash does
+                // not.
+                log.WriteLine($"ripcord: the listener stopped on an error: {exception}");
+                outcome.Code = ExitCode.LocalAccessFailure;
+
+                throw;
             }
             finally
             {

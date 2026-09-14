@@ -19,6 +19,12 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
   host. Milestone 1b designed the fix and it was never built; it is built now, in the
   composition root only. Same binary, same verb, and a verb that returns on its own stops the
   service rather than leaving it reported as running with nothing behind it.
+- A service that stops because its own verb failed now exits with that code, and writes what
+  happened to `listener.log` beside the binary. It exited 0 whatever it decided, so Windows
+  could not tell a configuration that will never load from an operator stopping the service on
+  purpose — no recovery policy fires on a clean stop — and a service has no console, so the
+  reason went nowhere at all. Truncated at each start, so the file holds the run somebody is
+  asking about.
 - Creating the service and starting it are two steps of the deployment plan rather than one
   action doing both. A `sc create` that succeeded followed by a `sc start` that timed out used
   to report that nothing had been changed, on a host that then held a registered service.
