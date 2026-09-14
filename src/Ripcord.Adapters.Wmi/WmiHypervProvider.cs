@@ -1,9 +1,11 @@
 using Microsoft.Management.Infrastructure.Options;
 using System.Globalization;
 using Microsoft.Management.Infrastructure;
+using Ripcord.Domain.Diagnostics;
 using Ripcord.Domain.Inventory;
 using Ripcord.Domain.Replication;
 using Ripcord.Domain.TestFailover;
+using Ripcord.Ports.Diagnostics;
 using Ripcord.Ports.Replication;
 using Ripcord.Ports;
 
@@ -13,7 +15,8 @@ namespace Ripcord.Adapters.Wmi;
 /// conversion is in `CimTranslation` or `CimReplicationValues`. This class cannot be run off
 /// Windows, so anything it decided would be a decision nobody could test before the day it
 /// mattered.
-public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : IHypervProvider
+public sealed class WmiHypervProvider(
+    string localHostName, TimeSpan timeout, IDiagnosticLog diagnostics) : IHypervProvider
 {
     private const string Namespace = @"root\virtualization\v2";
 
@@ -213,7 +216,7 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
             {
                 if (CimTranslation.IsVirtualMachine(CimValues.Instant(instance, "InstallDate")))
                 {
-                    vms.Add(ReadVm(session, instance, switches, options));
+                    vms.Add(this.ReadVm(session, instance, switches, options));
                 }
             }
         }
@@ -229,7 +232,7 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
     ///
     /// PendingReplicationSize is not on the relationship at all; it comes from
     /// Msvm_ReplicationStatistics, through the service method below.
-    private static VmReplicationState ReadVm(
+    private VmReplicationState ReadVm(
         CimSession session,
         CimInstance vm,
         IReadOnlyDictionary<string, string> switches,
@@ -243,7 +246,7 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
             CimReplicationValues.State(CimValues.Number(relationship, "ReplicationState")),
             CimReplicationValues.Health(CimValues.Number(relationship, "ReplicationHealth")),
             CimTranslation.Instant(CimValues.Instant(relationship, "LastReplicationTime")),
-            ReadPendingBytes(session, vm, relationship, options),
+            this.ReadPendingBytes(session, vm, relationship, options),
             WmiVmInventory.Read(session, vm, relationship, switches, options),
 
             // EnabledState is on the computer system, not the relationship: it describes the
@@ -283,11 +286,16 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
     /// primary one is selected first: the older form silently reports the primary's numbers
     /// whatever is asked of it.
     ///
+    /// Nothing here is allowed to fail the host read. It is one optional column on one VM,
+    /// and a provider that refuses the call would otherwise leave `ripcord status` saying
+    /// nothing at all about a pair that is replicating perfectly well — which is what
+    /// happened, and what rule 5 exists against.
+    ///
     /// Only the synchronous return is serviced. A return of 4096 means the provider started a
     /// job instead; that is not overlooked, it is declined — polling a CIM_ConcreteJob for one
     /// column is machinery no test off Windows could exercise. The volume then renders as
     /// unknown, the same as for a VM with no relationship.
-    private static long? ReadPendingBytes(
+    private long? ReadPendingBytes(
         CimSession session,
         CimInstance vm,
         CimInstance? relationship,
@@ -298,38 +306,62 @@ public sealed class WmiHypervProvider(string localHostName, TimeSpan timeout) : 
             return null;
         }
 
-        using CimMethodParametersCollection parameters =
-        [
-            CimMethodParameter.Create("ComputerSystem", vm, CimType.Reference, CimFlags.In),
-
-            // The parameter carries the EmbeddedInstance qualifier. The Microsoft sample
-            // serialises it with System.Management's GetText, which MI has no equivalent for,
-            // so the instance goes across directly. This is the line most likely to be wrong
-            // on the first real host — check it before anything else.
-            CimMethodParameter.Create(
-                "ReplicationRelationship", relationship, CimType.Instance, CimFlags.In),
-        ];
-
-        using CimInstance service = ReplicationService(session, options);
-
-        using CimMethodResult result = session.InvokeMethod(
-            Namespace, service, "GetReplicationStatisticsEx", parameters, options);
-
-        if (Convert.ToUInt32(result.ReturnValue.Value, CultureInfo.InvariantCulture) != 0)
+        try
         {
+            using CimMethodParametersCollection parameters =
+            [
+                CimMethodParameter.Create("ComputerSystem", vm, CimType.Reference, CimFlags.In),
+
+                // The parameter carries the EmbeddedInstance qualifier. The Microsoft sample
+                // serialises it with System.Management's GetText, which MI has no equivalent
+                // for, so the instance goes across directly. Named in the original comment as
+                // the line most likely to be wrong on the first real host, and it was:
+                // `Incompatibilité de type pour le paramètre « ReplicationRelationship »`.
+                //
+                // Inside the try because the refusal comes from building the parameter, not
+                // from the call.
+                CimMethodParameter.Create(
+                    "ReplicationRelationship", relationship, CimType.Instance, CimFlags.In),
+            ];
+
+            using CimInstance service = ReplicationService(session, options);
+
+            using CimMethodResult result = session.InvokeMethod(
+                Namespace, service, "GetReplicationStatisticsEx", parameters, options);
+
+            if (Convert.ToUInt32(result.ReturnValue.Value, CultureInfo.InvariantCulture) != 0)
+            {
+                return null;
+            }
+
+            // Declared as a string array while the prose calls it a single embedded instance.
+            // Read as an array and take the first: a scalar read would throw on real hardware.
+            if (result.OutParameters["ReplicationStatistics"]?.Value is not CimInstance[]
+                { Length: > 0 } statistics)
+            {
+                return null;
+            }
+
+            using CimInstance first = statistics[0];
+            return CimValues.Size(first, "PendingReplicationSize");
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // One optional column, and it was taking the whole host read down with it: a
+            // provider that refuses this call left `ripcord status` saying nothing at all
+            // about a pair that was replicating perfectly well. Rule 5 — the volume degrades
+            // to unknown, exactly as it does for a VM with no relationship.
+            //
+            // Recorded in full, because this is the call written blind against a MOF and the
+            // log is the only place its CIM error can be read.
+            diagnostics.Write(DiagnosticEntry.Of(
+                "hyper-v",
+                $"the pending replication size could not be read for "
+                    + $"'{CimValues.Text(vm, "ElementName")}'",
+                exception.ToString()));
+
             return null;
         }
-
-        // Declared as a string array while the prose calls it a single embedded instance.
-        // Read as an array and take the first: a scalar read would throw on real hardware.
-        if (result.OutParameters["ReplicationStatistics"]?.Value is not CimInstance[]
-            { Length: > 0 } statistics)
-        {
-            return null;
-        }
-
-        using CimInstance first = statistics[0];
-        return CimValues.Size(first, "PendingReplicationSize");
     }
 
     private static CimInstance ReplicationService(
