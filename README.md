@@ -182,6 +182,12 @@ stick is not more trusted than a download.
 | `-Shortcut` | A Start Menu shortcut to the dashboard page. |
 | `-Force` | Reinstall over an existing binary. It never replaces an existing `ripcord.yaml`. |
 
+**The listener reads `ripcord.yaml` once, when the service starts.** Editing the file later
+changes nothing until `Restart-Service ripcord` — the running listener goes on serving the
+configuration it was started with, and the peer sees no difference. `ripcord status` and
+`ripcord check`, being commands rather than the service, read the file every time they run, so
+the two can disagree until the service is restarted.
+
 Installing is not configuring. `node.hostname`, the peer address and both certificate
 thumbprints are per-host, and `ripcord status` refuses a file that names another machine — by
 name, at startup. The installer ends by saying so, and by naming the three commands to run in
