@@ -9,6 +9,27 @@ half-updated pair depends on.
 
 A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binary.
 
+## Unreleased
+
+### Fixed
+
+- **The listener service could never start.** `sc start` waits for the service control manager
+  handshake, `ripcord serve` was a console loop that never answered it, and the manager gave up
+  with 1053 every time — so `deploy-listener` has never produced a running listener on any
+  host. Milestone 1b designed the fix and it was never built; it is built now, in the
+  composition root only. Same binary, same verb, and a verb that returns on its own stops the
+  service rather than leaving it reported as running with nothing behind it.
+- Creating the service and starting it are two steps of the deployment plan rather than one
+  action doing both. A `sc create` that succeeded followed by a `sc start` that timed out used
+  to report that nothing had been changed, on a host that then held a registered service.
+- The plan sees a service that is installed, correct and **stopped**, and starts it. It only
+  compared paths before, so re-running the command on that host did nothing while the other
+  side reported the pair offline — which reads as a network fault rather than as a service
+  somebody has to start.
+- Starting the service is the last step, after the firewall rule and after the access it needs
+  to the snapshot it serves. Starting it first brings up a listener that cannot read its own
+  file.
+
 ## 0.2.1 — 2026-09-14
 
 ### Fixed
