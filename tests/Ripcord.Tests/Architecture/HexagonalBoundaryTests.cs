@@ -49,6 +49,11 @@ public class HexagonalBoundaryTests
     /// a NuGet dependency in the Domain is the leak this whole table exists to prevent.
     private static readonly Dictionary<string, string[]> AllowedPackages = new()
     {
+        // The service control manager handshake, and nothing else it brings with it. Named in
+        // milestone 1b as belonging to the composition root only: a Domain that could host is
+        // a Domain that could listen.
+        ["Ripcord.Host.Windows"] = ["Microsoft.Extensions.Hosting.WindowsServices"],
+
         ["Ripcord.Adapters.Wmi"] = ["Microsoft.Management.Infrastructure"],
         ["Ripcord.Adapters.Yaml"] = ["YamlDotNet"],
         ["Ripcord.Tests"] =

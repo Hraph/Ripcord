@@ -1,3 +1,6 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting.WindowsServices;
 using Ripcord.Adapters.Pairing;
 using Ripcord.Adapters.Pairing.Transport;
 using Ripcord.Adapters.Audit;
@@ -9,6 +12,7 @@ using Ripcord.Adapters.Wmi.Deployment;
 using Ripcord.Adapters.Yaml;
 using Ripcord.Cli;
 using Ripcord.Domain;
+using Ripcord.Domain.Deployment;
 using Ripcord.Domain.Pairing;
 
 namespace Ripcord.Host.Windows;
@@ -111,6 +115,18 @@ internal static class Program
                 null,
                 ReleaseSigningKey));
 
+        // Started by the service control manager rather than by a person. `sc start` waits for
+        // a handshake — ServiceBase.Run — and a console loop never sends one, so the manager
+        // waits its whole timeout and reports 1053: "the service did not respond in a timely
+        // fashion". That is what `deploy-listener` has been hitting on every host.
+        //
+        // The same binary and the same verb either way; only who is asking changes.
+        if (WindowsServiceHelpers.IsWindowsService())
+        {
+            await RunAsServiceAsync(cli, args).ConfigureAwait(false);
+            return (int)ExitCode.Success;
+        }
+
         using CancellationTokenSource cancellation = new();
         Console.CancelKeyPress += (_, eventArgs) =>
         {
@@ -122,5 +138,52 @@ internal static class Program
             args, Console.Out, Console.Error, cancellation.Token).ConfigureAwait(false);
 
         return (int)code;
+    }
+
+    /// The service control manager's half: answer the handshake, then run the verb it was
+    /// installed with until the host is told to stop.
+    ///
+    /// `Stop-Service` cancels the token the listener is already built around, so shutting down
+    /// is the path that was already there rather than a second one.
+    private static async Task RunAsServiceAsync(RipcordCli cli, string[] args)
+    {
+        // Qualified: this project's own namespace is Ripcord.Host.Windows, so a bare `Host`
+        // binds to Ripcord.Host and the error names a namespace nobody wrote.
+        HostApplicationBuilder builder =
+            Microsoft.Extensions.Hosting.Host.CreateApplicationBuilder();
+
+        builder.Services.AddWindowsService(options =>
+            options.ServiceName = DeploymentPlan.ServiceName);
+
+        builder.Services.AddHostedService(provider => new ListenerService(
+            cli, args, provider.GetRequiredService<IHostApplicationLifetime>()));
+
+        await builder.Build().RunAsync().ConfigureAwait(false);
+    }
+
+    /// Runs one CLI verb for as long as the service is running.
+    ///
+    /// A verb that returns on its own — a configuration the listener is disabled in, a file
+    /// that will not load — stops the service rather than leaving it reported as running with
+    /// nothing behind it. The service manager then says it stopped, which is true and visible,
+    /// where a running service serving nothing is neither.
+    private sealed class ListenerService(
+        RipcordCli cli, string[] args, IHostApplicationLifetime lifetime) : BackgroundService
+    {
+        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        {
+            try
+            {
+                await cli.RunAsync(args, Console.Out, Console.Error, stoppingToken)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                if (!stoppingToken.IsCancellationRequested)
+                {
+                    lifetime.StopApplication();
+                }
+            }
+        }
     }
 }
