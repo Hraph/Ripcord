@@ -25,7 +25,7 @@ file written in calm conditions.
 **Milestone 0 shipped. Milestones 1, 1b, 2, 3, 4, most of 4B, 5 and 7 built, awaiting validation
 on the real hosts.** `status`, `check` (with `--notify`), `test-failover`, `failover` in both
 scenarios, `failback`, `fence`, `check-update`, `update`, `dashboard`, `version`, `serve` and
-`deploy-listener` are implemented and covered by tests that run on Linux — including the mTLS
+`ripcord service` are implemented and covered by tests that run on Linux — including the mTLS
 handshake end to end with generated certificates and real sockets, the read-only page served
 over a real loopback socket, release signatures verified against a real generated key pair, and
 a case table per check rule.
@@ -210,12 +210,13 @@ ripcord failback (--vm <name> | --all | --priority P1) [--dry-run]
 ripcord fence [--dry-run]                     stop this host's VMs starting themselves
 ripcord serve [--config <path>]               run the read-only pair listener
 ripcord dashboard [--config <path>]           serve the read-only page on 127.0.0.1
-ripcord deploy-listener [--dry-run] [--remove]  install or remove that listener
+ripcord service [install|remove] [--dry-run]  the listener: what it is doing,
+                                              and the two things that change it
 ripcord check-update [--config <path>]        is a newer release published
 ripcord version                               version and commit hash
 ```
 
-`deploy-listener` reconciles rather than installs: it compares the host with the configuration
+`ripcord service install` reconciles rather than installs: it compares the host with the configuration
 and applies only the difference, so re-running it on a correct host does nothing, a moved
 binary or a changed port becomes an update, and `--remove` is the same list read backwards.
 Nothing mutating happens without `--dry-run` first showing the plan and the operator then

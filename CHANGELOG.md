@@ -19,7 +19,14 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
   host. Milestone 1b designed the fix and it was never built; it is built now, in the
   composition root only. Same binary, same verb, and a verb that returns on its own stops the
   service rather than leaving it reported as running with nothing behind it.
-- `ripcord deploy-listener` says what is on the host before what would change about it: whether
+- **`deploy-listener` is now `ripcord service`**, and bare it changes nothing: it says whether
+  the service is installed, whether it is running and the command line it is registered with.
+  `ripcord service install` and `ripcord service remove` are the two things that change it —
+  words rather than flags, because both mutate a host that may be running a domain controller,
+  and a word is harder to type by accident than a flag next to the one you meant. The old name
+  is gone rather than aliased: it never produced a running listener on any host, so nothing can
+  depend on it.
+- `ripcord service` says what is on the host before what would change about it: whether
   the service is installed, whether it is **running**, the command line it is registered with,
   the firewall rule and the snapshot access. Installed and running are two facts — a registered
   service that is stopped serves nothing, and the other host reports the pair offline, which

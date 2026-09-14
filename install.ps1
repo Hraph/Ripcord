@@ -807,7 +807,7 @@ function Invoke-Install {
     Write-Host "      1. edit $configuration - node, peer and the two thumbprints"
     Write-Host '      2. ripcord status                  (refuses until the file is right)'
     Write-Host '      3. ripcord check                   (would a failover work right now)'
-    Write-Host '      4. ripcord deploy-listener --dry-run'
+    Write-Host '      4. ripcord service install --dry-run'
     Write-Host ''
     Write-Host '  Then do the same on the other host.'
     Write-Host ''
