@@ -27,7 +27,7 @@ public sealed record UpdateSubject(
     string PeerHostName);
 
 /// What `ripcord update` would do, decided before anything is fetched — the same separation
-/// `deploy-listener` makes between `Plan` and `Apply`, for the same reason: the plan is what
+/// `ripcord service install` makes between `Plan` and `Apply`, for the same reason: the plan is what
 /// `--dry-run` prints, and what the operator is agreeing to when they type the node name.
 ///
 /// `Halt` is a refusal with its reason. `Warnings` are consequences the operator has to weigh

@@ -5,7 +5,7 @@ using Ripcord.Domain.Updates;
 
 namespace Ripcord.Tests.Updates;
 
-/// Deciding is separate from doing, the same way `deploy-listener` separates them. Everything
+/// Deciding is separate from doing, the same way `ripcord service install` separates them. Everything
 /// here is pure: what the command would do, and what it refuses to do, with no download, no
 /// file and no host.
 public sealed class UpdatePlanTests

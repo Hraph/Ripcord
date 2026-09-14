@@ -12,16 +12,21 @@ public static class DeploymentRenderer
         DeploymentPlan plan,
         DesiredDeployment desired,
         bool removing,
-        ObservedDeployment? observed = null)
+        ObservedDeployment? observed = null,
+
+        /// What this run is, when it is neither a deployment nor a removal. A restart under a
+        /// "DEPLOYMENT" banner is the kind of small lie that costs a second of doubt on the
+        /// one screen that is read under pressure.
+        string? heading = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(desired);
 
         StringBuilder output = new();
 
-        output.AppendLine(removing
+        output.AppendLine(heading ?? (removing
             ? "RIPCORD LISTENER REMOVAL"
-            : "RIPCORD LISTENER DEPLOYMENT");
+            : "RIPCORD LISTENER DEPLOYMENT"));
         output.AppendLine();
 
         if (observed is not null)

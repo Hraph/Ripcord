@@ -547,7 +547,8 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             return ExitCode.InvalidConfiguration;
         }
 
-        output.Write(DeploymentRenderer.Render(plan, desired, removing: false, observed));
+        output.Write(DeploymentRenderer.Render(
+            plan, desired, removing: false, observed, heading: "RIPCORD LISTENER RESTART"));
 
         if (options.DryRun)
         {

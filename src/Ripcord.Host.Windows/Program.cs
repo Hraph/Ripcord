@@ -118,7 +118,7 @@ internal static class Program
         // Started by the service control manager rather than by a person. `sc start` waits for
         // a handshake — ServiceBase.Run — and a console loop never sends one, so the manager
         // waits its whole timeout and reports 1053: "the service did not respond in a timely
-        // fashion". That is what `deploy-listener` has been hitting on every host.
+        // fashion". That is what the listener deployment has been hitting on every host.
         //
         // The same binary and the same verb either way; only who is asking changes.
         if (WindowsServiceHelpers.IsWindowsService())

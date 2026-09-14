@@ -431,6 +431,11 @@ public class RipcordCliTests
 
         Assert.Equal(ExitCode.Success, run.Code);
         Assert.Equal([DeploymentAction.RestartService], executor.Applied);
+
+        // Under its own heading: a restart printed under "DEPLOYMENT" is the kind of small lie
+        // that costs a second of doubt on the one screen that is read under pressure.
+        Assert.Contains("RIPCORD LISTENER RESTART", run.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("DEPLOYMENT", run.Output, StringComparison.Ordinal);
     }
 
     /// `sc stop` on a stopped service is an error, and an operator asking for the
