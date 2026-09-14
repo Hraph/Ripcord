@@ -32,7 +32,7 @@ public static class StatusRenderer
         StringBuilder output = new();
 
         output.AppendLine(Banner(now));
-        output.AppendLine(VersionLine());
+        output.AppendLine(VersionLine(view.PeerBuild));
         AppendUpdateNotice(output, updateNotice);
         output.AppendLine();
         AppendHost(output, "LOCAL", view.Local, offlineAfter, now);
@@ -62,7 +62,25 @@ public static class StatusRenderer
 
     /// Version skew between the two hosts has to be visible: the sequences are encoded in the
     /// binary and they span the pair.
-    private static string VersionLine() => $"ripcord {BuildInfo.VersionWithCommit}";
+    /// Both builds when the peer has published one.
+    ///
+    /// A failover spanning two hosts is refused outright on a mismatch, and until now the only
+    /// way to discover the mismatch was to be refused by it. The skew is a fact about the pair,
+    /// so it belongs on the page that describes the pair — not in the error message of the
+    /// command somebody typed at 3 a.m.
+    private static string VersionLine(BuildIdentity? peer)
+    {
+        string local = BuildInfo.VersionWithCommit;
+
+        if (peer is null)
+        {
+            return $"ripcord {local}";
+        }
+
+        return peer.ToString() == local
+            ? $"ripcord {local} on both hosts"
+            : $"ripcord {local} here, {peer} on the peer - a failover spanning both is refused";
+    }
 
     private static void AppendHost(
         StringBuilder output,

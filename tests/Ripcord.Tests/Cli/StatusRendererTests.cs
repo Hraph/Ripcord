@@ -1,6 +1,7 @@
 using Ripcord.Cli.Rendering;
 using Ripcord.Cli;
 using Ripcord.Domain.Configuration;
+using Ripcord.Domain;
 using Ripcord.Domain.Replication;
 
 namespace Ripcord.Tests.Cli;
@@ -76,6 +77,41 @@ public class StatusRendererTests
                 [Vm("VM-DC-01", ReplicationHealth.Normal, capturedAt.AddSeconds(-10))],
                 HostReachability.Reachable()),
             capturedAt);
+
+    /// The skew that refuses a failover, visible before it refuses one. Until now the only way
+    /// to discover the pair was on two builds was to be stopped by it, mid-command.
+    [Fact]
+    public void Two_different_builds_are_named_on_the_page_that_describes_the_pair()
+    {
+        string rendered = Render(
+            PairWithPeerSnapshot(Now) with { PeerBuild = new BuildIdentity("0.9.9", "abcdef123456") });
+
+        Assert.Contains("0.9.9+abcdef123456 on the peer", rendered, StringComparison.Ordinal);
+        Assert.Contains("refused", rendered, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_same_build_on_both_hosts_is_said_once()
+    {
+        string rendered = Render(
+            PairWithPeerSnapshot(Now) with
+            {
+                PeerBuild = new BuildIdentity(BuildInfo.Version, BuildInfo.CommitHash),
+            });
+
+        Assert.Contains("on both hosts", rendered, StringComparison.Ordinal);
+        Assert.DoesNotContain("refused", rendered, StringComparison.Ordinal);
+    }
+
+    /// A peer that published nothing says nothing. "Cannot be compared" is not "the same".
+    [Fact]
+    public void A_peer_that_published_no_build_adds_no_claim()
+    {
+        string rendered = Render(PairWithPeerSnapshot(Now));
+
+        Assert.DoesNotContain("on the peer", rendered, StringComparison.Ordinal);
+        Assert.DoesNotContain("on both hosts", rendered, StringComparison.Ordinal);
+    }
 
     /// The layout is 75 columns and one line ending, on Windows as in the Linux container.
     /// A carriage return the framework added is a 76th column and a byte the fixture tests
