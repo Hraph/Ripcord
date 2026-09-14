@@ -16,6 +16,7 @@ using Ripcord.Domain.Checks;
 using Ripcord.Domain.Failover;
 using Ripcord.Domain.Updates;
 using Ripcord.Domain.Configuration;
+using Ripcord.Domain.Diagnostics;
 using Ripcord.Domain.Replication;
 using Ripcord.Domain;
 using Ripcord.Ports.Configuration;
@@ -23,6 +24,7 @@ using Ripcord.Ports.Hosts;
 using Ripcord.Ports.Pairing;
 using Ripcord.Ports.Alerting;
 using Ripcord.Ports.Audit;
+using Ripcord.Ports.Diagnostics;
 using Ripcord.Ports.Replication;
 using Ripcord.Ports.Updates;
 using Ripcord.Ports;
@@ -69,7 +71,8 @@ public sealed record RipcordPorts(
     IReleaseSource ReleaseSource,
     IUpdateNoticeStore UpdateNotices,
     IBinarySwap BinarySwap,
-    IClock Clock);
+    IClock Clock,
+    IDiagnosticLog Diagnostics);
 
 /// Argument parsing and console rendering. No decision lives here: the exit code comes from
 /// the use case, the layout from StatusRenderer.
@@ -88,18 +91,83 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             return ExitCode.Success;
         }
 
+        this.PointTheLogAtTheConfiguration(args);
+
+        string operation = args[0];
+
+        // Written before the command runs, not after. A verb that takes the host down with it
+        // — or that is still running when somebody gives up and closes the window — leaves no
+        // second line, and the first one is then the whole of what the log can say.
+        ports.Diagnostics.Write(DiagnosticEntry.Of(
+            operation, $"running: {string.Join(' ', args)}"));
+
         try
         {
-            return await this.DispatchAsync(args, output, error, cancellationToken)
+            ExitCode code = await this.DispatchAsync(args, output, error, cancellationToken)
                 .ConfigureAwait(false);
+
+            ports.Diagnostics.Write(DiagnosticEntry.Of(operation, $"exit {(int)code}: {code}"));
+
+            return code;
         }
         catch (OperationCanceledException)
         {
             // Ctrl+C. A stack trace is not an answer, and the read had not changed anything.
+            ports.Diagnostics.Write(DiagnosticEntry.Of(operation, "cancelled"));
             error.WriteLine("ripcord: cancelled.");
             return ExitCode.LocalAccessFailure;
         }
+        catch (Exception exception)
+        {
+            // Recorded and rethrown. The crash is what tells Windows the service stopped
+            // abnormally, and the line is what tells whoever looks why — the two are not
+            // interchangeable and this is the only place both are available.
+            ports.Diagnostics.Write(DiagnosticEntry.Of(
+                operation, "the command stopped on an unhandled error", exception.ToString()));
+
+            throw;
+        }
     }
+
+    /// Moves the log to where `ripcord.yaml` asks for it, before the command reads anything.
+    ///
+    /// The file is read here for that one section and validated for none of it: the first
+    /// thing worth logging is often the reason this file cannot be used, and a log that waited
+    /// for a valid configuration would be silent exactly then.
+    private void PointTheLogAtTheConfiguration(string[] args)
+    {
+        string path = environment.DefaultConfigurationPath;
+
+        // Deliberately not `TryConsumeConfig`: that one refuses a malformed or repeated
+        // `--config` and is the parser whose refusal the operator reads. This is a guess at
+        // which file to look in, made before any of that, and the worst it can do is point the
+        // log at the wrong path for the one line that says the option was wrong.
+        for (int index = 0; index < args.Length - 1; index++)
+        {
+            if (args[index] == "--config")
+            {
+                path = args[index + 1];
+            }
+        }
+
+        try
+        {
+            ports.Diagnostics.SendTo(DiagnosticDestination.From(
+                ports.ConfigStore.Read(path).Document?.Diagnostics, this.DefaultLogPath));
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // Unreadable, unparseable, not there at all. The log stays where it started,
+            // which is beside the binary, and the command carries on to report it properly.
+        }
+    }
+
+    /// Beside the binary, with the audit trail and the alert state: one directory holds
+    /// everything this host writes about itself.
+    private string DefaultLogPath =>
+        Path.Combine(
+            Path.GetDirectoryName(environment.BinaryPath) ?? "",
+            DiagnosticDestination.DefaultFileName);
 
     private async Task<ExitCode> DispatchAsync(
         string[] args, TextWriter output, TextWriter error, CancellationToken cancellationToken)
@@ -1134,11 +1202,13 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
     private PairReader Pair() =>
         new(
-            new LocalStateReader(ports.Provider, ports.HostSystem, ports.Certificates),
+            new LocalStateReader(
+                ports.Provider, ports.HostSystem, ports.Certificates, ports.Diagnostics),
             ports.PeerChannel,
             ports.SnapshotStore,
             ports.Clock,
-            this.LocalBuild);
+            this.LocalBuild,
+            ports.Diagnostics);
 
     /// What this binary is, for the snapshot it publishes and for the skew check that reads the
     /// peer's. Both halves, because two builds at the same version from different commits differ
@@ -1156,7 +1226,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
     private bool Confirmed(TextWriter output, TextWriter error, string consequence)
     {
         output.WriteLine($"  {consequence}");
-        output.Write($"  {ConfirmationPrompt}");
+        output.Write($"  {ConfirmationPrompt} ({environment.MachineName}): ");
 
         string? typed = environment.ConfirmationReader?.ReadLine();
 

@@ -228,13 +228,15 @@ public class FailoverQueryTests
                 // blocks without swapping the certificate would trip the certificate rule and
                 // refuse for a reason that has nothing to do with the failover.
                 FakeCertificateProvider.Valid(
-                    ValidDocument.LocalThumbprint, $"CN={machineName}")),
+                    ValidDocument.LocalThumbprint, $"CN={machineName}"),
+                new SilentDiagnosticLog()),
             peer ?? FakePeerChannel.Answering(
                 FakeScenarios.PeerSnapshot(
                     Now, peerPublishesBuild ? peerBuild ?? Build : null)),
             store,
             new FixedClock(Now),
-            Build);
+            Build,
+            new SilentDiagnosticLog());
 
         return new FailoverQuery(
                 new StubConfigStore(expectedRole, machineName),

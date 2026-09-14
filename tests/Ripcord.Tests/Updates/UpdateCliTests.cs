@@ -191,7 +191,8 @@ public sealed class UpdateCliTests
                 source ?? Source.Genuine(),
                 new MemoryUpdateNoticeStore(),
                 swap ?? new Swap(),
-                new FixedClock(Now)),
+                new FixedClock(Now),
+                new SilentDiagnosticLog()),
             new CliEnvironment(
                 Machine,
                 "ripcord.yaml",

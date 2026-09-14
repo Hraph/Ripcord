@@ -1,6 +1,8 @@
 using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Inventory;
 using Ripcord.Domain.Replication;
+using Ripcord.Domain.Diagnostics;
+using Ripcord.Ports.Diagnostics;
 using Ripcord.Ports.Hosts;
 using Ripcord.Ports.Replication;
 
@@ -21,7 +23,8 @@ public sealed record LocalRead(
 public sealed class LocalStateReader(
     IHypervProvider provider,
     IHostSystemProvider hostSystem,
-    ICertificateProvider certificates)
+    ICertificateProvider certificates,
+    IDiagnosticLog diagnostics)
 {
     public async Task<LocalRead> ReadAsync(
         RipcordConfiguration configuration, CancellationToken cancellationToken)
@@ -36,6 +39,13 @@ public sealed class LocalStateReader(
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            // The console gets the sentence, the log gets the exception. `exception.Message`
+            // on a CIM failure is one translated clause — "type mismatch for parameter X" —
+            // with no class, no method and no stack, and on a host with no debugger that is
+            // the whole of what anybody would have to work from.
+            diagnostics.Write(DiagnosticEntry.Of(
+                "hyper-v", "the local Hyper-V state could not be read", exception.ToString()));
+
             return LocalRead.Failed(exception.Message);
         }
 
@@ -65,6 +75,9 @@ public sealed class LocalStateReader(
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            diagnostics.Write(DiagnosticEntry.Of(
+                "host-system", "the host system could not be read", exception.ToString()));
+
             notes.Add($"the host system could not be read: {exception.Message}");
             return HostSystemReading.Unknown();
         }
@@ -86,6 +99,11 @@ public sealed class LocalStateReader(
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            diagnostics.Write(DiagnosticEntry.Of(
+                "certificates",
+                "the certificate store could not be read",
+                exception.ToString()));
+
             notes.Add($"the certificate store could not be read: {exception.Message}");
             return null;
         }

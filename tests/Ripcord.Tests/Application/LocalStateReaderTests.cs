@@ -103,7 +103,8 @@ public class LocalStateReaderTests
             hyperv ?? new FakeHypervProvider(FakeScenarios.Healthy(Now)),
             hostSystem ?? FakeHostSystemProvider.Target(),
             certificates ?? FakeCertificateProvider.Valid(
-                ValidDocument.LocalThumbprint, "CN=HV-REPLICA-01"));
+                ValidDocument.LocalThumbprint, "CN=HV-REPLICA-01"),
+            new SilentDiagnosticLog());
 
         return reader.ReadAsync(used, CancellationToken.None).GetAwaiter().GetResult();
     }

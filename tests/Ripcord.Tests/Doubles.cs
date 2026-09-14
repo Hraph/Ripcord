@@ -8,6 +8,8 @@ using Ripcord.Ports.Deployment;
 using Ripcord.Ports.Updates;
 using Ripcord.Ports.Pairing;
 using Ripcord.Ports;
+using Ripcord.Ports.Diagnostics;
+using Ripcord.Domain.Diagnostics;
 
 namespace Ripcord.Tests;
 
@@ -94,4 +96,30 @@ public sealed class MemoryUpdateNoticeStore(UpdateNotice? known = null) : IUpdat
     public UpdateNotice? Read() => this.Notice;
 
     public void Write(UpdateNotice notice) => this.Notice = notice;
+}
+
+/// A diagnostic log that keeps its lines in memory. Used where a test asserts what was
+/// recorded; `SilentDiagnosticLog` is the one for tests that only need the port filled.
+public sealed class RecordingDiagnosticLog : IDiagnosticLog
+{
+    private readonly List<DiagnosticEntry> written = [];
+
+    public IReadOnlyList<DiagnosticEntry> Written => this.written;
+
+    public DiagnosticDestination? Destination { get; private set; }
+
+    public void Write(DiagnosticEntry entry) => this.written.Add(entry);
+
+    public void SendTo(DiagnosticDestination destination) => this.Destination = destination;
+}
+
+public sealed class SilentDiagnosticLog : IDiagnosticLog
+{
+    public void Write(DiagnosticEntry entry)
+    {
+    }
+
+    public void SendTo(DiagnosticDestination destination)
+    {
+    }
 }

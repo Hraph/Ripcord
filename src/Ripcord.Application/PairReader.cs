@@ -2,7 +2,9 @@ using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Pairing;
 using Ripcord.Domain.Replication;
 using Ripcord.Domain;
+using Ripcord.Domain.Diagnostics;
 using Ripcord.Ports.Configuration;
+using Ripcord.Ports.Diagnostics;
 using Ripcord.Ports.Pairing;
 using Ripcord.Ports;
 
@@ -45,7 +47,8 @@ public sealed class PairReader(
     IPeerChannel peerChannel,
     ISnapshotStore snapshotStore,
     IClock clock,
-    BuildIdentity localBuild)
+    BuildIdentity localBuild,
+    IDiagnosticLog diagnostics)
 {
     public async Task<PairRead> ReadAsync(
         RipcordConfiguration configuration, CancellationToken cancellationToken)
@@ -128,6 +131,10 @@ public sealed class PairReader(
             exception is IOException or UnauthorizedAccessException or ArgumentException)
         {
             // Deliberately not fatal; the peer section of the output shows the consequence.
+            // It is still recorded: a snapshot this host has silently stopped publishing is
+            // why the other one has been calling it stale for a week.
+            diagnostics.Write(DiagnosticEntry.Of(
+                "snapshot", "this host could not publish its snapshot", exception.ToString()));
         }
     }
 
@@ -149,6 +156,12 @@ public sealed class PairReader(
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            // An unreachable peer is a state rather than a failure, so the console says one
+            // line about it. Which certificate was refused, or which socket timed out, is the
+            // part somebody needs the morning they are asked why.
+            diagnostics.Write(DiagnosticEntry.Of(
+                "peer", "the peer could not be read", exception.ToString()));
+
             return PeerFetch.Silent(HostReachability.Failed(exception.Message, clock.UtcNow));
         }
     }

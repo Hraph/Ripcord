@@ -5,6 +5,7 @@ using Ripcord.Adapters.Pairing;
 using Ripcord.Adapters.Pairing.Transport;
 using Ripcord.Adapters.Audit;
 using Ripcord.Adapters.Dashboard;
+using Ripcord.Adapters.Diagnostics;
 using Ripcord.Adapters.Notify;
 using Ripcord.Adapters.Update;
 using Ripcord.Adapters.Wmi;
@@ -13,6 +14,7 @@ using Ripcord.Adapters.Yaml;
 using Ripcord.Cli;
 using Ripcord.Domain;
 using Ripcord.Domain.Deployment;
+using Ripcord.Domain.Diagnostics;
 using Ripcord.Domain.Pairing;
 
 namespace Ripcord.Host.Windows;
@@ -72,10 +74,18 @@ internal static class Program
         FileSnapshotStore snapshotStore = new();
         MachineCertificateStore certificates = new();
 
+        // Starts beside the binary and is moved to wherever `ripcord.yaml` asks, once that
+        // file has been read. The first thing worth logging is often the reason it cannot be,
+        // so the log cannot wait for it.
+        FileDiagnosticLog diagnostics = new(
+            clock,
+            DiagnosticDestination.Default(
+                Path.Combine(AppContext.BaseDirectory, DiagnosticDestination.DefaultFileName)));
+
         RipcordCli cli = new(
             new RipcordPorts(
                 new YamlConfigStore(),
-                new WmiHypervProvider(Environment.MachineName, WmiTimeout),
+                new WmiHypervProvider(Environment.MachineName, WmiTimeout, diagnostics),
                 new WmiHostSystemProvider(WmiTimeout),
                 certificates,
                 new MutualTlsPeerChannel(
@@ -105,7 +115,8 @@ internal static class Program
                 new FileUpdateNoticeStore(
                     Path.Combine(AppContext.BaseDirectory, "update-notice.json")),
                 new FileBinarySwap(),
-                clock),
+                clock,
+                diagnostics),
             new CliEnvironment(
                 Environment.MachineName,
                 defaultConfigPath,

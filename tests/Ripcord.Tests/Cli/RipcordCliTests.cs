@@ -9,6 +9,8 @@ using Ripcord.Domain;
 using Ripcord.Ports.Configuration;
 using Ripcord.Ports.Replication;
 using Ripcord.Domain.Deployment;
+using Ripcord.Ports.Diagnostics;
+using Ripcord.Domain.Diagnostics;
 using Ripcord.Ports;
 using Ripcord.Domain.Pairing;
 using Ripcord.Ports.Dashboard;
@@ -806,6 +808,64 @@ public class RipcordCliTests
         Assert.DoesNotContain("is available", run.Output, StringComparison.Ordinal);
     }
 
+    /// What the log is for. The console keeps its one sentence for the KVM; the file keeps
+    /// what was run, what it exited with, and — the part that cannot be retyped from a
+    /// photograph of a screen — the exception underneath.
+    [Fact]
+    public async Task Every_command_records_what_was_run_and_what_it_exited_with()
+    {
+        RecordingDiagnosticLog log = new();
+
+        await Run(["status"], diagnostics: log);
+
+        Assert.Equal(
+            ["running: status", "exit 0: Success"],
+            log.Written.Select(entry => entry.Message));
+
+        Assert.All(log.Written, entry => Assert.Equal("status", entry.Operation));
+    }
+
+    /// The sentence on the console is one translated clause with no class and no stack. The
+    /// log gets the exception, which is the difference between an operator who can send
+    /// something and one who can only describe it.
+    [Fact]
+    public async Task A_host_that_cannot_be_read_puts_the_exception_in_the_log()
+    {
+        RecordingDiagnosticLog log = new();
+
+        CliRun run = await Run(
+            ["status"], provider: new UnreadableHypervProvider(), diagnostics: log);
+
+        Assert.Equal(ExitCode.LocalAccessFailure, run.Code);
+
+        DiagnosticEntry failure = Assert.Single(
+            log.Written, entry => entry.Operation == "hyper-v");
+
+        // The type and the stack: neither is in the sentence the console prints, and both are
+        // what a failure that only happens on one host is diagnosed from.
+        Assert.Contains(
+            failure.Detail,
+            line => line.Contains("InvalidOperationException", StringComparison.Ordinal));
+
+        Assert.Contains(
+            failure.Detail,
+            line => line.Contains("at Ripcord.Application.LocalStateReader", StringComparison.Ordinal));
+    }
+
+    /// The path is in the file, and the file is the thing most likely to be wrong. So the log
+    /// is pointed at it before anything is validated, and stays beside the binary when the
+    /// section is absent.
+    [Fact]
+    public async Task The_log_goes_where_the_configuration_asks()
+    {
+        RecordingDiagnosticLog log = new();
+
+        await Run(["status"], diagnostics: log);
+
+        Assert.Equal("/opt/ripcord/ripcord.log", log.Destination?.Path);
+        Assert.True(log.Destination?.Enabled);
+    }
+
     private static async Task<CliRun> Run(
         string[] args,
         string machineName = FakeScenarios.LocalHostName,
@@ -820,6 +880,7 @@ public class RipcordCliTests
         IReleaseSource? releaseSource = null,
         IUpdateNoticeStore? updateNotices = null,
         IBinarySwap? binarySwap = null,
+        IDiagnosticLog? diagnostics = null,
         CancellationToken cancellationToken = default)
     {
         StringWriter output = new();
@@ -844,7 +905,8 @@ public class RipcordCliTests
                 releaseSource ?? new NoReleaseSource(),
                 updateNotices ?? new MemoryUpdateNoticeStore(),
                 binarySwap ?? new NoBinarySwap(),
-                new FixedClock(Now)),
+                new FixedClock(Now),
+                diagnostics ?? new SilentDiagnosticLog()),
             new CliEnvironment(
                 machineName, DefaultConfigPath, BinaryPath, new StringReader(typed ?? "")));
 

@@ -159,7 +159,8 @@ public class FenceCliTests
                 new NoReleaseSource(),
                 new MemoryUpdateNoticeStore(),
                 new NoBinarySwap(),
-                new FixedClock(Now)),
+                new FixedClock(Now),
+                new SilentDiagnosticLog()),
             new CliEnvironment(
                 FakeScenarios.LocalHostName,
                 @"C:\ProgramData\Ripcord\ripcord.yaml",

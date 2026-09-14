@@ -235,11 +235,13 @@ public class StatusQueryTests
                 provider,
                 hostSystem ?? FakeHostSystemProvider.Target(),
                 FakeCertificateProvider.Valid(
-                    Tests.Configuration.ValidDocument.LocalThumbprint, "CN=HV-REPLICA-01")),
+                    Tests.Configuration.ValidDocument.LocalThumbprint, "CN=HV-REPLICA-01"),
+                new SilentDiagnosticLog()),
             peerChannel ?? FakePeerChannel.Absent(),
             snapshotStore ?? new InMemorySnapshotStore(),
             new FixedClock(Now),
-            new BuildIdentity("0.1.0", "abc123"));
+            new BuildIdentity("0.1.0", "abc123"),
+            new SilentDiagnosticLog());
 
     private sealed class StubConfigStore(ConfigurationRead read) : IConfigStore
     {
