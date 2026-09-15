@@ -13,6 +13,13 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ### Added
 
+- **Colour in the rendered blocks** — severities, the replication health column, `STALE`, an
+  unreachable peer's reason, the section headings and the `init` interview. It is switched on
+  only where the console has been asked and said yes: redirected output, the listener service,
+  `NO_COLOR` and `--no-color` all get exactly the text they got before. Nothing is said in
+  colour alone, and the fixed 75-column layout is unchanged — the renderers emit markers and
+  the escapes are substituted once, on the way out.
+
 - **`ripcord init`** — an interview that writes this host's `ripcord.yaml`. It reads the host's
   switches and VMs and offers them rather than expecting them from memory, refuses any answer
   the file would not take, and what it produces **validates**: `ripcord status` works straight

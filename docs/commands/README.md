@@ -46,6 +46,18 @@ one: [`ripcord init`](init.md) interviews you and writes a file that validates. 
 whenever something changes — it re-asks with the current answers filled in and keeps everything
 it did not ask about.
 
+## Colour
+
+Rendered blocks carry colour when the console says it understands escape sequences, and never
+otherwise. Nothing is said in colour alone — `Critical`, `STALE` and `CRITICAL` are the words
+that carry the meaning, and colour only makes them easier to find. So the block reads
+identically without it, which is what it is:
+
+- redirected to a file — `ripcord status > state.txt`;
+- written by the listener service into `listener.log`;
+- on a console whose `SetConsoleMode` refuses virtual-terminal processing;
+- with `NO_COLOR` set to anything, or `--no-color` on the command line.
+
 ## When one line is not enough
 
 Every command writes what it ran, what it exited with, and the full exception behind any
