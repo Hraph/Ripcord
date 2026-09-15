@@ -26,7 +26,7 @@ public static class UpdateRenderer
 
         if (plan.Halt is { } halt)
         {
-            AppendWrapped(output, Ink.Red("REFUSED"), halt);
+            AppendWrapped(output, "REFUSED", halt, refused: true);
             return Layout.Rendered(output, palette);
         }
 
@@ -101,7 +101,11 @@ public static class UpdateRenderer
         return Layout.Rendered(output, palette);
     }
 
-    private static void AppendWrapped(StringBuilder output, string label, string text)
+    /// The label is coloured after the prefix has been measured, never before: wrapping a
+    /// marker-bearing label made `prefix.Length` two characters too long, which narrowed the
+    /// wrap and widened the hanging indent of every continuation line.
+    private static void AppendWrapped(
+        StringBuilder output, string label, string text, bool refused = false)
     {
         string prefix = label.Length > 0 ? $"  {label}: " : "  ";
         string indent = new(' ', prefix.Length);
@@ -109,8 +113,11 @@ public static class UpdateRenderer
 
         foreach (string line in Layout.Wrap(text, Layout.Width - prefix.Length))
         {
-            output.AppendLine((first ? prefix : indent) + line);
+            output.AppendLine((first ? Tint(prefix, refused) : indent) + line);
             first = false;
         }
     }
+
+    private static string Tint(string prefix, bool refused) =>
+        refused ? Ink.Red(prefix) : prefix;
 }

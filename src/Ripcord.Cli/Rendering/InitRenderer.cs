@@ -24,15 +24,33 @@ public static class InitRenderer
     {
         ArgumentNullException.ThrowIfNull(path);
 
+        const string Title = "RIPCORD INIT";
+
+        // The path goes on its own line when it will not fit beside the title. Truncating it
+        // would be worse: the one thing this screen is about to write is the file it names,
+        // and a development path or a `--config` somewhere deep is longer than the screen.
+        bool beside = Title.Length + 2 + path.Length <= Layout.Width;
+
         List<string> lines =
         [
-            Ink.Bold(Layout.Pad("RIPCORD INIT", Layout.Width - path.Length)) + Ink.Faint(path),
+            beside
+                ? Ink.Bold(Layout.Pad(Title, Layout.Width - path.Length)) + Ink.Faint(path)
+                : Ink.Bold(Title),
+        ];
+
+        if (!beside)
+        {
+            lines.Add(Ink.Faint(path));
+        }
+
+        lines.AddRange(
+        [
             Ink.Faint(Layout.Line(Layout.Width)),
             "",
             Ink.Faint(rewriting
                 ? "  Every question is answered with what the file says. Enter keeps it."
                 : "  Nothing here yet. Enter takes the value in brackets."),
-        ];
+        ]);
 
         return [.. lines.Select(line => (palette ?? Palette.None).Apply(line))];
     }

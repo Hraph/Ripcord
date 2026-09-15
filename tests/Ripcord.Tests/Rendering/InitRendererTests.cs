@@ -88,6 +88,31 @@ public class InitRendererTests
             "RIPCORD INIT" + new string(' ', 75 - 12 - 25) + "D:\\Ripcord\\ripcord.yaml.x",
             InitRenderer.Banner("D:\\Ripcord\\ripcord.yaml.x", rewriting: false)[0]);
 
+    /// The crash this screen actually died on: run from a source tree, the configuration path
+    /// is longer than the whole 75-column layout, `Layout.Width - path.Length` goes negative
+    /// and `PadRight` throws — taking down the command before a single question is asked.
+    [Fact]
+    public void A_path_longer_than_the_screen_goes_on_its_own_line()
+    {
+        const string Long =
+            "/Users/somebody/Dropbox/Projects/RipCord/src/Ripcord.Host.Windows/bin/Debug/"
+            + "net10.0-windows/ripcord.yaml";
+
+        IReadOnlyList<string> banner = InitRenderer.Banner(Long, rewriting: false);
+
+        Assert.Equal("RIPCORD INIT", banner[0]);
+        Assert.Equal(Long, banner[1]);
+    }
+
+    /// A column too narrow for what goes in it is a layout that no longer fits, never a reason
+    /// to stop — rule 5 applied to the rendering itself. Asserted through the screen rather
+    /// than against `Layout` directly, which is internal to the CLI on purpose.
+    [Fact]
+    public void A_path_far_longer_than_the_screen_still_renders() =>
+        Assert.Equal(
+            "RIPCORD INIT",
+            InitRenderer.Banner(new string('x', 400), rewriting: false)[0]);
+
     /// With no palette there is no escape and no marker: this screen is also what a redirected
     /// run and the transcript in a ticket look like.
     [Fact]

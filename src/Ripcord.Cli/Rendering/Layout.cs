@@ -51,12 +51,20 @@ internal static class Layout
     public static string Date(DateTimeOffset instant) =>
         instant.ToUniversalTime().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
-    public static string Pad(string value, int width) => value.PadRight(width);
+    /// A column narrower than what goes in it is a layout that no longer fits, not a reason to
+    /// stop. `PadRight` throws on a negative width, and a rendering that throws takes down the
+    /// command it was describing — which is how `ripcord init` died on a configuration path
+    /// longer than the screen.
+    public static string Pad(string value, int width) => value.PadRight(Math.Max(width, 0));
 
-    public static string PadLeft(string value, int width) => value.PadLeft(width);
+    public static string PadLeft(string value, int width) => value.PadLeft(Math.Max(width, 0));
 
+    /// Same reasoning: a width too small to hold even the ellipsis returns what it can rather
+    /// than indexing past the end of the string.
     public static string Truncate(string value, int width) =>
-        value.Length <= width ? value : value[..(width - 3)] + "...";
+        value.Length <= width
+            ? value
+            : width <= 3 ? value[..Math.Max(width, 0)] : value[..(width - 3)] + "...";
 
     public static string Spaces(int count) => new(' ', count);
 
