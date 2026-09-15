@@ -132,7 +132,10 @@ public sealed class StorageDocument
 
     public int? FreeSpaceWarningGb { get; set; }
 
-    public bool CheckBitlockerAutounlock { get; set; }
+    /// Nullable so that absence survives a rewrite. `ripcord init` puts back what it found,
+    /// and a plain bool would turn "the key was never there" into "the key says false" — the
+    /// same behaviour, written down as a decision nobody made.
+    public bool? CheckBitlockerAutounlock { get; set; }
 }
 
 /// Absent on a host that has acknowledged nothing, which is the normal case.

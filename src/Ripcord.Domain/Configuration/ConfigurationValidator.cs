@@ -501,7 +501,7 @@ public static class ConfigurationValidator
 
         return complete
             ? new StorageSettings(
-                volume!, storage.FreeSpaceWarningGb!.Value, storage.CheckBitlockerAutounlock)
+                volume!, storage.FreeSpaceWarningGb!.Value, storage.CheckBitlockerAutounlock ?? false)
             : null;
     }
 
