@@ -26,21 +26,31 @@ public sealed record InterviewVm(string Name, bool Replicated, bool Running)
 }
 
 /// One question, with everything needed to put it on a console and nothing about how.
+///
+/// `Group` is what the interview is asking about at that moment, so the console can head a run
+/// of questions once instead of repeating the context in every prompt. `Listed` separates the
+/// two kinds of choice: a handful of fixed words belongs beside the prompt, while a list read
+/// off this host is numbered because the answer is the number.
 public sealed record InterviewQuestion(
     string Key,
     string Prompt,
     string? Default,
     IReadOnlyList<string> Choices,
-    IReadOnlyList<string> Explanation)
+    IReadOnlyList<string> Explanation,
+    string Group = "",
+    bool Listed = false)
 {
-    public static InterviewQuestion Of(string key, string prompt, string? answer = null) =>
-        new(key, prompt, answer, [], []);
+    public static InterviewQuestion Of(
+        string key, string prompt, string? answer = null, string group = "") =>
+        new(key, prompt, answer, [], [], group);
 
     public bool Equals(InterviewQuestion? other) =>
         other is not null
         && this.Key == other.Key
         && this.Prompt == other.Prompt
         && this.Default == other.Default
+        && this.Group == other.Group
+        && this.Listed == other.Listed
         && Structural.Same(this.Choices, other.Choices)
         && Structural.Same(this.Explanation, other.Explanation);
 
@@ -59,6 +69,23 @@ public sealed record InterviewQuestion(
 public sealed class ConfigurationInterview
 {
     private const string All = "all";
+
+    /// What the interview is asking about. A run of questions is headed once rather than each
+    /// prompt carrying its own context, which is what made twelve VMs read as one long wall.
+    public static class Groups
+    {
+        public const string ThisHost = "THIS HOST";
+
+        public const string OtherHost = "THE OTHER HOST";
+
+        public const string Replication = "REPLICATION";
+
+        public const string Vms = "THE VIRTUAL MACHINES";
+
+        public const string Priorities = "FAILOVER ORDER";
+
+        public const string Thresholds = "THRESHOLDS";
+    }
 
     private readonly InterviewFacts facts;
     private readonly ConfigurationDocument? seed;
@@ -141,7 +168,8 @@ public sealed class ConfigurationInterview
                 ["primary", "dr"],
                 ["The pair's two files are mirror images. Nothing observable says which way",
                  "round the replication is meant to run, so this is the one thing only you",
-                 "can say."]),
+                 "can say."],
+                Groups.ThisHost),
         ];
 
         if (this.Missing(steps, out InterviewPlan incomplete))
@@ -150,56 +178,77 @@ public sealed class ConfigurationInterview
         }
 
         steps.Add(InterviewQuestion.Of(
-            "peer.hostname", "What is the other host called?", this.SeededPeer()));
+            "peer.hostname", "Its name", this.SeededPeer(), Groups.OtherHost));
 
         steps.Add(new InterviewQuestion(
             "peer.address",
-            "What IP address does it answer on?",
+            "Its IP address",
             this.seed?.Peer?.Address,
             [],
             ["Written in full - 192.0.2.10, not a name and not 192.0.2: it is compared",
-             "against where a connection came from, and it lands in a firewall rule."]));
+             "against where a connection came from, and it lands in a firewall rule."],
+            Groups.OtherHost));
 
         steps.Add(new InterviewQuestion(
             "switch",
             "Which switch are the replicas attached to on the failover target?",
             this.seed?.Replication?.ExpectedSwitchName,
             [.. this.facts.Switches.Select(Described)],
-            this.facts.Switches.Count > 0 ? [] : ["This host's switches could not be read, so type the name."]));
+            this.facts.Switches.Count > 0
+                ? []
+                : ["This host's switches could not be read, so type the name."],
+            Groups.Replication,
+            this.facts.Switches.Count > 0));
 
         steps.Add(new InterviewQuestion(
             "vms",
-            "Which VMs matter? Numbers separated by commas, or 'all'.",
+            "Which ones matter? Numbers separated by commas, or 'all'",
             this.SeededVms(),
             [.. this.OfferedVms().Select(vm => vm.Described)],
             this.OfferedVms().Count > 0
                 ? []
-                : ["This host's VMs could not be read, so type their names separated by commas."]));
+                : ["This host's VMs could not be read, so type their names separated by commas."],
+            Groups.Vms,
+            this.OfferedVms().Count > 0));
 
         if (this.Missing(steps, out incomplete))
         {
             return incomplete;
         }
 
-        foreach (string name in this.ChosenVms())
+        int width = this.ChosenVms().Max(name => name.Length);
+
+        foreach ((string name, int index) in this.ChosenVms().Select((name, index) => (name, index)))
         {
+            // The explanation belongs to the group, not to every VM in it: repeated twelve
+            // times it stops being read, which is the same as not being there.
             steps.Add(new InterviewQuestion(
                 $"priority:{name}",
-                $"{name}: first back, and halts a failover if it runs on both hosts?",
+                $"{name.PadRight(width)}  priority",
                 this.SeededPriority(name),
                 ["P1", "P2"],
-                []));
+                index > 0
+                    ? []
+                    : ["P1 comes back first in a sweep, and a P1 running on both hosts at",
+                       "once halts every mutating command. P2 is everything that can wait."],
+                Groups.Priorities));
 
-            steps.Add(InterviewQuestion.Of(
-                $"dc:{name}", $"{name}: is it a domain controller?", this.SeededDc(name)));
+            steps.Add(new InterviewQuestion(
+                $"dc:{name}",
+                $"{name.PadRight(width)}  domain controller",
+                this.SeededDc(name),
+                ["y", "n"],
+                [],
+                Groups.Priorities));
         }
 
         steps.Add(new InterviewQuestion(
             "defaults",
-            "Accept all six?",
+            "Take all six",
             "y",
             ["y", "n"],
-            [.. this.SixLines()]));
+            [.. this.SixLines()],
+            Groups.Thresholds));
 
         if (this.Missing(steps, out incomplete))
         {
@@ -469,7 +518,7 @@ public sealed class ConfigurationInterview
 
     private IReadOnlyList<string> SixLines() =>
     [
-        "These six have sensible figures, and the file explains each of them:",
+        "These have sensible figures, and the file explains each of them:",
         $"  host memory reserve      {this.Six("node.reserve")} GB",
         $"  peer offline after       {this.Six("peer.offline")} s",
         $"  replication frequency    {this.Six("replication.frequency")} s",
@@ -480,12 +529,18 @@ public sealed class ConfigurationInterview
 
     private IReadOnlyList<InterviewQuestion> SixQuestions() =>
     [
-        InterviewQuestion.Of("node.reserve", "Host memory reserve, in GB?", this.Six("node.reserve")),
-        InterviewQuestion.Of("peer.offline", "Call the peer offline after how many seconds?", this.Six("peer.offline")),
-        InterviewQuestion.Of("replication.frequency", "Replication frequency, in seconds?", this.Six("replication.frequency")),
-        InterviewQuestion.Of("replication.lag", "Warn at how many times that frequency?", this.Six("replication.lag")),
-        InterviewQuestion.Of("storage.data_volume", "Which volume holds the VMs?", this.Six("storage.data_volume")),
-        InterviewQuestion.Of("storage.free_space", "Warn below how many GB free?", this.Six("storage.free_space")),
+        InterviewQuestion.Of(
+            "node.reserve", "Host memory reserve, in GB", this.Six("node.reserve"), Groups.Thresholds),
+        InterviewQuestion.Of(
+            "peer.offline", "Call the peer offline after, in seconds", this.Six("peer.offline"), Groups.Thresholds),
+        InterviewQuestion.Of(
+            "replication.frequency", "Replication frequency, in seconds", this.Six("replication.frequency"), Groups.Thresholds),
+        InterviewQuestion.Of(
+            "replication.lag", "Warn at how many times that frequency", this.Six("replication.lag"), Groups.Thresholds),
+        InterviewQuestion.Of(
+            "storage.data_volume", "The volume the VMs live on", this.Six("storage.data_volume"), Groups.Thresholds),
+        InterviewQuestion.Of(
+            "storage.free_space", "Warn below how many GB free", this.Six("storage.free_space"), Groups.Thresholds),
     ];
 
     /// What the file already says, or the default. One method so the grouped question and the
