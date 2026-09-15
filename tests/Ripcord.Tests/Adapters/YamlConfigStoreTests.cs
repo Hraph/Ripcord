@@ -75,7 +75,12 @@ public sealed class YamlConfigStoreTests : IDisposable
 
         Assert.Null(read.Document);
         ConfigurationError error = Assert.Single(read.Errors);
-        Assert.Contains("absent.yaml", error.Message);
+
+        // Absence, not a read failure. The path is the error's own field, so the CLI can say
+        // it once and name the command that creates a file rather than repeating a .NET
+        // sentence that says the path twice more and offers nothing.
+        Assert.Equal(ConfigurationErrorKind.Missing, error.Kind);
+        Assert.Contains("absent.yaml", error.Path, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -183,6 +188,56 @@ public sealed class YamlConfigStoreTests : IDisposable
         File.WriteAllText(path, yaml);
         return new YamlConfigStore().Read(path);
     }
+
+    /// `ripcord init` rewrites the file somebody's failovers depend on. The previous one is
+    /// kept, and it is kept by name in the result so the console can say where it went.
+    [Fact]
+    public void Writing_keeps_the_previous_file_and_says_where()
+    {
+        string path = Path.Combine(this.directory, "ripcord.yaml");
+        File.WriteAllText(path, "schema_version: 1\n");
+
+        ConfigurationWrite written = new YamlConfigStore().Write(path, "node:\n", path + ".1");
+
+        Assert.True(written.Written);
+        Assert.Equal(path + ".1", written.Kept);
+        Assert.Equal("node:\n", File.ReadAllText(path));
+        Assert.Equal("schema_version: 1\n", File.ReadAllText(path + ".1"));
+    }
+
+    [Fact]
+    public void A_first_write_keeps_nothing_because_there_was_nothing()
+    {
+        string path = Path.Combine(this.directory, "fresh.yaml");
+
+        Assert.Null(new YamlConfigStore().Write(path, "node:\n", path + ".1").Kept);
+        Assert.True(File.Exists(path));
+    }
+
+    /// The ordering that matters. The previous file used to be moved aside first, so a write
+    /// that then failed left the host with **no** configuration at all while reporting only
+    /// "cannot write". The content is staged whole before anything is moved.
+    [Fact]
+    public void A_write_that_cannot_complete_leaves_the_configuration_where_it_was()
+    {
+        string path = Path.Combine(this.directory, "ripcord.yaml");
+        File.WriteAllText(path, "schema_version: 1\n");
+
+        // The staging file's own path taken by a directory: the write fails before the
+        // previous configuration has been touched.
+        Directory.CreateDirectory(path + ".new");
+
+        ConfigurationWrite written = new YamlConfigStore().Write(path, "node:\n", path + ".1");
+
+        Assert.False(written.Written);
+        Assert.NotNull(written.FailureMessage);
+        Assert.Equal("schema_version: 1\n", File.ReadAllText(path));
+        Assert.False(File.Exists(path + ".1"));
+    }
+
+    [Fact]
+    public void Reading_the_text_of_a_file_that_is_not_there_is_not_an_error() =>
+        Assert.Null(new YamlConfigStore().ReadText(Path.Combine(this.directory, "absent.yaml")));
 
     public void Dispose() => Directory.Delete(this.directory, recursive: true);
 }
