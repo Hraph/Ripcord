@@ -10,6 +10,13 @@ at three in the morning.
 The shipped samples in [`config/`](../config) carry a comment on every key. This page is the
 reference; they are the starting point.
 
+## Where it comes from
+
+[`ripcord init`](commands/init.md) writes one by asking, reading this host's switches and VMs
+to offer them rather than expecting them from memory. Run it again to change anything: it
+re-asks with the current answers in place, keeps every section it does not ask about, and
+leaves the previous file as `ripcord.yaml.1`.
+
 ## Required
 
 ```yaml

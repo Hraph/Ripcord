@@ -54,6 +54,7 @@ One page each, in [`docs/commands/`](docs/commands/).
 
 | | | |
 |---|---|---|
+| [`init`](docs/commands/init.md) | write this host's `ripcord.yaml` by interview | mutating |
 | [`status`](docs/commands/status.md) | what both hosts are doing | read-only |
 | [`check`](docs/commands/check.md) | would a failover work right now | read-only |
 | [`service`](docs/commands/service.md) | the listener: state, install, remove, restart | bare form read-only |

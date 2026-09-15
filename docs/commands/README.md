@@ -39,6 +39,13 @@ The last two are the ones that matter after a failure. 4 says the host is where 
 it is not, and names what to do about it. Re-running is safe either way: every mutating command
 re-derives where it is from what the hosts report, never from a stored position.
 
+## Starting from nothing
+
+A host with a binary and no `ripcord.yaml` says so, and names the one command that produces
+one: [`ripcord init`](init.md) interviews you and writes a file that validates. Run it again
+whenever something changes — it re-asks with the current answers filled in and keeps everything
+it did not ask about.
+
 ## When one line is not enough
 
 Every command writes what it ran, what it exited with, and the full exception behind any

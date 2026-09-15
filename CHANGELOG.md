@@ -13,6 +13,16 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ### Added
 
+- **`ripcord init`** — an interview that writes this host's `ripcord.yaml`. It reads the host's
+  switches and VMs and offers them rather than expecting them from memory, refuses any answer
+  the file would not take, and what it produces **validates**: `ripcord status` works straight
+  afterwards. Running it again is an edit, not a restart — every question arrives answered with
+  what the file says, every section it does not ask about is carried across as the original
+  lines with its comments, and the previous file is kept as `ripcord.yaml.1`.
+- **A missing configuration is no longer reported as a broken one.** A host with a binary and
+  no `ripcord.yaml` was told `cannot read '<path>': Could not find file '<path>'`, with the
+  path in it three times and no next step. It now names the path once and the command that
+  creates one.
 - **A diagnostic log**, `ripcord.log` beside the binary, on by default and configurable under
   `diagnostics` in `ripcord.yaml`. Every command records what it ran and what it exited with;
   every failure the console only had room for one sentence about records the exception behind
