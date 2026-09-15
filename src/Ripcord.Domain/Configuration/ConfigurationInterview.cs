@@ -154,11 +154,11 @@ public sealed class ConfigurationInterview
 
         steps.Add(new InterviewQuestion(
             "peer.address",
-            "What address does it answer on?",
+            "What IP address does it answer on?",
             this.seed?.Peer?.Address,
             [],
-            ["An address written in full, not a name: it is compared against where a",
-             "connection came from, and it lands in a firewall rule."]));
+            ["Written in full - 192.0.2.10, not a name and not 192.0.2: it is compared",
+             "against where a connection came from, and it lands in a firewall rule."]));
 
         steps.Add(new InterviewQuestion(
             "switch",
