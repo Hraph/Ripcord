@@ -959,11 +959,11 @@ public class RipcordCliTests
         bool listenerEnabled = true,
         bool alerting = false,
         bool updates = false,
-        bool dashboard = false) : IConfigStore
+        bool dashboard = false) : ReadOnlyConfigStore
     {
         public string? RequestedPath { get; private set; }
 
-        public ConfigurationRead Read(string path)
+        public override ConfigurationRead Read(string path)
         {
             this.RequestedPath = path;
             ConfigurationDocument document = Tests.Configuration.ValidDocument.Create();

@@ -285,9 +285,9 @@ public class TestFailoverCliTests
     }
 
     private sealed class StubConfigStore(Action<ConfigurationDocument>? adjust = null)
-        : IConfigStore
+        : ReadOnlyConfigStore
     {
-        public ConfigurationRead Read(string path)
+        public override ConfigurationRead Read(string path)
         {
             ConfigurationDocument document = ValidDocument.Create();
             adjust?.Invoke(document);

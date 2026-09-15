@@ -384,9 +384,9 @@ public class FailoverCliTests
 
     private sealed record CliRun(ExitCode Code, string Output, string Error);
 
-    private sealed class StubConfigStore : IConfigStore
+    private sealed class StubConfigStore : ReadOnlyConfigStore
     {
-        public ConfigurationRead Read(string path) =>
+        public override ConfigurationRead Read(string path) =>
             new(ValidDocument.Create(), []);
     }
 }

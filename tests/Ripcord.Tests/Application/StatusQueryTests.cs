@@ -243,9 +243,9 @@ public class StatusQueryTests
             new BuildIdentity("0.1.0", "abc123"),
             new SilentDiagnosticLog());
 
-    private sealed class StubConfigStore(ConfigurationRead read) : IConfigStore
+    private sealed class StubConfigStore(ConfigurationRead read) : ReadOnlyConfigStore
     {
-        public ConfigurationRead Read(string path) => read;
+        public override ConfigurationRead Read(string path) => read;
     }
 
 

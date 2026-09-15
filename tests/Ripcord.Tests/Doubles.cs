@@ -10,6 +10,12 @@ using Ripcord.Ports.Pairing;
 using Ripcord.Ports;
 using Ripcord.Ports.Diagnostics;
 using Ripcord.Domain.Diagnostics;
+using Ripcord.Ports.Configuration;
+using Ripcord.Adapters.Fake;
+using Ripcord.Tests.Alerting;
+using Ripcord.Tests.Updates;
+using Ripcord.Cli;
+using Ripcord.Ports.Replication;
 
 namespace Ripcord.Tests;
 
@@ -122,4 +128,102 @@ public sealed class SilentDiagnosticLog : IDiagnosticLog
     public void SendTo(DiagnosticDestination destination)
     {
     }
+}
+
+/// A configuration store that only reads. Most tests never write one, and every one of them
+/// would otherwise carry two members saying so.
+public abstract class ReadOnlyConfigStore : IConfigStore
+{
+    public abstract ConfigurationRead Read(string path);
+
+    public virtual string? ReadText(string path) => null;
+
+    public virtual ConfigurationWrite Write(string path, string content, string keepAs) =>
+        ConfigurationWrite.Failed("this test's configuration store does not write");
+}
+
+/// The store `ripcord init` is tested against: it remembers what was written and what the
+/// previous file was kept as.
+public sealed class MemoryConfigStore(ConfigurationRead read, string? text = null)
+    : ReadOnlyConfigStore
+{
+    public string? Written { get; private set; }
+
+    public string? Kept { get; private set; }
+
+    public override ConfigurationRead Read(string path) => read;
+
+    public override string? ReadText(string path) => text;
+
+    public override ConfigurationWrite Write(string path, string content, string keepAs)
+    {
+        this.Written = content;
+        this.Kept = text is null ? null : keepAs;
+
+        return ConfigurationWrite.Succeeded(this.Kept);
+    }
+}
+
+/// `YamlConfigStore` reads a path, and half these tests have text. One temp file, written and
+/// deleted, rather than the same six lines in four places.
+public static class Yaml
+{
+    public static ConfigurationRead Read(string text)
+    {
+        string path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".yaml");
+
+        try
+        {
+            File.WriteAllText(path, text);
+            return new Ripcord.Adapters.Yaml.YamlConfigStore().Read(path);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+}
+
+/// A host nothing has been deployed to. `TestPorts` needs an executor and most verbs never
+/// reach it; the ones that do bring their own.
+public sealed class UntouchedHost : IDeploymentExecutor
+{
+    public ObservedDeployment Observe(DesiredDeployment desired) =>
+        new(false, null, false, null, null, false, false);
+
+    public void Apply(DeploymentStep change, DesiredDeployment desired)
+    {
+    }
+}
+
+/// Every port filled with a harmless fake, so a test about one verb does not have to name
+/// seventeen of them. Each milestone adds another port, and this is the one place that has to
+/// know.
+public static class TestPorts
+{
+    public static readonly DateTimeOffset Now =
+        new(2026, 9, 13, 14, 0, 0, TimeSpan.Zero);
+
+    public static RipcordPorts With(
+        IConfigStore configStore, IHypervProvider? provider = null) =>
+        new(
+            configStore,
+            provider ?? new FakeHypervProvider(FakeScenarios.Healthy(Now)),
+            FakeHostSystemProvider.Target(),
+            FakeCertificateProvider.Valid(
+                Tests.Configuration.ValidDocument.LocalThumbprint, "CN=HV-REPLICA-01"),
+            FakePeerChannel.Absent(),
+            new InMemorySnapshotStore(),
+            new UntouchedHost(),
+            new NoOpPeerListener(),
+            new NoOpDashboardServer(),
+            new InMemoryAuditLog(),
+            new StubNotifier(),
+            new MemoryAlertStateStore(),
+            StubReleaseFeed.Unreachable(),
+            new NoReleaseSource(),
+            new MemoryUpdateNoticeStore(),
+            new NoBinarySwap(),
+            new FixedClock(Now),
+            new SilentDiagnosticLog());
 }

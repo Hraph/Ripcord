@@ -251,9 +251,9 @@ public class FailoverQueryTests
                 CancellationToken.None);
     }
 
-    private sealed class StubConfigStore(string expectedRole, string machineName) : IConfigStore
+    private sealed class StubConfigStore(string expectedRole, string machineName) : ReadOnlyConfigStore
     {
-        public ConfigurationRead Read(string path)
+        public override ConfigurationRead Read(string path)
         {
             ConfigurationDocument document = ValidDocument.Create();
             document.Replication!.ExpectedRole = expectedRole;

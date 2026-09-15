@@ -224,9 +224,9 @@ public sealed class UpdateCliTests
         }
     }
 
-    private sealed class Store(bool check, bool install) : IConfigStore
+    private sealed class Store(bool check, bool install) : ReadOnlyConfigStore
     {
-        public ConfigurationRead Read(string path)
+        public override ConfigurationRead Read(string path)
         {
             ConfigurationDocument document = Tests.Configuration.ValidDocument.Create();
             document.Node!.Hostname = Machine;

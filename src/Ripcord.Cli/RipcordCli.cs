@@ -219,6 +219,10 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
                 return await this.CheckUpdateAsync(args[1..], output, error, cancellationToken)
                     .ConfigureAwait(false);
 
+            case "init":
+                return await this.InitAsync(args[1..], output, error, cancellationToken)
+                    .ConfigureAwait(false);
+
             case "version":
                 output.WriteLine($"ripcord {BuildInfo.VersionWithCommit}");
                 return ExitCode.Success;
@@ -228,6 +232,213 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
                 WriteUsage(error);
                 return ExitCode.InvalidConfiguration;
         }
+    }
+
+    /// Writes the first `ripcord.yaml`, or re-writes one without losing it.
+    ///
+    /// The whole of the decision-making is `ConfigurationInterview`; what is here is a loop
+    /// that prints a question and reads a line. That split is what lets the interview be
+    /// driven from a list of strings in a test, including the assertion that what it produces
+    /// passes the validator.
+    private async Task<ExitCode> InitAsync(
+        string[] args, TextWriter output, TextWriter error, CancellationToken cancellationToken)
+    {
+        if (!TryReadInitOptions(args, out InitOptions options, out string? optionError))
+        {
+            error.WriteLine($"ripcord: {optionError}");
+            return ExitCode.InvalidConfiguration;
+        }
+
+        // Read before anything is asked. A file that fails validation is the commonest reason
+        // to be running this, so it is read as a document and never validated: what it says is
+        // the answer to every question, and what it says about sections nobody asks about is
+        // carried across untouched.
+        ConfigurationDocument? seed = ports.ConfigStore.Read(options.Path).Document;
+        string? previous = ports.ConfigStore.ReadText(options.Path);
+
+        output.WriteLine(previous is null
+            ? $"Setting up {options.Path}."
+            : $"Reading {options.Path}. Press Enter to keep an answer as it is.");
+
+        ConfigurationInterview interview = ConfigurationInterview.Start(
+            await this.ReadFactsAsync(cancellationToken).ConfigureAwait(false),
+            seed,
+            options.Role);
+
+        while (interview.Question is { } question)
+        {
+            foreach (string line in InitRenderer.Lines(question))
+            {
+                output.WriteLine(line);
+            }
+
+            output.Write(InitRenderer.Prompt(question));
+
+            if (environment.ConfirmationReader?.ReadLine() is not { } typed)
+            {
+                // No console, or the end of a pipe. An interview that blocks for ever on a
+                // host nobody is sitting at is worse than one that will not start.
+                error.WriteLine("ripcord: init asks questions, and nothing is answering.");
+                error.WriteLine("  run it from a console; nothing was written.");
+                return ExitCode.Refused;
+            }
+
+            interview = interview.Answer(typed);
+
+            if (interview.Rejection is { } rejection)
+            {
+                error.WriteLine($"  {rejection}");
+            }
+        }
+
+        return this.WriteConfiguration(
+            output, error, options, ConfigurationTemplate.Render(interview.Draft!, previous), previous);
+    }
+
+    private ExitCode WriteConfiguration(
+        TextWriter output, TextWriter error, InitOptions options, string yaml, string? previous)
+    {
+        output.WriteLine();
+        output.WriteLine(yaml.TrimEnd());
+        output.WriteLine();
+
+        if (ConfigurationTemplate.CarriedOver(previous) is { Count: > 0 } carried)
+        {
+            output.WriteLine($"  kept as it was: {string.Join(", ", carried)}");
+        }
+
+        if (options.DryRun)
+        {
+            output.WriteLine("  --dry-run: nothing was written.");
+            return ExitCode.Success;
+        }
+
+        // The previous file is kept, so this is recoverable and asks for a word rather than
+        // the typed node name every irreversible operation asks for.
+        output.Write($"  Write this to {options.Path}? [Y/n] ");
+
+        if (environment.ConfirmationReader?.ReadLine()?.Trim().ToLowerInvariant() is "n" or "no")
+        {
+            error.WriteLine("ripcord: not written, nothing was changed.");
+            return ExitCode.Refused;
+        }
+
+        ConfigurationWrite written = ports.ConfigStore.Write(
+            options.Path, yaml, options.Path + ".1");
+
+        if (written.FailureMessage is { } failure)
+        {
+            error.WriteLine($"ripcord: {failure}");
+
+            error.WriteLine(written.Kept is { } moved
+                ? $"  the previous configuration is at {moved}"
+                : "  the configuration on this host was not touched.");
+
+            return ExitCode.LocalAccessFailure;
+        }
+
+        output.WriteLine($"  wrote {options.Path}");
+
+        if (written.Kept is { } kept)
+        {
+            output.WriteLine($"  the previous one is at {kept}");
+        }
+
+        output.WriteLine();
+        output.WriteLine("  Next:  ripcord status");
+        output.WriteLine("  The pair channel is separate and off until two certificates exist");
+        output.WriteLine("  on the hosts - see docs/commands/serve.md.");
+
+        return ExitCode.Success;
+    }
+
+    /// What the host can say about itself before there is a configuration. Neither list is
+    /// required: a host whose Hyper-V cannot be read still completes the interview by typing,
+    /// and the reason it could not be read is in `ripcord.log`.
+    private async Task<InterviewFacts> ReadFactsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            IReadOnlyList<Domain.Inventory.HostSwitch> switches = await ports.Provider
+                .GetSwitchesAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            HostState state = await ports.Provider
+                .GetLocalStateAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            return new InterviewFacts(
+                environment.MachineName,
+                switches,
+                [.. state.Vms.Select(vm => new InterviewVm(
+                    vm.Name,
+                    vm.Role != ReplicationRole.None,
+                    vm.PowerState == VmPowerState.Running))]);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            ports.Diagnostics.Write(Domain.Diagnostics.DiagnosticEntry.Of(
+                "init",
+                "this host's switches and VMs could not be read, so init asks for them",
+                exception.ToString()));
+
+            return InterviewFacts.Unread(environment.MachineName);
+        }
+    }
+
+    private sealed record InitOptions(string Path, ExpectedRole? Role, bool DryRun);
+
+    private bool TryReadInitOptions(
+        string[] args, out InitOptions options, out string? error)
+    {
+        string? path = null;
+        ExpectedRole? role = null;
+        bool dryRun = false;
+        error = null;
+
+        for (int index = 0; index < args.Length; index++)
+        {
+            switch (args[index])
+            {
+                case "--config":
+                    if (!TryConsumeConfig(args, ref index, ref path, out error))
+                    {
+                        options = new InitOptions(environment.DefaultConfigurationPath, null, false);
+                        return false;
+                    }
+
+                    break;
+
+                case "--role" when index + 1 < args.Length:
+                    role = args[++index].ToLowerInvariant() switch
+                    {
+                        "primary" => ExpectedRole.Primary,
+                        "dr" or "replica" => ExpectedRole.Replica,
+                        _ => null,
+                    };
+
+                    if (role is null)
+                    {
+                        error = $"--role takes primary or dr, not '{args[index]}'.";
+                        options = new InitOptions(environment.DefaultConfigurationPath, null, false);
+                        return false;
+                    }
+
+                    break;
+
+                case "--dry-run":
+                    dryRun = true;
+                    break;
+
+                default:
+                    error = $"unexpected argument '{args[index]}'.";
+                    options = new InitOptions(environment.DefaultConfigurationPath, null, false);
+                    return false;
+            }
+        }
+
+        options = new InitOptions(path ?? environment.DefaultConfigurationPath, role, dryRun);
+        return true;
     }
 
     private async Task<ExitCode> StatusAsync(
@@ -1247,6 +1458,11 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             return;
         }
 
+        if (WroteMissingConfiguration(error, outcome.Errors))
+        {
+            return;
+        }
+
         error.WriteLine("ripcord: the configuration cannot be used.");
 
         foreach (ConfigurationError configurationError in outcome.Errors)
@@ -1255,12 +1471,37 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         }
     }
 
+    /// A file that is not there is not a file that is wrong. One is repaired by editing and
+    /// the other by creating, and they were saying the same sentence — with the path in it
+    /// three times and no mention of the command that produces one.
+    private static bool WroteMissingConfiguration(
+        TextWriter error, IReadOnlyList<ConfigurationError> errors)
+    {
+        if (!MissingConfiguration.In(errors))
+        {
+            return false;
+        }
+
+        foreach (string line in MissingConfiguration.Lines(
+            errors.First(one => one.Kind == ConfigurationErrorKind.Missing).Path))
+        {
+            error.WriteLine(line);
+        }
+
+        return true;
+    }
+
     /// Every error at once, so six typos take one run rather than six.
     private static void WriteFailure(TextWriter error, StatusOutcome outcome)
     {
         if (outcome.FailureMessage is { } failure)
         {
             error.WriteLine($"ripcord: cannot read the local Hyper-V state: {failure}");
+            return;
+        }
+
+        if (WroteMissingConfiguration(error, outcome.Errors))
+        {
             return;
         }
 
@@ -1529,6 +1770,9 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
     {
         writer.WriteLine("ripcord - disaster recovery for a Hyper-V Replica pair");
         writer.WriteLine();
+        writer.WriteLine("  ripcord init [--config <path>]     write this host's ripcord.yaml");
+        writer.WriteLine("               [--role primary|dr]   by interview - run it again to");
+        writer.WriteLine("               [--dry-run]           change it without losing it");
         writer.WriteLine("  ripcord status [--config <path>]   read both sides of the pair");
         writer.WriteLine("  ripcord check [--config <path>]    would a failover work right now");
         writer.WriteLine("                [--notify [--dry-run]]");
