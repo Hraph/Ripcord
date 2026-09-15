@@ -15,7 +15,8 @@ public static class FenceRenderer
     private const int VmColumn = 20;
     private const int WasColumn = 18;
 
-    public static string Render(FenceOutcome outcome, DateTimeOffset now)
+    public static string Render(
+        FenceOutcome outcome, DateTimeOffset now, Palette? palette = null)
     {
         ArgumentNullException.ThrowIfNull(outcome);
 
@@ -37,13 +38,13 @@ public static class FenceRenderer
         if (outcome.Plan is not { } plan)
         {
             Layout.AppendBlock(output, "NOT FENCED", outcome.FailureMessage ?? "nothing was read");
-            return Layout.Rendered(output);
+            return Layout.Rendered(output, palette);
         }
 
         if (plan.Halt is { } halt)
         {
             Layout.AppendBlock(output, "HALTED", halt);
-            return Layout.Rendered(output);
+            return Layout.Rendered(output, palette);
         }
 
         AppendRows(output, outcome, plan, dryRun);
@@ -79,7 +80,7 @@ public static class FenceRenderer
                 string.Join(", ", plan.Absent));
         }
 
-        return Layout.Rendered(output);
+        return Layout.Rendered(output, palette);
     }
 
     private static void AppendRows(

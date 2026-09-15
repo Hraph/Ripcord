@@ -18,7 +18,8 @@ public static class TestFailoverRenderer
     private const int OutcomeColumn = 24;
     private const int BootColumn = 8;
 
-    public static string Render(TestFailoverReport report, string? testSwitch)
+    public static string Render(
+        TestFailoverReport report, string? testSwitch, Palette? palette = null)
     {
         ArgumentNullException.ThrowIfNull(report);
 
@@ -51,7 +52,7 @@ public static class TestFailoverRenderer
         AppendOrphans(output, report.Orphans);
         AppendVerdict(output, report);
 
-        return Layout.Rendered(output);
+        return Layout.Rendered(output, palette);
     }
 
     private static void AppendRefusal(StringBuilder output, PreconditionRefusal? refusal)

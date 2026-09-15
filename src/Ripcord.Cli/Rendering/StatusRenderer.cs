@@ -25,7 +25,8 @@ public static class StatusRenderer
         PairView view,
         TimeSpan offlineAfter,
         DateTimeOffset now,
-        string? updateNotice = null)
+        string? updateNotice = null,
+        Palette? palette = null)
     {
         ArgumentNullException.ThrowIfNull(view);
 
@@ -39,7 +40,7 @@ public static class StatusRenderer
         output.AppendLine();
         AppendHost(output, "PEER", view.Peer, offlineAfter, now, view.PeerCapturedAt);
 
-        return Layout.Rendered(output);
+        return Layout.Rendered(output, palette);
     }
 
     /// Beside the version line, because that is what it is about, and below the banner
@@ -58,7 +59,8 @@ public static class StatusRenderer
     }
 
     private static string Banner(DateTimeOffset now) =>
-        Pad("RIPCORD STATUS", Width - TimestampOf(now).Length) + TimestampOf(now);
+        Ink.Bold(Pad("RIPCORD STATUS", Width - TimestampOf(now).Length))
+        + Ink.Faint(TimestampOf(now));
 
     /// Version skew between the two hosts has to be visible: the sequences are encoded in the
     /// binary and they span the pair.
@@ -79,7 +81,8 @@ public static class StatusRenderer
 
         return peer.ToString() == local
             ? $"ripcord {local} on both hosts"
-            : $"ripcord {local} here, {peer} on the peer - a failover spanning both is refused";
+            : $"ripcord {local} here, {peer} on the peer - "
+                + Ink.Red("a failover spanning both is refused");
     }
 
     private static void AppendHost(
@@ -95,8 +98,12 @@ public static class StatusRenderer
         // NetBIOS caps host names at 15, but the column is guarded rather than trusted.
         string name = Truncate(host.HostName, Width - LabelColumn - presence.Length - 1);
 
-        output.AppendLine(
-            Pad($"{Pad(label, LabelColumn)}{name}", Width - presence.Length) + presence);
+        // Padded first, coloured second. Wrapping the label *before* the outer Pad put two
+        // markers inside a width calculation and the line came out two columns short — with
+        // the colour off as well, since the markers are only removed on the way out.
+        string head = Pad($"{Pad(label, LabelColumn)}{name}", Width - presence.Length);
+
+        output.AppendLine(Ink.Bold(head) + Tint(presence));
 
         if (!host.IsReachable)
         {
@@ -113,7 +120,7 @@ public static class StatusRenderer
             output.AppendLine(
                 $"{new string(' ', Indent)}State as of {TimestampOf(captured)} "
                 + $"({Duration(snapshot.AgeAt(now))} old)"
-                + (snapshot.IsFreshAt(now, offlineAfter) ? "" : " - STALE"));
+                + (snapshot.IsFreshAt(now, offlineAfter) ? "" : Ink.Amber(" - STALE")));
         }
 
         if (host.Vms.Count == 0)
@@ -122,8 +129,8 @@ public static class StatusRenderer
             return;
         }
 
-        output.AppendLine(Row("VM", "ROLE", "STATE", "HEALTH", "LAG", "PENDING"));
-        output.AppendLine(new string(' ', Indent) + new string('-', Width - Indent));
+        output.AppendLine(Ink.Faint(Row("VM", "ROLE", "STATE", "HEALTH", "LAG", "PENDING")));
+        output.AppendLine(Ink.Faint(new string(' ', Indent) + new string('-', Width - Indent)));
 
         foreach (VmReplicationState vm in host.Vms.OrderBy(
             vm => vm.Name, StringComparer.OrdinalIgnoreCase))
@@ -134,7 +141,8 @@ public static class StatusRenderer
                 StateLabel(vm.State),
                 vm.Health.ToString(),
                 Duration(vm.LagAt(now)),
-                Bytes(vm.PendingBytes)));
+                Bytes(vm.PendingBytes),
+                vm.Health));
         }
     }
 
@@ -145,7 +153,7 @@ public static class StatusRenderer
     {
         string indent = new(' ', Indent);
 
-        output.AppendLine($"{indent}{Sentence(host.Reachability.Reason)}");
+        output.AppendLine($"{indent}{Ink.Red(Sentence(host.Reachability.Reason))}");
 
         output.AppendLine(host.Reachability.UnreachableSince is { } since
             ? $"{indent}Unreachable since: {TimestampOf(since)} "
@@ -161,15 +169,41 @@ public static class StatusRenderer
             _ => "OFFLINE",
         };
 
+    /// Every cell is padded first and coloured second, so the colour cannot change a width.
     private static string Row(
-        string name, string role, string state, string health, string lag, string pending) =>
+        string name,
+        string role,
+        string state,
+        string health,
+        string lag,
+        string pending,
+        ReplicationHealth? severity = null) =>
         new string(' ', Indent)
         + Pad(name, NameColumn) + ' '
         + Pad(role, RoleColumn) + ' '
         + Pad(state, StateColumn) + ' '
-        + Pad(health, HealthColumn) + "  "
+        + Tint(Pad(health, HealthColumn), severity) + "  "
         + PadLeft(lag, LagColumn) + "  "
         + PadLeft(pending, PendingColumn);
+
+    /// Colour says the same thing the word already says. Nothing here is only a colour: the
+    /// block is read redirected to a file and by somebody who does not see red.
+    private static string Tint(string cell, ReplicationHealth? severity) =>
+        severity switch
+        {
+            ReplicationHealth.Normal => Ink.Green(cell),
+            ReplicationHealth.Warning => Ink.Amber(cell),
+            ReplicationHealth.Critical => Ink.Red(cell),
+            _ => cell,
+        };
+
+    private static string Tint(string presence) =>
+        presence switch
+        {
+            "REACHABLE" => Ink.Green(presence),
+            "SILENT" => Ink.Amber(presence),
+            _ => Ink.Red(presence),
+        };
 
     private static string Sentence(string reason) =>
         char.ToUpperInvariant(reason[0]) + reason[1..] + ".";

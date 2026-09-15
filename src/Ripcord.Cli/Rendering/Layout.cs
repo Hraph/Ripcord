@@ -4,9 +4,14 @@ using Ripcord.Domain.Replication;
 
 namespace Ripcord.Cli.Rendering;
 
-/// Fixed columns, fixed width, ASCII only, no colour. The real reading conditions are a
-/// 1024×768 KVM during an incident: nothing may depend on the terminal being wide, on a code
-/// page, or on the operator distinguishing two shades of red.
+/// Fixed columns, fixed width, ASCII only. The real reading conditions are a 1024×768 KVM
+/// during an incident: nothing may depend on the terminal being wide, on a code page, or on
+/// the operator distinguishing two shades of red.
+///
+/// Colour is an addition to that layout and never a substitute for it. Every state is still
+/// spelled out in words — `Critical`, `STALE`, `CRITICAL` — so the block reads identically
+/// with the colour off, which is what it is when redirected to a file or written by the
+/// service.
 ///
 /// Shared by both renderers so the two outputs line up when they are read one after the
 /// other, which is how they will be.
@@ -20,18 +25,23 @@ internal static class Layout
     /// StringBuilder.AppendLine, which is CRLF on Windows and LF in the Linux container the
     /// tests run in — and on a fixed 75-column layout a trailing carriage return is a 76th
     /// column. One format, whatever the host, decided here rather than by the framework.
-    public static string Rendered(StringBuilder output)
+    public static string Rendered(StringBuilder output, Palette? palette = null)
     {
         ArgumentNullException.ThrowIfNull(output);
 
-        return output.ToString().Replace("\r\n", "\n", StringComparison.Ordinal);
+        // The one place styling markers become escapes, or disappear. Every renderer already
+        // funnels through here, so there is no second exit where a marker could reach a file.
+        return (palette ?? Palette.None).Apply(
+            output.ToString().Replace("\r\n", "\n", StringComparison.Ordinal));
     }
 
+    /// The title is bold and the timestamp is faint, and both are coloured after the padding
+    /// that positions them — the width is measured on the plain text or the column moves.
     public static string Banner(string title, DateTimeOffset now)
     {
         string timestamp = Timestamp(now);
 
-        return Pad(title, Width - timestamp.Length) + timestamp;
+        return Ink.Bold(Pad(title, Width - timestamp.Length)) + Ink.Faint(timestamp);
     }
 
     public static string Timestamp(DateTimeOffset instant) =>

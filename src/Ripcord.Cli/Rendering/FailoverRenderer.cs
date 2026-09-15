@@ -18,7 +18,8 @@ public static class FailoverRenderer
     private const int HostColumn = 16;
     private const int OutcomeColumn = 13;
 
-    public static string Render(FailoverRunReport report, DateTimeOffset now)
+    public static string Render(
+        FailoverRunReport report, DateTimeOffset now, Palette? palette = null)
     {
         ArgumentNullException.ThrowIfNull(report);
 
@@ -58,7 +59,7 @@ public static class FailoverRenderer
             Layout.AppendBlock(output, "ACTION REQUIRED NOW", manual);
         }
 
-        return Layout.Rendered(output);
+        return Layout.Rendered(output, palette);
     }
 
     private static void AppendSteps(StringBuilder output, FailoverRunReport report)

@@ -18,7 +18,8 @@ public static class CheckRenderer
 
     private const int LabelColumn = 12;
 
-    public static string Render(CheckReport report, string? updateNotice = null)
+    public static string Render(
+        CheckReport report, string? updateNotice = null, Palette? palette = null)
     {
         ArgumentNullException.ThrowIfNull(report);
 
@@ -34,7 +35,7 @@ public static class CheckRenderer
 
         AppendFeasibility(output, report);
 
-        return Layout.Rendered(output);
+        return Layout.Rendered(output, palette);
     }
 
     private static void AppendHeader(
@@ -106,6 +107,17 @@ public static class CheckRenderer
         output.AppendLine();
     }
 
+    /// Same words either way. A reader who sees no colour loses nothing: `CRITICAL` is
+    /// already the loudest word on the page.
+    private static string Heading(string title, string text) =>
+        title switch
+        {
+            "CRITICAL" => Ink.Red(Ink.Bold(text)),
+            "WARNING" => Ink.Amber(text),
+            "NOT CHECKED" => Ink.Amber(text),
+            _ => Ink.Faint(text),
+        };
+
     private static void AppendSection(
         StringBuilder output, string title, IEnumerable<Finding> findings)
     {
@@ -116,8 +128,10 @@ public static class CheckRenderer
             return;
         }
 
-        output.AppendLine($"{title} ({listed.Count})");
-        output.AppendLine(Layout.Line(Layout.Width));
+        // The heading carries the severity, so it carries the colour. The count stays
+        // inside it: "CRITICAL (3)" is one thing to find, not two.
+        output.AppendLine(Heading(title, $"{title} ({listed.Count})"));
+        output.AppendLine(Ink.Faint(Layout.Line(Layout.Width)));
 
         foreach (Finding finding in listed)
         {
@@ -170,8 +184,8 @@ public static class CheckRenderer
     {
         Feasibility feasibility = report.Feasibility;
 
-        output.AppendLine($"FEASIBILITY - {report.TargetHostName}");
-        output.AppendLine(Layout.Line(Layout.Width));
+        output.AppendLine(Ink.Bold($"FEASIBILITY - {report.TargetHostName}"));
+        output.AppendLine(Ink.Faint(Layout.Line(Layout.Width)));
 
         output.AppendLine(Layout.Spaces(Layout.Indent) + (feasibility.UsableRamMb is { } usable
             ? $"Usable memory: {usable} MB"

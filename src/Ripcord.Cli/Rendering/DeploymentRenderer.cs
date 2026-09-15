@@ -17,7 +17,8 @@ public static class DeploymentRenderer
         /// What this run is, when it is neither a deployment nor a removal. A restart under a
         /// "DEPLOYMENT" banner is the kind of small lie that costs a second of doubt on the
         /// one screen that is read under pressure.
-        string? heading = null)
+        string? heading = null,
+        Palette? palette = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(desired);
@@ -39,7 +40,7 @@ public static class DeploymentRenderer
             output.AppendLine(removing
                 ? "  Nothing to remove: this host has no listener deployed."
                 : "  Nothing to do: this host already matches the configuration.");
-            return Layout.Rendered(output);
+            return Layout.Rendered(output, palette);
         }
 
         int number = 1;
@@ -53,7 +54,7 @@ public static class DeploymentRenderer
             number++;
         }
 
-        return Layout.Rendered(output);
+        return Layout.Rendered(output, palette);
     }
 
     /// The service on its own: what is there, and one line about what is not.
@@ -62,14 +63,17 @@ public static class DeploymentRenderer
     /// would change only by naming the command that would show it — a plan printed by a
     /// command that changes nothing reads like a command that is about to.
     public static string RenderState(
-        ObservedDeployment observed, DesiredDeployment desired, DeploymentPlan? plan)
+        ObservedDeployment observed,
+        DesiredDeployment desired,
+        DeploymentPlan? plan,
+        Palette? palette = null)
     {
         ArgumentNullException.ThrowIfNull(observed);
         ArgumentNullException.ThrowIfNull(desired);
 
         StringBuilder output = new();
 
-        output.AppendLine("RIPCORD LISTENER");
+        output.AppendLine(Ink.Bold("RIPCORD LISTENER"));
         output.AppendLine();
 
         AppendObserved(output, observed);
@@ -78,7 +82,7 @@ public static class DeploymentRenderer
             ? "  It matches the configuration."
             : $"  {plan.Steps.Count} step(s) would change it: ripcord service install --dry-run");
 
-        return Layout.Rendered(output);
+        return Layout.Rendered(output, palette);
     }
 
     /// What is on the host now, before what would change about it.
@@ -112,7 +116,10 @@ public static class DeploymentRenderer
     /// What was actually done, including the step that failed. A half-applied plan has to be
     /// legible: the operator needs to know where the host stopped.
     public static string RenderResult(
-        IReadOnlyList<DeploymentStep> applied, DeploymentStep? failed, string? failureMessage)
+        IReadOnlyList<DeploymentStep> applied,
+        DeploymentStep? failed,
+        string? failureMessage,
+        Palette? palette = null)
     {
         ArgumentNullException.ThrowIfNull(applied);
 
@@ -125,7 +132,7 @@ public static class DeploymentRenderer
 
         if (failed is not null)
         {
-            output.AppendLine($"  FAILED: {failed.Description}");
+            output.AppendLine(Ink.Red($"  FAILED: {failed.Description}"));
             output.AppendLine($"          {failureMessage}");
             output.AppendLine();
 
@@ -144,6 +151,6 @@ public static class DeploymentRenderer
             }
         }
 
-        return Layout.Rendered(output);
+        return Layout.Rendered(output, palette);
     }
 }

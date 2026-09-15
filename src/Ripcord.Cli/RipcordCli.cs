@@ -49,7 +49,15 @@ public sealed record CliEnvironment(
     /// than read from the configuration: an attacker who can edit `ripcord.yaml` must not be
     /// able to change what this host accepts as a genuine binary. Null on a host that carries
     /// no key, which refuses every install rather than trusting one.
-    string? ReleaseSigningKey = null);
+    string? ReleaseSigningKey = null,
+    /// Whether this console understands colour. Decided by the composition root, which is the
+    /// only place that can ask the operating system — and null everywhere else, which means
+    /// plain text. A test, a redirected file and the listener service all get plain text
+    /// without having to say so.
+    Palette? Palette = null,
+    /// The same answer for the error stream, which is redirected separately: `2> errors.log`
+    /// on a live console leaves one a console and the other a file.
+    Palette? ErrorPalette = null);
 
 /// Every port the command surface reaches the machine through. Grouped rather than listed one
 /// by one, because each milestone adds another and a composition root nobody can read is a
@@ -78,9 +86,24 @@ public sealed record RipcordPorts(
 /// the use case, the layout from StatusRenderer.
 public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 {
+    /// Plain text unless the composition root said otherwise.
+    private Palette Ink => environment.Palette ?? Palette.None;
+
+    /// The error stream's own answer. Never assumed to be the output stream's: everything
+    /// written here is what ends up in a file when somebody redirects `2>`.
+    private Palette ErrorInk => environment.ErrorPalette ?? Palette.None;
+
+    /// A refusal, in red when the console can take it.
+    ///
+    /// Applied at the few lines that say the command did not do what was asked, rather than to
+    /// everything written to the error stream: notes and degradations go there too, and a
+    /// screen where everything is red is a screen where nothing is.
+    private void Refuse(TextWriter error, string line) =>
+        error.WriteLine(this.ErrorInk.Apply(Rendering.Ink.Red(line)));
+
     /// Typed in full, not "y": this creates a Windows service and opens an inbound port on a
     /// host that may run a domain controller. A keystroke is not a decision.
-    private const string ConfirmationPrompt = "Type the node name to confirm: ";
+    private const string ConfirmationPrompt = "Type the node name to confirm";
 
     public async Task<ExitCode> RunAsync(
         string[] args, TextWriter output, TextWriter error, CancellationToken cancellationToken)
@@ -256,29 +279,36 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         ConfigurationDocument? seed = ports.ConfigStore.Read(options.Path).Document;
         string? previous = ports.ConfigStore.ReadText(options.Path);
 
-        output.WriteLine(previous is null
-            ? $"Setting up {options.Path}."
-            : $"Reading {options.Path}. Press Enter to keep an answer as it is.");
+        foreach (string line in InitRenderer.Banner(options.Path, previous is not null, this.Ink))
+        {
+            output.WriteLine(line);
+        }
 
         ConfigurationInterview interview = ConfigurationInterview.Start(
             await this.ReadFactsAsync(cancellationToken).ConfigureAwait(false),
             seed,
             options.Role);
 
+        // The section heading is written when the section changes, so a run of twelve VMs is
+        // headed once rather than twelve times.
+        string? group = null;
+
         while (interview.Question is { } question)
         {
-            foreach (string line in InitRenderer.Lines(question))
+            foreach (string line in InitRenderer.Lines(question, group, this.Ink))
             {
                 output.WriteLine(line);
             }
 
-            output.Write(InitRenderer.Prompt(question));
+            group = question.Group;
+
+            output.Write(InitRenderer.Prompt(question, this.Ink));
 
             if (environment.ConfirmationReader?.ReadLine() is not { } typed)
             {
                 // No console, or the end of a pipe. An interview that blocks for ever on a
                 // host nobody is sitting at is worse than one that will not start.
-                error.WriteLine("ripcord: init asks questions, and nothing is answering.");
+                this.Refuse(error, "ripcord: init asks questions, and nothing is answering.");
                 error.WriteLine("  run it from a console; nothing was written.");
                 return ExitCode.Refused;
             }
@@ -299,12 +329,19 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         TextWriter output, TextWriter error, InitOptions options, string yaml, string? previous)
     {
         output.WriteLine();
+        output.WriteLine(this.Ink.Apply(Rendering.Ink.Bold("THE FILE")));
+        output.WriteLine(this.Ink.Apply(Rendering.Ink.Faint(Layout.Line(Layout.Width))));
+        output.WriteLine();
+
+        // The file itself, uncoloured: it is the thing being agreed to, and tinting somebody
+        // else's YAML is where a rendering starts editorialising.
         output.WriteLine(yaml.TrimEnd());
         output.WriteLine();
 
         if (ConfigurationTemplate.CarriedOver(previous) is { Count: > 0 } carried)
         {
-            output.WriteLine($"  kept as it was: {string.Join(", ", carried)}");
+            output.WriteLine(this.Ink.Apply(
+                Rendering.Ink.Faint($"  kept as it was: {string.Join(", ", carried)}")));
         }
 
         if (options.DryRun)
@@ -315,11 +352,13 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         // The previous file is kept, so this is recoverable and asks for a word rather than
         // the typed node name every irreversible operation asks for.
-        output.Write($"  Write this to {options.Path}? [Y/n] ");
+        output.Write(this.Ink.Apply(
+            "  " + Rendering.Ink.Bold($"Write this to {options.Path}?")
+            + Rendering.Ink.Faint("  y/n [y]") + Rendering.Ink.Cyan(" > ")));
 
         if (environment.ConfirmationReader?.ReadLine()?.Trim().ToLowerInvariant() is "n" or "no")
         {
-            error.WriteLine("ripcord: not written, nothing was changed.");
+            this.Refuse(error, "ripcord: not written, nothing was changed.");
             return ExitCode.Refused;
         }
 
@@ -337,7 +376,8 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             return ExitCode.LocalAccessFailure;
         }
 
-        output.WriteLine($"  wrote {options.Path}");
+        output.WriteLine();
+        output.WriteLine(this.Ink.Apply(Rendering.Ink.Green($"  wrote {options.Path}")));
 
         if (written.Kept is { } kept)
         {
@@ -345,7 +385,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         }
 
         output.WriteLine();
-        output.WriteLine("  Next:  ripcord status");
+        output.WriteLine(this.Ink.Apply("  Next:  " + Rendering.Ink.Bold("ripcord status")));
         output.WriteLine("  The pair channel is separate and off until two certificates exist");
         output.WriteLine("  on the hosts - see docs/commands/serve.md.");
 
@@ -469,11 +509,12 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
                 rendered.View,
                 rendered.Configuration.Peer.OfflineAfter,
                 ports.Clock.UtcNow,
-                this.KnownUpdate()));
+                this.KnownUpdate(),
+                this.Ink));
             return outcome.Code;
         }
 
-        WriteFailure(error, outcome);
+        this.WriteFailure(error, outcome);
         return outcome.Code;
     }
 
@@ -503,7 +544,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         if (outcome.Report is { } report)
         {
-            output.Write(CheckRenderer.Render(report, this.KnownUpdate()));
+            output.Write(CheckRenderer.Render(report, this.KnownUpdate(), this.Ink));
 
             if (options.Notify)
             {
@@ -515,7 +556,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             return outcome.Code;
         }
 
-        WriteFailure(error, new StatusOutcome(
+        this.WriteFailure(error, new StatusOutcome(
             outcome.Code, null, outcome.Errors, outcome.FailureMessage, []));
 
         return outcome.Code;
@@ -583,7 +624,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             return outcome.Code;
         }
 
-        WriteFailure(error, new StatusOutcome(
+        this.WriteFailure(error, new StatusOutcome(
             outcome.Code,
             null,
             outcome.Errors,
@@ -613,7 +654,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         if (validation.Configuration is not { } configuration)
         {
-            WriteFailure(error, new StatusOutcome(
+            this.WriteFailure(error, new StatusOutcome(
                 ExitCode.InvalidConfiguration, null, validation.Errors, null, []));
             return ExitCode.InvalidConfiguration;
         }
@@ -652,7 +693,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         if (validation.Configuration is not { } configuration)
         {
-            WriteFailure(error, new StatusOutcome(
+            this.WriteFailure(error, new StatusOutcome(
                 ExitCode.InvalidConfiguration, null, validation.Errors, null, []));
             return ExitCode.InvalidConfiguration;
         }
@@ -779,11 +820,11 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         if (outcome.Observed is not { } observed || outcome.Desired is not { } desired)
         {
-            WriteDeploymentFailure(error, outcome);
+            this.WriteDeploymentFailure(error, outcome);
             return outcome.Code;
         }
 
-        output.Write(DeploymentRenderer.RenderState(observed, desired, outcome.Plan));
+        output.Write(DeploymentRenderer.RenderState(observed, desired, outcome.Plan, this.Ink));
 
         return ExitCode.Success;
     }
@@ -813,7 +854,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         if (outcome.Observed is not { } observed || outcome.Desired is not { } desired)
         {
-            WriteDeploymentFailure(error, outcome);
+            this.WriteDeploymentFailure(error, outcome);
             return outcome.Code;
         }
 
@@ -829,7 +870,8 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         }
 
         output.Write(DeploymentRenderer.Render(
-            plan, desired, removing: false, observed, heading: "RIPCORD LISTENER RESTART"));
+            plan, desired, removing: false, observed,
+            heading: "RIPCORD LISTENER RESTART", palette: this.Ink));
 
         if (options.DryRun)
         {
@@ -840,7 +882,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         DeploymentResult result = deployment.Apply(plan, desired);
 
         output.Write(DeploymentRenderer.RenderResult(
-            result.Applied, result.Failed, result.FailureMessage));
+            result.Applied, result.Failed, result.FailureMessage, this.Ink));
 
         return result.Code;
     }
@@ -865,12 +907,12 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         if (outcome.Plan is not { } plan || outcome.Desired is not { } desired)
         {
-            WriteDeploymentFailure(error, outcome);
+            this.WriteDeploymentFailure(error, outcome);
             return outcome.Code;
         }
 
         output.Write(
-            DeploymentRenderer.Render(plan, desired, options.Remove, outcome.Observed));
+            DeploymentRenderer.Render(plan, desired, options.Remove, outcome.Observed, palette: this.Ink));
 
         if (!plan.ChangesAnything)
         {
@@ -896,7 +938,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         DeploymentResult result = deployment.Apply(plan, desired);
         output.Write(DeploymentRenderer.RenderResult(
-            result.Applied, result.Failed, result.FailureMessage));
+            result.Applied, result.Failed, result.FailureMessage, this.Ink));
 
         return result.Code;
     }
@@ -955,7 +997,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         foreach (SweptVm swept in sweep.Ran)
         {
-            WriteVmOutcome(swept, output, error);
+            this.WriteVmOutcome(swept, output, error);
         }
 
         foreach (string skipped in sweep.NotAttempted)
@@ -965,7 +1007,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         if (sweep.Ran.Count == 0)
         {
-            WriteFailure(error, new StatusOutcome(
+            this.WriteFailure(error, new StatusOutcome(
                 sweep.Code, null, sweep.Errors, sweep.FailureMessage, []));
         }
 
@@ -1008,13 +1050,13 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         if (outcome.Errors.Count > 0)
         {
-            WriteFailure(error, new StatusOutcome(
+            this.WriteFailure(error, new StatusOutcome(
                 outcome.Code, null, outcome.Errors, outcome.FailureMessage, []));
 
             return outcome.Code;
         }
 
-        output.Write(FenceRenderer.Render(outcome, ports.Clock.UtcNow));
+        output.Write(FenceRenderer.Render(outcome, ports.Clock.UtcNow, this.Ink));
         return outcome.Code;
     }
 
@@ -1053,13 +1095,13 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         return true;
     }
 
-    private static void WriteVmOutcome(SweptVm swept, TextWriter output, TextWriter error)
+    private void WriteVmOutcome(SweptVm swept, TextWriter output, TextWriter error)
     {
         FailoverOutcome outcome = swept.Outcome;
 
         if (outcome.Report is { } report)
         {
-            output.Write(FailoverRenderer.Render(report, DateTimeOffset.UtcNow));
+            output.Write(FailoverRenderer.Render(report, DateTimeOffset.UtcNow, this.Ink));
             return;
         }
 
@@ -1076,7 +1118,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             return;
         }
 
-        WriteFailure(error, new StatusOutcome(
+        this.WriteFailure(error, new StatusOutcome(
             outcome.Code, null, outcome.Errors, outcome.FailureMessage, []));
     }
 
@@ -1323,7 +1365,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         if (outcome.Report is { } report)
         {
             output.Write(TestFailoverRenderer.Render(
-                report, outcome.Configuration?.Replication.TestFailoverSwitch));
+                report, outcome.Configuration?.Replication.TestFailoverSwitch, this.Ink));
             return outcome.Code;
         }
 
@@ -1333,7 +1375,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             return outcome.Code;
         }
 
-        WriteFailure(error, new StatusOutcome(
+        this.WriteFailure(error, new StatusOutcome(
             outcome.Code, null, outcome.Errors, outcome.FailureMessage, []));
 
         return outcome.Code;
@@ -1446,11 +1488,11 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             return true;
         }
 
-        error.WriteLine("ripcord: not confirmed, nothing was changed.");
+        this.Refuse(error, "ripcord: not confirmed, nothing was changed.");
         return false;
     }
 
-    private static void WriteDeploymentFailure(TextWriter error, DeploymentOutcome outcome)
+    private void WriteDeploymentFailure(TextWriter error, DeploymentOutcome outcome)
     {
         if (outcome.FailureMessage is { } failure)
         {
@@ -1458,12 +1500,12 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             return;
         }
 
-        if (WroteMissingConfiguration(error, outcome.Errors))
+        if (this.WroteMissingConfiguration(error, outcome.Errors))
         {
             return;
         }
 
-        error.WriteLine("ripcord: the configuration cannot be used.");
+        this.Refuse(error, "ripcord: the configuration cannot be used.");
 
         foreach (ConfigurationError configurationError in outcome.Errors)
         {
@@ -1474,7 +1516,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
     /// A file that is not there is not a file that is wrong. One is repaired by editing and
     /// the other by creating, and they were saying the same sentence — with the path in it
     /// three times and no mention of the command that produces one.
-    private static bool WroteMissingConfiguration(
+    private bool WroteMissingConfiguration(
         TextWriter error, IReadOnlyList<ConfigurationError> errors)
     {
         if (!MissingConfiguration.In(errors))
@@ -1482,8 +1524,14 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             return false;
         }
 
-        foreach (string line in MissingConfiguration.Lines(
-            errors.First(one => one.Kind == ConfigurationErrorKind.Missing).Path))
+        IReadOnlyList<string> lines = MissingConfiguration.Lines(
+            errors.First(one => one.Kind == ConfigurationErrorKind.Missing).Path);
+
+        // The first line says what is wrong and the last says what to type; the path between
+        // them is a fact, not a refusal.
+        this.Refuse(error, lines[0]);
+
+        foreach (string line in lines.Skip(1))
         {
             error.WriteLine(line);
         }
@@ -1492,7 +1540,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
     }
 
     /// Every error at once, so six typos take one run rather than six.
-    private static void WriteFailure(TextWriter error, StatusOutcome outcome)
+    private void WriteFailure(TextWriter error, StatusOutcome outcome)
     {
         if (outcome.FailureMessage is { } failure)
         {
@@ -1500,12 +1548,12 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             return;
         }
 
-        if (WroteMissingConfiguration(error, outcome.Errors))
+        if (this.WroteMissingConfiguration(error, outcome.Errors))
         {
             return;
         }
 
-        error.WriteLine("ripcord: the configuration cannot be used.");
+        this.Refuse(error, "ripcord: the configuration cannot be used.");
 
         foreach (ConfigurationError configurationError in outcome.Errors)
         {
@@ -1691,13 +1739,13 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         if (outcome.Plan is not { } plan)
         {
-            WriteFailure(error, new StatusOutcome(
+            this.WriteFailure(error, new StatusOutcome(
                 outcome.Code, null, outcome.Errors, outcome.FailureMessage, []));
 
             return outcome.Code;
         }
 
-        output.Write(UpdateRenderer.Render(plan, this.LocalBuild.Version, outcome.Version));
+        output.Write(UpdateRenderer.Render(plan, this.LocalBuild.Version, outcome.Version, this.Ink));
 
         if (!plan.ChangesAnything)
         {
@@ -1726,7 +1774,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             .ApplyAsync(plan, environment.BinaryPath, outcome.Version!, cancellationToken)
             .ConfigureAwait(false);
 
-        output.Write(UpdateRenderer.RenderResult(result, outcome.Version!));
+        output.Write(UpdateRenderer.RenderResult(result, outcome.Version!, this.Ink));
 
         return result.Code;
     }

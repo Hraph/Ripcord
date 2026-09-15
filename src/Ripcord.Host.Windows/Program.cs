@@ -12,6 +12,7 @@ using Ripcord.Adapters.Wmi;
 using Ripcord.Adapters.Wmi.Deployment;
 using Ripcord.Adapters.Yaml;
 using Ripcord.Cli;
+using Ripcord.Cli.Rendering;
 using Ripcord.Domain;
 using Ripcord.Domain.Deployment;
 using Ripcord.Domain.Diagnostics;
@@ -62,8 +63,40 @@ internal static class Program
             $"{DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm:ss} {connection.RemoteAddress} "
             + $"{(connection.Served ? "served" : "refused")}: {connection.Verdict.Reason()}");
 
+    /// Whether a rendered block may carry colour, decided once, here — and **per stream**.
+    ///
+    /// The two are decided separately because they are redirected separately: `ripcord check
+    /// 2> errors.log` on a live console leaves stdout a console and stderr a file, and one
+    /// answer for both put escape sequences in that file. Every refusal goes to stderr, so
+    /// that was the log with the noise in it.
+    ///
+    /// Four ways to end up plain, and each is a real case: the listener service has no console
+    /// and writes to `listener.log`; a redirected stream is a file somebody reads; `NO_COLOR`
+    /// is the convention every tool honours; and `--no-color` is the answer for a terminal
+    /// that claims to understand escapes and does not.
+    private static Palette PaletteFor(string[] args, bool asService, bool redirected)
+    {
+        if (asService
+            || redirected
+            || Environment.GetEnvironmentVariable("NO_COLOR") is not null
+            || args.Contains("--no-color", StringComparer.Ordinal))
+        {
+            return Palette.None;
+        }
+
+        return VirtualTerminal.TryEnable() ? Palette.Ansi : Palette.None;
+    }
+
     private static async Task<int> Main(string[] args)
     {
+        bool asService = WindowsServiceHelpers.IsWindowsService();
+        Palette palette = PaletteFor(args, asService, Console.IsOutputRedirected);
+        Palette errorPalette = PaletteFor(args, asService, Console.IsErrorRedirected);
+
+        // Taken out before anything parses arguments: every verb refuses an option it does not
+        // know, and this one is answered before a verb is chosen.
+        args = [.. args.Where(argument => argument != "--no-color")];
+
         // The configuration lives beside the binary: updating Ripcord is replacing the .exe.
         string binaryPath = Environment.ProcessPath
             ?? Path.Combine(AppContext.BaseDirectory, "ripcord.exe");
@@ -124,7 +157,9 @@ internal static class Program
                 Console.In,
                 Environment.UserName,
                 null,
-                ReleaseSigningKey));
+                ReleaseSigningKey,
+                palette,
+                errorPalette));
 
         // Started by the service control manager rather than by a person. `sc start` waits for
         // a handshake — ServiceBase.Run — and a console loop never sends one, so the manager
@@ -132,7 +167,7 @@ internal static class Program
         // fashion". That is what the listener deployment has been hitting on every host.
         //
         // The same binary and the same verb either way; only who is asking changes.
-        if (WindowsServiceHelpers.IsWindowsService())
+        if (asService)
         {
             await RunAsServiceAsync(cli, args).ConfigureAwait(false);
             return (int)ExitCode.Success;
