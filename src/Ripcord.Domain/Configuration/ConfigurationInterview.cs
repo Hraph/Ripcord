@@ -200,16 +200,23 @@ public sealed class ConfigurationInterview
             Groups.Replication,
             this.facts.Switches.Count > 0));
 
+        bool listed = this.OfferedVms().Count > 0;
+
+        // The question has to match what is on the screen. It used to offer `all` whatever was
+        // above it, so on a host whose VMs could not be read it proposed an answer and then
+        // refused it — which is the tool arguing with itself in front of the operator.
         steps.Add(new InterviewQuestion(
             "vms",
-            "Which ones matter? Numbers separated by commas, or 'all'",
+            listed
+                ? "Which ones matter? Numbers separated by commas, or 'all'"
+                : "Name the ones that matter, separated by commas",
             this.SeededVms(),
             [.. this.OfferedVms().Select(vm => vm.Described)],
-            this.OfferedVms().Count > 0
+            listed
                 ? []
-                : ["This host's VMs could not be read, so type their names separated by commas."],
+                : ["This host's VMs could not be read, so there is nothing to pick from."],
             Groups.Vms,
-            this.OfferedVms().Count > 0));
+            listed));
 
         if (this.Missing(steps, out incomplete))
         {

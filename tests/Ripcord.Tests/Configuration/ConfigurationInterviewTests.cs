@@ -238,6 +238,43 @@ public class ConfigurationInterviewTests
         Assert.Equal(asked, refused.Question!.Key);
     }
 
+    /// The question and the screen above it have to agree. It used to offer `all` even with no
+    /// list above it, and then refuse that exact answer.
+    [Fact]
+    public void With_no_list_to_pick_from_the_question_does_not_offer_all()
+    {
+        ConfigurationInterview interview = ConfigurationInterview.Start(
+            InterviewFacts.Unread(Machine));
+
+        foreach (string answer in new[] { "primary", "HV-PRIMARY-01", "192.0.2.10", "vSwitch-LAN" })
+        {
+            interview = interview.Answer(answer);
+        }
+
+        InterviewQuestion asked = interview.Question!;
+
+        Assert.Equal("vms", asked.Key);
+        Assert.DoesNotContain("all", asked.Prompt, StringComparison.Ordinal);
+        Assert.False(asked.Listed);
+        Assert.Null(asked.Default);
+    }
+
+    /// And where there is a list, `all` is the default: on a host being set up, every VM it
+    /// replicates is normally the answer.
+    [Fact]
+    public void With_a_list_all_is_offered_and_taken()
+    {
+        ConfigurationInterview interview = ConfigurationInterview.Start(Host);
+
+        foreach (string answer in new[] { "dr", "HV-PRIMARY-01", "192.0.2.10", "1" })
+        {
+            interview = interview.Answer(answer);
+        }
+
+        Assert.Equal("all", interview.Question!.Default);
+        Assert.Null(interview.Answer("all").Rejection);
+    }
+
     /// The lists are a convenience, not a dependency. A host whose Hyper-V cannot be read still
     /// has to be able to complete this — that is rule 5 applied to a setup command.
     [Fact]
