@@ -862,7 +862,15 @@ public class RipcordCliTests
 
         await Run(["status"], diagnostics: log);
 
-        Assert.Equal("/opt/ripcord/ripcord.log", log.Destination?.Path);
+        // Stated as the rule — the log sits beside the binary, under that name — rather than
+        // as a literal path. `Path.Combine` writes a backslash on Windows, and the release
+        // workflow runs this same suite on windows-latest, so a hard-coded POSIX path passed
+        // locally and failed the moment a release was rehearsed.
+        Assert.Equal("ripcord.log", Path.GetFileName(log.Destination?.Path));
+
+        Assert.Equal(
+            Path.GetDirectoryName(BinaryPath), Path.GetDirectoryName(log.Destination?.Path));
+
         Assert.True(log.Destination?.Enabled);
     }
 
