@@ -16,8 +16,8 @@ public sealed class MutualTlsChannelTests : IDisposable
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 13, 14, 0, 0, TimeSpan.Zero);
 
-    private readonly CertificateAuthority pairCa = new("Ripcord-Test-CA");
-    private readonly CertificateAuthority strangerCa = new("Stranger-CA");
+    private readonly CertificateAuthority pairCa = new("Ripcord-Test-CA", Now);
+    private readonly CertificateAuthority strangerCa = new("Stranger-CA", Now);
 
     private readonly List<X509Certificate2> issued = [];
 
@@ -69,7 +69,7 @@ public sealed class MutualTlsChannelTests : IDisposable
     public async Task An_expired_certificate_is_refused()
     {
         X509Certificate2 expired = this.Issue(
-            this.pairCa, "CN=HV-PRIMARY-01", notAfter: DateTimeOffset.UtcNow.AddDays(-1));
+            this.pairCa, "CN=HV-PRIMARY-01", notAfter: Now.AddDays(-1));
 
         PeerFetch fetch = await this.ExchangeAsync(
             FakeScenarios.PeerSnapshot(Now), clientCertificate: expired);
@@ -389,13 +389,13 @@ public sealed class MutualTlsChannelTests : IDisposable
 
 /// A throwaway CA plus the leaf certificates it signs. Deterministic per subject so the same
 /// subject always yields the same key, and therefore the same thumbprint.
-internal sealed class CertificateAuthority(string name) : IDisposable
+internal sealed class CertificateAuthority(string name, DateTimeOffset now) : IDisposable
 {
     private readonly Dictionary<string, X509Certificate2> issued = [];
     private readonly RSA rootKey = RSA.Create(2048);
     private X509Certificate2? root;
 
-    public X509Certificate2 RootCertificate => this.root ??= BuildRoot(name, this.rootKey);
+    public X509Certificate2 RootCertificate => this.root ??= BuildRoot(name, this.rootKey, now);
 
     public X509Certificate2 Issue(string subject, DateTimeOffset? notAfter)
     {
@@ -415,12 +415,12 @@ internal sealed class CertificateAuthority(string name) : IDisposable
 
         // A leaf may not start before its issuer does, which is what an expired leaf would
         // otherwise ask for.
-        DateTimeOffset notBefore = this.RootCertificate.NotBefore.AddMinutes(1);
+        DateTimeOffset notBefore = now.AddDays(-2).AddMinutes(1);
 
         using X509Certificate2 signed = request.Create(
             this.RootCertificate,
             notBefore,
-            notAfter ?? DateTimeOffset.UtcNow.AddYears(1),
+            notAfter ?? now.AddYears(1),
             Guid.NewGuid().ToByteArray());
 
         X509Certificate2 withKey = X509CertificateLoader.LoadPkcs12(
@@ -430,7 +430,10 @@ internal sealed class CertificateAuthority(string name) : IDisposable
         return withKey;
     }
 
-    private static X509Certificate2 BuildRoot(string commonName, RSA key)
+    /// Dated from the clock the channel is judged against, never from the wall clock. The two
+    /// used to be mixed, and the suite went red on its own the morning the real date moved past
+    /// the fixed one — a failure that says nothing about the code and costs an afternoon.
+    private static X509Certificate2 BuildRoot(string commonName, RSA key, DateTimeOffset now)
     {
         CertificateRequest request = new(
             $"CN={commonName}", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
@@ -438,8 +441,7 @@ internal sealed class CertificateAuthority(string name) : IDisposable
         request.CertificateExtensions.Add(
             new X509BasicConstraintsExtension(true, false, 0, true));
 
-        return request.CreateSelfSigned(
-            DateTimeOffset.UtcNow.AddDays(-2), DateTimeOffset.UtcNow.AddYears(5));
+        return request.CreateSelfSigned(now.AddDays(-2), now.AddYears(5));
     }
 
     public void Dispose()
