@@ -5,7 +5,23 @@ public sealed record DesiredDeployment(
     string BinaryPath,
     string SnapshotPath,
     int Port,
-    string PeerAddress);
+    string PeerAddress)
+{
+    /// Access is granted on the folder, never on the snapshot file. `ripcord` rewrites the
+    /// snapshot by moving a temporary file over it, and a move brings the new file's access
+    /// list with it — an entry granted on the file itself would survive exactly one write.
+    /// An inheritable entry on the folder covers whatever lands in it, including the file
+    /// that does not exist yet on a host being deployed for the first time.
+    ///
+    /// Never empty for a deployment that exists: the validator refuses an enabled listener
+    /// whose snapshot path names no folder, and a disabled one is never deployed at all.
+    ///
+    /// It used to fall back to the snapshot path itself, which read as harmless and was not —
+    /// the executor creates this folder, so a bare `state.json` had a *directory* created
+    /// exactly where the snapshot file has to be written. Every later publish then failed, and
+    /// failed quietly, because the one caller catches that.
+    public string SnapshotFolder => WindowsPath.FolderOf(SnapshotPath);
+}
 
 /// What is on the host already. Filled in by the Windows adapter, which looks and reports;
 /// it does not compare.
@@ -157,8 +173,8 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps)
         {
             steps.Add(new DeploymentStep(
                 DeploymentAction.GrantSnapshotAccess,
-                $"Grant {ServiceAccount} read access to '{desired.SnapshotPath}'",
-                "the service account cannot read the snapshot it is meant to serve"));
+                $"Grant {ServiceAccount} read access to '{desired.SnapshotFolder}'",
+                "the service account cannot read the folder holding the snapshot it serves"));
         }
 
         // Started last, after the rule that lets the peer in and the access it needs to the
@@ -187,7 +203,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps)
         {
             steps.Add(new DeploymentStep(
                 DeploymentAction.RevokeSnapshotAccess,
-                $"Revoke {ServiceAccount}'s access to the snapshot file",
+                $"Revoke {ServiceAccount}'s access to the snapshot folder",
                 "the service account no longer needs it"));
         }
 

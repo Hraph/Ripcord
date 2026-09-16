@@ -74,6 +74,36 @@ public class DeploymentPlanTests
         Assert.Contains("any", step.Reason, StringComparison.Ordinal);
     }
 
+    /// A snapshot path naming no folder yields no folder, and says so rather than answering
+    /// with the file's own path.
+    ///
+    /// That fallback read as harmless and was not: the executor creates this folder, so a bare
+    /// `state.json` had a *directory* created exactly where the snapshot file has to be
+    /// written, and every publish after it failed quietly. The configuration that would reach
+    /// here is refused by the validator instead — see `ListenerSettingsValidationTests`.
+    [Fact]
+    public void A_snapshot_path_with_no_folder_names_no_folder() =>
+        Assert.Equal("", (Desired with { SnapshotPath = "state.json" }).SnapshotFolder);
+
+    /// Access is granted on the folder, not on the file: the snapshot is rewritten by moving a
+    /// temporary file over it, which would drop an entry set on the file itself.
+    [Theory]
+    [InlineData(@"D:\Ripcord\state.json", @"D:\Ripcord")]
+    [InlineData(@"D:\state.json", @"D:\")]
+    [InlineData(@"C:\Program Files\Ripcord\state.json", @"C:\Program Files\Ripcord")]
+    public void Access_is_granted_on_the_folder_holding_the_snapshot(string path, string folder)
+    {
+        DesiredDeployment desired = Desired with { SnapshotPath = path };
+
+        Assert.Equal(folder, desired.SnapshotFolder);
+
+        DeploymentStep step = Assert.Single(
+            DeploymentPlan.For(desired, Matching() with { SnapshotReadableByService = false })
+                .Steps);
+
+        Assert.Contains(folder, step.Description, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void A_snapshot_file_the_service_cannot_read_is_regranted()
     {

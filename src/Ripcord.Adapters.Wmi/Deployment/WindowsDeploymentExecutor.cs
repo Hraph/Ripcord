@@ -37,7 +37,7 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             ruleInstalled,
             ruleInstalled ? PortIn(ruleOutput) : null,
             ruleInstalled ? ValueAfter(ruleOutput, "RemoteIP") : null,
-            SnapshotReadable(desired.SnapshotPath),
+            SnapshotReadable(desired.SnapshotFolder),
             imagePath is not null && ServiceIsStarted());
     }
 
@@ -45,6 +45,13 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
     {
         ArgumentNullException.ThrowIfNull(change);
         ArgumentNullException.ThrowIfNull(desired);
+
+        // icacls cannot grant on a path that does not exist, and a host being deployed for
+        // the first time has no D:\Ripcord until the first `ripcord status` writes one.
+        if (change.Action == DeploymentAction.GrantSnapshotAccess)
+        {
+            Directory.CreateDirectory(desired.SnapshotFolder);
+        }
 
         foreach ((string file, string arguments) in CommandsFor(change.Action, desired))
         {
@@ -120,12 +127,17 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
 
         DeploymentAction.GrantSnapshotAccess =>
         [
-            ("icacls", $"\"{desired.SnapshotPath}\" /grant \"{DeploymentPlan.ServiceAccount}\":(R)"),
+            ("icacls",
+                $"\"{desired.SnapshotFolder}\" /grant \"{DeploymentPlan.ServiceAccount}\":(OI)(CI)(R)"),
         ],
 
         _ =>
         [
-            ("icacls", $"\"{desired.SnapshotPath}\" /remove \"{DeploymentPlan.ServiceAccount}\""),
+            // `/t` because the grant was inheritable: it has already propagated to the
+            // snapshot file, and removing it from the folder alone would leave the account
+            // still able to read what is in there.
+            ("icacls",
+                $"\"{desired.SnapshotFolder}\" /remove \"{DeploymentPlan.ServiceAccount}\" /t"),
         ],
     };
 
@@ -137,14 +149,14 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             + $"remoteip={desired.PeerAddress}");
 
     /// The service account's access is what matters, and only Windows can answer that. The
-    /// file being absent is not the same as being unreadable, but it needs the same step.
+    /// folder being absent is not the same as being unreadable, but it needs the same step.
     ///
     /// What the answer means is AccessControl's: an entry denying the account also names it,
     /// and a substring search would read that as access the service does not have.
-    private static bool SnapshotReadable(string snapshotPath) =>
-        File.Exists(snapshotPath)
+    private static bool SnapshotReadable(string snapshotFolder) =>
+        Directory.Exists(snapshotFolder)
         && AccessControl.GrantsRead(
-            Run("icacls", $"\"{snapshotPath}\"").Output, DeploymentPlan.ServiceAccount);
+            Run("icacls", $"\"{snapshotFolder}\"").Output, DeploymentPlan.ServiceAccount);
 
     /// Whether the service is running.
     ///
