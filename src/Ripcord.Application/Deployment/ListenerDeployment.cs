@@ -38,7 +38,8 @@ public sealed class ListenerDeployment(IConfigStore configStore, IDeploymentExec
         }
 
         ConfigurationValidation validation =
-            ConfigurationValidator.Validate(read.Document, request.MachineName);
+            ConfigurationValidator.Validate(
+                read.Document, request.MachineName, request.ConfigurationPath);
 
         if (validation.Configuration is not { } configuration)
         {

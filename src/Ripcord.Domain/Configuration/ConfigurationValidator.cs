@@ -39,8 +39,11 @@ public static class ConfigurationValidator
     /// Submission, not 25: the relays these hosts would use take mail on 587 with STARTTLS.
     private const int DefaultSmtpPort = 587;
 
+    /// `configurationPath` is only there to place the snapshot when the file does not say
+    /// where it goes: the default sits beside the configuration, and nothing else in here
+    /// depends on where that is.
     public static ConfigurationValidation Validate(
-        ConfigurationDocument? document, string machineName)
+        ConfigurationDocument? document, string machineName, string? configurationPath = null)
     {
         if (document is null)
         {
@@ -53,7 +56,8 @@ public static class ConfigurationValidator
         ValidateSchemaVersion(document.SchemaVersion, errors);
         NodeSettings? node = ValidateNode(document.Node, machineName, errors);
         PeerSettings? peer = ValidatePeer(document.Peer, node?.Hostname, errors);
-        ListenerSettings? listener = ValidateListener(document.Listener, errors);
+        ListenerSettings? listener =
+            ValidateListener(document.Listener, configurationPath, errors);
         ReplicationSettings? replication = ValidateReplication(document.Replication, errors);
         StorageSettings? storage = ValidateStorage(document.Storage, errors);
         AlertingSettings? alerting = ValidateAlerting(document.Alerting, errors);
@@ -727,7 +731,7 @@ public static class ConfigurationValidator
     /// view. A block that is present and enabled has to be complete, because a listener
     /// started without both thumbprints is a listener without mutual authentication.
     private static ListenerSettings? ValidateListener(
-        ListenerDocument? listener, List<ConfigurationError> errors)
+        ListenerDocument? listener, string? configurationPath, List<ConfigurationError> errors)
     {
         if (listener is null)
         {
@@ -767,8 +771,29 @@ public static class ConfigurationValidator
         }
 
         string snapshotPath = string.IsNullOrWhiteSpace(listener.SnapshotPath)
-            ? ListenerSettings.DefaultSnapshotPath
+            ? WindowsPath.Join(
+                WindowsPath.FolderOf(configurationPath), ListenerSettings.DefaultSnapshotFileName)
             : listener.SnapshotPath.Trim();
+
+        // Access is granted on the folder rather than on the file, so there has to be one to
+        // grant on. Refused rather than resolved against something: what a relative path means
+        // depends on the working directory of whoever runs the command, and the service's is
+        // not the operator's.
+        //
+        // Only what the operator wrote. A default with no folder means the caller supplied no
+        // configuration path to place it beside, which is not something to refuse an operator
+        // over — the CLI resolves that path in full before it ever gets here.
+        if (listener.Enabled
+            && listener.SnapshotPath is { Length: > 0 }
+            && WindowsPath.FolderOf(snapshotPath).Length == 0)
+        {
+            errors.Add(new ConfigurationError(
+                "listener.snapshot_path",
+                "must name a folder as well as a file, because the service account is granted "
+                + "access to the folder"));
+
+            complete = false;
+        }
 
         // It is interpolated into a quoted icacls argument; a quote inside it would break out
         // of that quoting.

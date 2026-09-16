@@ -128,16 +128,25 @@ public class ListenerSettingsValidationTests
     /// The snapshot file is what the service serves. Its path is the one thing the deploy
     /// command has to grant the service account access to, so it has a default rather than
     /// being required.
-    [Fact]
-    public void The_snapshot_path_defaults_when_it_is_not_given()
+    ///
+    /// The default is beside the configuration file — which is beside the binary, with the
+    /// log, the audit trail and the alert state. A default on another volume is one that does
+    /// not exist on a host without that volume, and `icacls` cannot grant access to a path
+    /// that is not there.
+    [Theory]
+    [InlineData(@"C:\Program Files\Ripcord\ripcord.yaml", @"C:\Program Files\Ripcord\state.json")]
+    [InlineData(@"D:\ripcord.yaml", @"D:\state.json")]
+    [InlineData("ripcord.yaml", "state.json")]
+    public void The_snapshot_path_defaults_beside_the_configuration(string config, string expected)
     {
         ConfigurationDocument document = Valid();
         document.Listener!.SnapshotPath = null;
 
-        ConfigurationValidation result = Validate(document);
+        ConfigurationValidation result =
+            ConfigurationValidator.Validate(document, MachineName, config);
 
         Assert.Empty(result.Errors);
-        Assert.False(string.IsNullOrWhiteSpace(result.Configuration!.Listener.SnapshotPath));
+        Assert.Equal(expected, result.Configuration!.Listener.SnapshotPath);
     }
 
     private static ConfigurationValidation Validate(ConfigurationDocument document) =>
@@ -150,4 +159,38 @@ public class ListenerSettingsValidationTests
     }
 
     private static ConfigurationDocument Valid() => ValidDocument.Create();
+
+    /// Access is granted on the folder, so there has to be one. A path without it resolves
+    /// against the working directory of whoever runs the command — and a Windows service's is
+    /// `system32`, not the folder the operator was picturing.
+    [Theory]
+    [InlineData("state.json")]
+    [InlineData("D:state.json")]
+    public void A_snapshot_path_naming_no_folder_is_refused(string path)
+    {
+        ConfigurationDocument document = ValidDocument.Create();
+        document.Listener!.SnapshotPath = path;
+
+        ConfigurationValidation validation = ConfigurationValidator.Validate(
+            document, ValidDocument.MachineName, @"D:\Ripcord\ripcord.yaml");
+
+        Assert.Contains(
+            validation.Errors,
+            error => error.Path == "listener.snapshot_path"
+                && error.Message.Contains("must name a folder", StringComparison.Ordinal));
+    }
+
+    /// Only what the operator wrote. A listener that is switched off is never deployed, so
+    /// there is no folder to grant anything on and nothing to refuse.
+    [Fact]
+    public void A_disabled_listener_is_not_refused_for_a_path_nothing_will_use()
+    {
+        ConfigurationDocument document = ValidDocument.Create();
+        document.Listener!.Enabled = false;
+        document.Listener.SnapshotPath = "state.json";
+
+        Assert.DoesNotContain(
+            ConfigurationValidator.Validate(document, ValidDocument.MachineName).Errors,
+            error => error.Path == "listener.snapshot_path");
+    }
 }

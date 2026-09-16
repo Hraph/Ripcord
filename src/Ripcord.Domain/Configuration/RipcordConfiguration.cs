@@ -97,10 +97,14 @@ public sealed record ListenerSettings(
 {
     public const int DefaultPort = 7443;
 
-    public const string DefaultSnapshotPath = @"D:\Ripcord\state.json";
+    /// Beside the configuration file, which is beside the binary — with the log, the audit
+    /// trail and the alert state. A default on another volume is a default that does not
+    /// exist on a host that has no such volume, and the listener would be deployed onto a
+    /// path Windows cannot even grant access to.
+    public const string DefaultSnapshotFileName = "state.json";
 
     public static ListenerSettings Disabled() =>
-        new(false, DefaultPort, null, null, DefaultSnapshotPath);
+        new(false, DefaultPort, null, null, DefaultSnapshotFileName);
 }
 
 /// Failover order. The declared set is the whole set: a priority outside it is a typo, and a

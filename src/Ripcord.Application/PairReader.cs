@@ -24,7 +24,7 @@ public static class ConfigurationGate
 
         return read.Errors.Count > 0
             ? ConfigurationValidation.Invalid(read.Errors)
-            : ConfigurationValidator.Validate(read.Document, machineName);
+            : ConfigurationValidator.Validate(read.Document, machineName, path);
     }
 }
 
