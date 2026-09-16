@@ -46,6 +46,16 @@ set-aside and the rollback put the old binary back. **5** when the binary was se
 later move failed, *and* the rollback failed too — the message names the file to rename by
 hand.
 
+## Looking without installing
+
+`update --dry-run` halts when `updates.install` is off, so on a host allowed to look and not to
+install it says nothing about what is published. [`check-update`](check-update.md) is the one
+that answers there — it needs only `updates.check` and reads nothing but the feed.
+
+Either of them writes the published version down, and `status` and `check` print one line from
+that file. Neither of those two ever looks for itself: a fifteen-second timeout in front of an
+unplanned failover is what that design avoids.
+
 ## Going back
 
 The binary this replaces is kept beside the new one, and

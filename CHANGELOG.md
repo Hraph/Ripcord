@@ -11,6 +11,14 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ## Unreleased
 
+### Fixed
+
+- **`ripcord update` now writes down the release it looked up.** It asked the feed and threw
+  the answer away, so a `--dry-run` paid for the network call and left `status` and `check`
+  unable to mention the release — until somebody also ran `check-update`, for a fact the tool
+  already had. Both commands write it now, including when the plan refuses because
+  `updates.install` is off.
+
 ### Added
 
 - **`ripcord rollback`** — puts back the binary the last update set aside. It fetches nothing

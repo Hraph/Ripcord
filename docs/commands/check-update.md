@@ -13,6 +13,22 @@ is not. These two machines are meant to have no outbound access at all.
 It reports a version and stops. Installing is [`ripcord update`](update.md), behind its own
 switch.
 
+## Why this exists beside `update --dry-run`
+
+They overlap, and the difference is worth a sentence because it is not obvious.
+
+`update --dry-run` needs **both** switches: it halts when `updates.install` is off. That is the
+default posture for these hosts — allowed to look, not allowed to replace themselves — and on
+such a host `update --dry-run` refuses and says nothing about what is published. This command
+needs only `updates.check`, so it is the one that answers there.
+
+It also reads nothing but the feed. `update --dry-run` reads Hyper-V and the peer as well, to
+say what updating would do to a failover, which costs a WMI timeout on a host that is already
+struggling.
+
+Both write the answer down. That part used to be this command's alone, which meant an
+`update --dry-run` paid for the network call and threw the result away.
+
 ## The repository is addressed by its numeric id
 
 Not by `owner/name`. A rename leaves a permanent redirect that HTTP clients follow, so the
