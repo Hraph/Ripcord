@@ -222,6 +222,16 @@ public sealed class UpdateCliTests
         public void Restore(string binaryPath)
         {
         }
+
+        public string? Swapped { get; private set; }
+
+        
+
+        public SwapOutcome SwapWithPrevious(string binaryPath)
+        {
+            this.Swapped = binaryPath;
+            return SwapOutcome.Exchanged;
+        }
     }
 
     private sealed class Store(bool check, bool install) : ReadOnlyConfigStore

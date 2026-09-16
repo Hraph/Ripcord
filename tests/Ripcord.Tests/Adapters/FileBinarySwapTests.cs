@@ -15,6 +15,9 @@ public sealed class FileBinarySwapTests : IDisposable
 
     private static readonly byte[] OldBinary = Encoding.UTF8.GetBytes("the running ripcord");
 
+    /// What an earlier update left in `.old` — the version `ripcord rollback` goes back to.
+    private static readonly byte[] KeptBinary = Encoding.UTF8.GetBytes("the ripcord before that");
+
     private readonly string folder = Directory.CreateTempSubdirectory("ripcord-swap").FullName;
 
     private readonly FileBinarySwap swap = new();
@@ -32,7 +35,12 @@ public sealed class FileBinarySwapTests : IDisposable
     {
         this.Running();
 
-        Assert.Equal(new StagedBinaries(false, false), this.swap.Observe(this.Binary));
+        StagedBinaries staged = this.swap.Observe(this.Binary);
+
+        Assert.False(staged.HasStagedDownload);
+        Assert.False(staged.HasPreviousBinary);
+        Assert.Null(staged.PreviousVersion);
+        Assert.Null(staged.PreviousSetAsideAt);
     }
 
     [Fact]
@@ -42,7 +50,125 @@ public sealed class FileBinarySwapTests : IDisposable
         File.WriteAllBytes(this.Staged, NewBinary);
         File.WriteAllBytes(this.Previous, OldBinary);
 
-        Assert.Equal(new StagedBinaries(true, true), this.swap.Observe(this.Binary));
+        StagedBinaries staged = this.swap.Observe(this.Binary);
+
+        Assert.True(staged.HasStagedDownload);
+        Assert.True(staged.HasPreviousBinary);
+
+        // Read off the file rather than remembered, so a binary replaced by hand still
+        // answers and there is no state file to go stale.
+        Assert.Equal(
+            new DateTimeOffset(File.GetLastWriteTimeUtc(this.Previous), TimeSpan.Zero),
+            staged.PreviousSetAsideAt);
+    }
+
+    /// A file that carries no version is a fact about the file, never a reason to refuse to go
+    /// back to it — refusing would strand a host on the release it is retreating from.
+    [Fact]
+    public void A_kept_binary_carrying_no_version_is_reported_without_one()
+    {
+        this.Running();
+        File.WriteAllBytes(this.Previous, OldBinary);
+
+        Assert.Null(this.swap.Observe(this.Binary).PreviousVersion);
+    }
+
+    /// What `ripcord rollback` does: what was running is set aside, what was set aside runs.
+    /// Running it again returns — going back is not a one-way door.
+    [Fact]
+    public void Going_back_exchanges_the_running_binary_with_the_one_kept()
+    {
+        this.Running();
+        File.WriteAllBytes(this.Previous, KeptBinary);
+
+        this.swap.SwapWithPrevious(this.Binary);
+
+        Assert.Equal(KeptBinary, File.ReadAllBytes(this.Binary));
+        Assert.Equal(OldBinary, File.ReadAllBytes(this.Previous));
+
+        this.swap.SwapWithPrevious(this.Binary);
+
+        Assert.Equal(OldBinary, File.ReadAllBytes(this.Binary));
+    }
+
+    /// Nothing is removed. A step that deleted a file would be a step that fails on Windows
+    /// and nowhere else, which is the worst place to discover it.
+    [Fact]
+    public void Going_back_leaves_both_binaries_on_the_host()
+    {
+        this.Running();
+        File.WriteAllBytes(this.Previous, KeptBinary);
+
+        this.swap.SwapWithPrevious(this.Binary);
+
+        Assert.Equal(
+            ["ripcord.exe", "ripcord.exe.old"],
+            Directory.GetFiles(this.folder).Select(Path.GetFileName).Order());
+    }
+
+    /// Everything that can fail for want of room or permission fails while the host is still
+    /// whole: the kept binary is copied into place before anything is moved.
+    [Fact]
+    public void An_exchange_that_cannot_start_moves_nothing()
+    {
+        this.Running();
+
+        // No binary kept aside, so the copy that opens the sequence has nothing to copy.
+        Assert.Throws<FileNotFoundException>(() => this.swap.SwapWithPrevious(this.Binary));
+
+        Assert.Equal(OldBinary, File.ReadAllBytes(this.Binary));
+        Assert.False(File.Exists(this.Binary + ".incoming"));
+    }
+
+    /// The bug this guards: a `.swap` file holds the only copy of a binary this host was
+    /// running, and the first move used to overwrite it. Two interrupted runs in a row would
+    /// have destroyed it silently.
+    [Fact]
+    public void A_file_left_by_an_unfinished_exchange_is_never_written_over()
+    {
+        this.Running();
+        File.WriteAllBytes(this.Previous, KeptBinary);
+        File.WriteAllBytes(this.Binary + ".swap", Encoding.UTF8.GetBytes("the only copy"));
+
+        Assert.Throws<IOException>(() => this.swap.SwapWithPrevious(this.Binary));
+
+        Assert.Equal("the only copy", File.ReadAllText(this.Binary + ".swap"));
+        Assert.Equal(OldBinary, File.ReadAllBytes(this.Binary));
+    }
+
+    /// And the next run sees it, so the plan can refuse instead of presenting a sequence that
+    /// looks perfectly ordinary.
+    [Fact]
+    public void A_file_left_by_an_unfinished_exchange_is_reported()
+    {
+        this.Running();
+        File.WriteAllBytes(this.Binary + ".swap", KeptBinary);
+
+        Assert.True(this.swap.Observe(this.Binary).HasInterruptedSwap);
+    }
+
+    [Fact]
+    public void An_exchange_that_finished_leaves_nothing_behind()
+    {
+        this.Running();
+        File.WriteAllBytes(this.Previous, KeptBinary);
+
+        Assert.Equal(SwapOutcome.Exchanged, this.swap.SwapWithPrevious(this.Binary));
+        Assert.False(this.swap.Observe(this.Binary).HasInterruptedSwap);
+        Assert.False(File.Exists(this.Binary + ".incoming"));
+    }
+
+    /// `Restore` undoes a swap that failed half way, so it acts only when the running binary
+    /// has gone missing. Asserted because the two methods look alike and do opposite things.
+    [Fact]
+    public void Restoring_leaves_a_host_that_is_intact_alone()
+    {
+        this.Running();
+        File.WriteAllBytes(this.Previous, KeptBinary);
+
+        this.swap.Restore(this.Binary);
+
+        Assert.Equal(OldBinary, File.ReadAllBytes(this.Binary));
     }
 
     /// The running binary is kept, not overwritten. It is what this host goes back to.

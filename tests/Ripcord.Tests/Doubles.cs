@@ -92,6 +92,16 @@ public sealed class NoBinarySwap : IBinarySwap
     public void Restore(string binaryPath)
     {
     }
+
+        public string? Swapped { get; private set; }
+
+        
+
+        public SwapOutcome SwapWithPrevious(string binaryPath)
+        {
+            this.Swapped = binaryPath;
+            return SwapOutcome.Exchanged;
+        }
 }
 
 /// Remembers what it was told, which is all the real one does across two processes.

@@ -150,5 +150,15 @@ public sealed class UpdateInstallationTests
                 throw new IOException("the binary could not be put back");
             }
         }
+
+        public string? Swapped { get; private set; }
+
+        
+
+        public SwapOutcome SwapWithPrevious(string binaryPath)
+        {
+            this.Swapped = binaryPath;
+            return SwapOutcome.Exchanged;
+        }
     }
 }
