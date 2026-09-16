@@ -54,6 +54,8 @@ listener:
   # with the log and the audit trail. The service account is granted read access to the folder
   # holding it: the snapshot is rewritten by moving a new file over the old one, which would
   # drop an entry set on the file itself.
+  # A path with no folder in it is refused: it would resolve against the working directory of
+  # whoever runs the command, and a Windows service's is system32.
   # snapshot_path: "D:\\Ripcord\\state.json"
 
 vms:

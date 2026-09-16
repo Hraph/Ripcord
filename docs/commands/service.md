@@ -43,8 +43,15 @@ update rather than a teardown. `remove` is the same list read backwards — and 
 snapshot file alone, because an uninstaller that deletes data is one people are afraid to run.
 
 Four steps at most, in this order: create or repoint the service, open the port to the peer
-only, grant the service account read access to the snapshot, **and start the service last** — after the
-rule that lets the peer in and the access it needs to the file it serves.
+only, grant the service account read access to the folder holding the snapshot, **and start the
+service last** — after the rule that lets the peer in and the access it needs to the file it
+serves.
+
+The folder, not the file: `ripcord status` rewrites the snapshot by moving a new file over the
+old one, and a move brings the new file's access list with it, so an entry set on the file
+itself would survive exactly one write. The folder is created if it is not there yet — on a
+fresh host nothing has written a snapshot, and `icacls` cannot grant access to a path that does
+not exist.
 
 Nothing happens until the node name is typed in full.
 

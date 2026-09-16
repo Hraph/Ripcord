@@ -11,8 +11,25 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ## Unreleased
 
+### Changed
+
+- **The snapshot defaults beside `ripcord.yaml`, not to `D:\Ripcord\state.json`.** A host
+  without a `D:` volume was being deployed onto a path Windows could not even grant access to.
+  **On a pair that never set `listener.snapshot_path`, the snapshot moves**: the listener
+  serves nothing until the next `ripcord status` writes one at the new location, and the peer
+  reads that host as stale in the meantime. Run `ripcord status` on both hosts after updating,
+  or set `snapshot_path` explicitly first to keep the old location.
+- A `listener.snapshot_path` naming no folder — `state.json` — is now refused. It resolved
+  against the working directory of whoever ran the command, and a Windows service's is
+  `system32`.
+
 ### Fixed
 
+- **The listener was granted access to the snapshot *file*, which survived one write.**
+  `ripcord status` rewrites the snapshot by moving a new file over the old one, and a move
+  carries the new file's access list with it — so the entry set at deployment was gone after
+  the first publish and the peer stopped being served. Access is granted on the folder now,
+  inheritable, and the revoke reaches what the grant reached.
 - **`ripcord update` now writes down the release it looked up.** It asked the feed and threw
   the answer away, so a `--dry-run` paid for the network call and left `status` and `check`
   unable to mention the release — until somebody also ran `check-update`, for a fact the tool
