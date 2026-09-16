@@ -65,6 +65,7 @@ One page each, in [`docs/commands/`](docs/commands/).
 | [`failback`](docs/commands/failback.md) | move it home again | mutating |
 | [`fence`](docs/commands/fence.md) | stop a returning host starting its old copies | mutating |
 | [`update`](docs/commands/update.md) | install a newer release here | mutating |
+| [`rollback`](docs/commands/rollback.md) | go back to the binary the last update set aside | mutating |
 | [`check-update`](docs/commands/check-update.md) | is a newer release published | read-only |
 | [`version`](docs/commands/version.md) | which binary is this | read-only |
 

@@ -45,3 +45,10 @@ way the host is untouched. **4** when the signature did not verify, or a move fa
 set-aside and the rollback put the old binary back. **5** when the binary was set aside, a
 later move failed, *and* the rollback failed too — the message names the file to rename by
 hand.
+
+## Going back
+
+The binary this replaces is kept beside the new one, and
+[`ripcord rollback`](rollback.md) puts it back — without a network, because these hosts have
+none. One generation: the copy kept is discarded at the start of the *next* update, which is
+why that step comes before anything is moved.

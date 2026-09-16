@@ -13,6 +13,13 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ### Added
 
+- **`ripcord rollback`** — puts back the binary the last update set aside. It fetches nothing
+  and verifies nothing: these hosts are meant to have no outbound access, so a retreat that
+  needs the network fails on the day it is needed, and the bytes being restored were running
+  here before the update. One generation back, an exchange rather than a replacement (a
+  running binary can be renamed and never deleted), and neither `updates.check` nor
+  `updates.install` gates it. See `docs/commands/rollback.md`.
+
 - **Colour in the rendered blocks** — severities, the replication health column, `STALE`, an
   unreachable peer's reason, the section headings and the `init` interview. It is switched on
   only where the console has been asked and said yes: redirected output, the listener service,
