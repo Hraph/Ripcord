@@ -214,12 +214,13 @@ public class StatusQueryTests
             new StatusRequest("ripcord.yaml", machineName), CancellationToken.None);
     }
 
-    /// The shared well-formed document, with the snapshot written beside the test rather
-    /// than to `D:` — the only thing this suite cares about is that it was written at all.
+    /// The shared well-formed document. The snapshot path carries a folder because a path
+    /// without one is refused: it would resolve against the working directory of whoever runs
+    /// the command, and a Windows service's is `system32`.
     private static ConfigurationDocument ValidDocument()
     {
         ConfigurationDocument document = Tests.Configuration.ValidDocument.Create();
-        document.Listener!.SnapshotPath = "state.json";
+        document.Listener!.SnapshotPath = @"D:\Ripcord\state.json";
         return document;
     }
 

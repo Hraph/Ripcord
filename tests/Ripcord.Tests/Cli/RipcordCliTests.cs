@@ -190,9 +190,17 @@ public class RipcordCliTests
     {
         RecordingConfigStore store = new();
 
-        await Run(["check", "--config", @"C:\elsewhere\ripcord.yaml"], configStore: store);
+        await Run(["check", "--config", "elsewhere/ripcord.yaml"], configStore: store);
 
-        Assert.Equal(@"C:\elsewhere\ripcord.yaml", store.RequestedPath);
+        // Resolved in full before anything reads it — the snapshot defaults beside this file
+        // and the folder access is granted on comes from it, so neither may depend on the
+        // directory the command happened to be run from.
+        //
+        // Asserted as a rule rather than as a literal: what "in full" means is the host's
+        // answer, and this suite runs on Linux and, at every release, on Windows.
+        Assert.NotEqual("elsewhere/ripcord.yaml", store.RequestedPath);
+        Assert.EndsWith("ripcord.yaml", store.RequestedPath, StringComparison.Ordinal);
+        Assert.NotEqual(DefaultConfigPath, store.RequestedPath);
     }
 
     [Fact]
@@ -976,7 +984,7 @@ public class RipcordCliTests
             this.RequestedPath = path;
             ConfigurationDocument document = Tests.Configuration.ValidDocument.Create();
             document.Listener!.Enabled = listenerEnabled;
-            document.Listener.SnapshotPath = "state.json";
+            document.Listener.SnapshotPath = @"D:\Ripcord\state.json";
 
             if (alerting)
             {

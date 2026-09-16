@@ -1594,8 +1594,21 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             return false;
         }
 
-        path = args[++index];
-        return true;
+        // Resolved here, once. Everything downstream treats this as the file's location —
+        // the snapshot defaults beside it, and the folder that access is granted on comes from
+        // it — and a relative path would make both depend on the directory the command
+        // happened to be run from.
+        try
+        {
+            path = Path.GetFullPath(args[++index]);
+            return true;
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            error = $"--config is not a path: {exception.Message}";
+            return false;
+        }
     }
 
     /// An option given without its value is refused rather than silently falling back to the
