@@ -159,12 +159,42 @@ public sealed class UpdateCliTests
         Assert.Contains("--yes", run.Error, StringComparison.Ordinal);
     }
 
+    /// `update` asks the feed, so it knows what is published — and it used to throw that
+    /// answer away. `status` and `check` never look for themselves, by design, so the file
+    /// this writes is the only way either of them can mention a release. A run that paid for
+    /// the network call and left it unwritten meant somebody had to run `check-update` as
+    /// well, for a fact the tool already had.
+    [Fact]
+    public async Task A_dry_run_writes_down_the_release_it_just_looked_up()
+    {
+        MemoryUpdateNoticeStore notices = new();
+
+        await Run(["update", "--dry-run"], notices: notices);
+
+        Assert.Equal("0.2.0", notices.Read()?.Version);
+    }
+
+    /// Including when the plan refuses. It still looked, and the answer is still worth having
+    /// on a host that may check and may not install — which is the default posture.
+    [Fact]
+    public async Task A_refused_update_still_writes_down_what_is_published()
+    {
+        MemoryUpdateNoticeStore notices = new();
+
+        CliRun run = await Run(
+            ["update"], store: new Store(check: true, install: false), notices: notices);
+
+        Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
+        Assert.Equal("0.2.0", notices.Read()?.Version);
+    }
+
     private static async Task<CliRun> Run(
         string[] args,
         Swap? swap = null,
         Source? source = null,
         Store? store = null,
         IReleaseFeed? feed = null,
+        IUpdateNoticeStore? notices = null,
         string? typed = null,
         string? signingKey = "carried",
         CancellationToken cancellationToken = default)
@@ -189,7 +219,7 @@ public sealed class UpdateCliTests
                 new MemoryAlertStateStore(),
                 feed ?? StubReleaseFeed.Publishing("0.2.0"),
                 source ?? Source.Genuine(),
-                new MemoryUpdateNoticeStore(),
+                notices ?? new MemoryUpdateNoticeStore(),
                 swap ?? new Swap(),
                 new FixedClock(Now),
                 new SilentDiagnosticLog()),

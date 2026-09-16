@@ -611,13 +611,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
                 cancellationToken)
             .ConfigureAwait(false);
 
-        // Written down rather than only printed: nothing on these hosts looks on its own and
-        // no other command looks while it runs, so this is the only way `status` and `check`
-        // can mention a release at all.
-        if (outcome.Version is { Length: > 0 } published)
-        {
-            ports.UpdateNotices.Write(new UpdateNotice(published, ports.Clock.UtcNow));
-        }
+        this.RecordKnownRelease(outcome.Version);
 
         if (outcome.Code == ExitCode.Success && outcome.Status is { } status)
         {
@@ -1473,6 +1467,18 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
     internal BuildIdentity LocalBuild =>
         environment.Build ?? new BuildIdentity(BuildInfo.Version, BuildInfo.CommitHash);
 
+    /// Written down rather than only printed. Nothing on these hosts looks on its own, and no
+    /// other command looks while it runs — a fifteen-second timeout in front of an unplanned
+    /// failover is what the design exists to avoid — so this file is the only way `status` and
+    /// `check` can mention a release at all.
+    private void RecordKnownRelease(string? version)
+    {
+        if (version is { Length: > 0 } published)
+        {
+            ports.UpdateNotices.Write(new UpdateNotice(published, ports.Clock.UtcNow));
+        }
+    }
+
     /// What the last look found, if it is still worth saying. No network: a command run
     /// during an incident on a host with no outbound access must not wait fifteen seconds to
     /// find out about a release.
@@ -1811,6 +1817,11 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
                     this.LocalBuild),
                 cancellationToken)
             .ConfigureAwait(false);
+
+        // It asked the feed, so it knows. Writing it down here too was missing: `update
+        // --dry-run` paid for the network call and threw the answer away, leaving `status`
+        // and `check` unable to mention a release until somebody also ran `check-update`.
+        this.RecordKnownRelease(outcome.Version);
 
         // Degradations are never silent, and here one of them is "the consequences could not
         // be checked" — which the operator has to see before they type anything.
