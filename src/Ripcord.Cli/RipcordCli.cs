@@ -238,6 +238,10 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
                 return await this.UpdateAsync(args[1..], output, error, cancellationToken)
                     .ConfigureAwait(false);
 
+            case "rollback":
+                return await this.RollbackAsync(args[1..], output, error, cancellationToken)
+                    .ConfigureAwait(false);
+
             case "check-update":
                 return await this.CheckUpdateAsync(args[1..], output, error, cancellationToken)
                     .ConfigureAwait(false);
@@ -1709,6 +1713,84 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
     /// infrastructure, and the only one whose consequences land on the *other* host too:
     /// updating one side makes the pair disagree, and a failover spanning both is refused
     /// while it does (decision D54). That is said above the prompt, never after it.
+    /// Going back to the binary the last update set aside. No network, no signature to check:
+    /// these are the bytes that were running on this host, and the hosts this runs on are
+    /// meant to have no outbound access at all.
+    private async Task<ExitCode> RollbackAsync(
+        string[] args, TextWriter output, TextWriter error, CancellationToken cancellationToken)
+    {
+        if (!TryReadUpdateOptions(args, out UpdateOptions options, out string? optionError))
+        {
+            error.WriteLine($"ripcord: {optionError}");
+            return ExitCode.InvalidConfiguration;
+        }
+
+        RollbackQuery query = new(
+            ports.ConfigStore, ports.BinarySwap, this.Pair(), ports.Clock);
+
+        RollbackOutcome outcome = await query
+            .ExecuteAsync(
+                new RollbackRequest(
+                    options.ConfigurationPath ?? environment.DefaultConfigurationPath,
+                    environment.MachineName,
+                    environment.BinaryPath,
+                    this.LocalBuild),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (string note in outcome.Notes)
+        {
+            error.WriteLine($"ripcord: {note}");
+        }
+
+        if (outcome.Plan is not { } plan)
+        {
+            this.WriteFailure(error, new StatusOutcome(
+                outcome.Code, null, outcome.Errors, outcome.FailureMessage, []));
+
+            return outcome.Code;
+        }
+
+        output.Write(RollbackRenderer.Render(
+            plan, outcome.RunningVersion, plan.SetAsideAt, this.Ink));
+
+        if (!plan.ChangesAnything)
+        {
+            return outcome.Code;
+        }
+
+        if (options.DryRun)
+        {
+            output.WriteLine();
+            output.WriteLine("  Nothing was changed. Run without --dry-run to go back.");
+            return ExitCode.Success;
+        }
+
+        if (!this.Confirmed(
+            output,
+            error,
+            "This replaces the binary this host runs its failovers with."))
+        {
+            return ExitCode.Refused;
+        }
+
+        RollbackApplied applied = query.Apply(environment.BinaryPath);
+
+        if (applied.Message is { } message)
+        {
+            this.Refuse(error, $"ripcord: {message}");
+            return applied.Code;
+        }
+
+        output.WriteLine();
+        output.WriteLine(this.Ink.Apply(Rendering.Ink.Green(
+            $"  this host now runs {plan.PreviousVersion ?? "the binary that was set aside"}")));
+
+        output.WriteLine("  the new version starts on the next service start, not now.");
+
+        return applied.Code;
+    }
+
     private async Task<ExitCode> UpdateAsync(
         string[] args, TextWriter output, TextWriter error, CancellationToken cancellationToken)
     {
@@ -1854,6 +1936,8 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         writer.WriteLine("                                     install a newer release on this");
         writer.WriteLine("                                     host (off unless the configuration");
         writer.WriteLine("                                     switches it on)");
+        writer.WriteLine("  ripcord rollback [--config <path>] go back to the binary the last");
+        writer.WriteLine("                   [--dry-run]       update set aside - no network");
         writer.WriteLine("  ripcord check-update               is a newer release published");
         writer.WriteLine("                                     (off unless the configuration");
         writer.WriteLine("                                     switches it on)");
