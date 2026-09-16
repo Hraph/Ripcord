@@ -92,25 +92,14 @@ public sealed record UpdatePlan(
     /// Consequences, not refusals. The operator is allowed to update a pair that is failed
     /// over — they may be updating precisely because of what went wrong — and what they are
     /// not allowed to do is find out afterwards.
-    private static List<string> Consequences(UpdateSubject subject)
-    {
-        List<string> warnings = [];
-
-        warnings.Add(subject.Skew.Verdict == VersionSkewVerdict.Different
-            ? $"the two hosts already run different builds ({subject.Skew.Explanation}); "
-                + $"a failover spanning both is refused until {subject.PeerHostName} matches"
-            : $"once this host updates, a failover spanning both hosts is refused until "
-                + $"{subject.PeerHostName} is updated too");
-
-        if (subject.Mode == OperatingMode.FailedOver)
-        {
-            warnings.Add(
-                "this pair is failed over: production is running here, and the failback is "
-                + $"what updating now delays until {subject.PeerHostName} matches");
-        }
-
-        return warnings;
-    }
+    private static List<string> Consequences(UpdateSubject subject) =>
+        PairConsequences.For(
+            subject.Skew,
+            subject.Mode,
+            subject.PeerHostName,
+            "once this host updates",
+            "is updated too",
+            "updating now delays");
 
     private static UpdatePlan Halted(UpdateStatus status, string reason) =>
         new([], status, [], reason);
