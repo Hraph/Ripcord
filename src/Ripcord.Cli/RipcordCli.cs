@@ -832,7 +832,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
                     outcome.Errors.Select(error => $"{error.Path} {error.Message}".Trim()))
                 : "the pair could not be read");
 
-    /// The listener service: what it is doing, and the two things that change it.
+    /// The listener service: what it is doing, and the things that change it.
     ///
     /// Bare, it reports and changes nothing — rule 3, and the question an operator asks first.
     /// `install` and `remove` are words rather than flags because both mutate a host that may
@@ -849,7 +849,9 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             "status" => this.ServiceState(args[1..], output, error),
             "install" => this.Deploy(args[1..], output, error, removing: false),
             "remove" => this.Deploy(args[1..], output, error, removing: true),
-            "restart" => this.Restart(args[1..], output, error),
+            "restart" => this.ChangeState(args[1..], output, error, ServiceChange.Restart),
+            "start" => this.ChangeState(args[1..], output, error, ServiceChange.Start),
+            "stop" => this.ChangeState(args[1..], output, error, ServiceChange.Stop),
             _ => Unknown(verb, error),
         };
     }
@@ -859,7 +861,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
     {
         error.WriteLine($"ripcord: 'service {verb}' is not a service verb.");
         error.WriteLine("  to look:    ripcord service");
-        error.WriteLine("  to change:  ripcord service install | remove | restart");
+        error.WriteLine("  to change:  ripcord service install | remove | restart | start | stop");
 
         return ExitCode.InvalidConfiguration;
     }
@@ -900,11 +902,15 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
     /// Putting an edited configuration into effect. Not a deployment: nothing about the host
     /// changes, the listener simply reads the file again — which it only does when it starts.
     ///
-    /// No typed confirmation. It is over in a second, it changes nothing that outlives it, and
-    /// the pair view on the other host goes offline for that second and comes back. Asking an
-    /// operator to type a node name for that is how a confirmation becomes a reflex, and a
-    /// reflex is what the failover ones must not be.
-    private ExitCode Restart(string[] args, TextWriter output, TextWriter error)
+    /// No typed confirmation for a restart or a start. It is over in a second, it changes
+    /// nothing that outlives it, and the pair view on the other host goes offline for that
+    /// second and comes back. Asking an operator to type a node name for that is how a
+    /// confirmation becomes a reflex, and a reflex is what the failover ones must not be.
+    ///
+    /// A stop does outlive itself: the other host cannot read this one until somebody starts
+    /// the listener again, so it is confirmed like any other lasting change.
+    private ExitCode ChangeState(
+        string[] args, TextWriter output, TextWriter error, ServiceChange change)
     {
         if (!TryReadOptions(args, out DeployOptions options, out string? optionError))
         {
@@ -927,32 +933,57 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         }
 
         // Started, it would stop again at once: `serve` has nothing to do.
-        if (!desired.ListenerEnabled)
+        if (!desired.ListenerEnabled && change != ServiceChange.Stop)
         {
             error.WriteLine("ripcord: the listener is disabled in ripcord.yaml.");
             error.WriteLine("  Set listener.enabled: true, or run 'ripcord service remove'.");
             return ExitCode.Refused;
         }
 
-        DeploymentPlan plan = DeploymentPlan.ToRestart(observed);
+        string word = change.ToString().ToLowerInvariant();
 
-        if (!plan.ChangesAnything)
+        if (!observed.ServiceInstalled)
         {
             error.WriteLine(
-                "ripcord: there is no listener service on this host to restart. "
+                $"ripcord: there is no listener service on this host to {word}. "
                 + "Install it with 'ripcord service install'.");
 
             return ExitCode.InvalidConfiguration;
         }
 
+        DeploymentPlan plan = change switch
+        {
+            ServiceChange.Start => DeploymentPlan.ToStart(observed),
+            ServiceChange.Stop => DeploymentPlan.ToStop(observed),
+            _ => DeploymentPlan.ToRestart(observed),
+        };
+
+        if (!plan.ChangesAnything)
+        {
+            output.WriteLine(observed.ServiceRunning
+                ? $"The '{DeploymentPlan.ServiceName}' service is already running. Nothing was changed."
+                : $"The '{DeploymentPlan.ServiceName}' service is not running. Nothing was changed.");
+
+            return ExitCode.Success;
+        }
+
         output.Write(DeploymentRenderer.Render(
             plan, desired, removing: false, observed,
-            heading: "RIPCORD LISTENER RESTART", palette: this.Ink));
+            heading: $"RIPCORD LISTENER {word.ToUpperInvariant()}", palette: this.Ink));
 
         if (options.DryRun)
         {
             output.WriteLine("  Nothing was changed. Re-run without --dry-run to apply.");
             return ExitCode.Success;
+        }
+
+        if (change == ServiceChange.Stop
+            && !this.Confirmed(
+                output,
+                error,
+                "The other host cannot read this one until the listener starts again."))
+        {
+            return ExitCode.Refused;
         }
 
         DeploymentResult result = deployment.Apply(plan, desired);
@@ -2023,6 +2054,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         writer.WriteLine("  ripcord service restart [--dry-run]");
         writer.WriteLine("                                     after editing ripcord.yaml: the");
         writer.WriteLine("                                     listener reads it only at start");
+        writer.WriteLine("  ripcord service start | stop [--dry-run]");
         writer.WriteLine("  ripcord test-failover (--vm <name> | --all) [--dry-run]");
         writer.WriteLine("                        [--unattended]");
         writer.WriteLine("                                     boot a replica in isolation, then destroy it");
@@ -2060,4 +2092,11 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             + "4 refused or interrupted - nothing changed,");
         writer.WriteLine("            5 a mutating operation left an intermediate state.");
     }
+}
+
+internal enum ServiceChange
+{
+    Restart,
+    Start,
+    Stop,
 }

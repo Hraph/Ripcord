@@ -25,6 +25,30 @@ public class ServiceCommandTests
         Assert.True(ServiceCommand.LeavesNothingToDo(
             DeploymentAction.RemoveService, ServiceCommand.NotRunning));
 
+    [Fact]
+    public void Stopping_a_service_that_is_already_stopped_left_nothing_to_do()
+    {
+        Assert.True(ServiceCommand.LeavesNothingToDo(
+            DeploymentAction.StopService, ServiceCommand.NotRunning));
+        Assert.False(ServiceCommand.LeavesNothingToDo(
+            DeploymentAction.StopService, ServiceCommand.AlreadyRunning));
+    }
+
+    /// Only a running service has anything to stop, and only a stopped one anything to start.
+    [Theory]
+    [InlineData(true, true, DeploymentAction.StopService, null)]
+    [InlineData(true, false, null, DeploymentAction.StartService)]
+    [InlineData(false, false, null, null)]
+    public void Stop_and_start_plan_only_what_the_state_leaves_to_do(
+        bool installed, bool running, DeploymentAction? stop, DeploymentAction? start)
+    {
+        ObservedDeployment observed =
+            ObservedDeployment.Nothing with { ServiceInstalled = installed, ServiceRunning = running };
+
+        Assert.Equal(stop, DeploymentPlan.ToStop(observed).Steps.SingleOrDefault()?.Action);
+        Assert.Equal(start, DeploymentPlan.ToStart(observed).Steps.SingleOrDefault()?.Action);
+    }
+
     /// A start that failed for any other reason is a failure. The tolerated codes are two
     /// numbers, not a mood.
     [Theory]

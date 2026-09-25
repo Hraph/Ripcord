@@ -13,6 +13,11 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ### Added
 
+- **`ripcord service start` and `ripcord service stop`.** `start` starts a stopped listener
+  without confirmation and leaves a running one alone. `stop` asks for the node name — the
+  other host cannot read this one until the listener starts again — and waits for Windows to
+  report it stopped.
+
 - **`ripcord service` shows the build the running listener runs**, from a record the listener
   writes when it starts (`logs\listener-process.txt`), believed only when its process id is
   the one Windows gives. After `ripcord update` without a restart it says the process still

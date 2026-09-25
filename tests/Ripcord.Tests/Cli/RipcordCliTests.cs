@@ -497,7 +497,7 @@ public class RipcordCliTests
         Assert.Equal(
             "ripcord: 'service state' is not a service verb.\n"
                 + "  to look:    ripcord service\n"
-                + "  to change:  ripcord service install | remove | restart\n",
+                + "  to change:  ripcord service install | remove | restart | start | stop\n",
             run.Error.ReplaceLineEndings("\n"));
     }
 
@@ -642,6 +642,91 @@ public class RipcordCliTests
         Assert.Equal([DeploymentAction.StartService], executor.Applied);
     }
 
+    /// `start` is typed by habit. On a stopped listener it starts it, with no confirmation.
+    [Fact]
+    public async Task Service_start_starts_a_stopped_listener()
+    {
+        FakeDeploymentExecutor executor = new(Deployed() with { ServiceRunning = false });
+
+        CliRun run = await Run(["service", "start"], deploymentExecutor: executor);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Equal([DeploymentAction.StartService], executor.Applied);
+        Assert.Contains("RIPCORD LISTENER START", run.Output, StringComparison.Ordinal);
+    }
+
+    /// Unlike `restart`, a running listener is left alone: nothing to start.
+    [Fact]
+    public async Task Service_start_on_a_running_listener_changes_nothing()
+    {
+        FakeDeploymentExecutor executor = new(Deployed());
+
+        CliRun run = await Run(["service", "start"], deploymentExecutor: executor);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Empty(executor.Applied);
+        Assert.Contains("already running", run.Output, StringComparison.Ordinal);
+    }
+
+    /// A stop outlives itself: the other host is blind to this one until somebody starts it.
+    [Fact]
+    public async Task Service_stop_is_applied_only_once_confirmed()
+    {
+        FakeDeploymentExecutor declined = new(Deployed());
+        CliRun refused = await Run(["service", "stop"], deploymentExecutor: declined, typed: "no");
+
+        Assert.Equal(ExitCode.Refused, refused.Code);
+        Assert.Empty(declined.Applied);
+        Assert.Contains("cannot read this one", refused.Output, StringComparison.Ordinal);
+
+        FakeDeploymentExecutor confirmed = new(Deployed());
+        CliRun run = await Run(
+            ["service", "stop"], deploymentExecutor: confirmed, typed: FakeScenarios.LocalHostName);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Equal([DeploymentAction.StopService], confirmed.Applied);
+        Assert.Contains("RIPCORD LISTENER STOP", run.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Service_stop_dry_run_asks_nothing_and_changes_nothing()
+    {
+        FakeDeploymentExecutor executor = new(Deployed());
+
+        CliRun run = await Run(["service", "stop", "--dry-run"], deploymentExecutor: executor);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Empty(executor.Applied);
+        Assert.Contains("Stop the 'ripcord' service", run.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("cannot read this one", run.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Service_stop_on_a_stopped_listener_asks_nothing()
+    {
+        FakeDeploymentExecutor executor = new(Deployed() with { ServiceRunning = false });
+
+        CliRun run = await Run(["service", "stop"], deploymentExecutor: executor);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Empty(executor.Applied);
+        Assert.Contains("is not running. Nothing was changed.", run.Output, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("start")]
+    [InlineData("stop")]
+    public async Task Service_start_or_stop_with_no_service_says_so(string verb)
+    {
+        FakeDeploymentExecutor executor = new();
+
+        CliRun run = await Run(["service", verb], deploymentExecutor: executor);
+
+        Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
+        Assert.Empty(executor.Applied);
+        Assert.Contains($"no listener service on this host to {verb}", run.Error, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Service_restart_on_a_host_with_no_service_says_so_and_does_nothing()
     {
@@ -699,7 +784,7 @@ public class RipcordCliTests
     /// Neither `install` nor `remove` is needed to look, and a word that is neither is refused
     /// rather than read as one of them.
     [Theory]
-    [InlineData("start")]
+    [InlineData("begin")]
     [InlineData("deploy")]
     [InlineData("instal")]
     public async Task Service_refuses_a_word_that_is_not_one_of_the_two(string word)

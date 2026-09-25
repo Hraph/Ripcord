@@ -237,6 +237,31 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         {
             this.WatchTheStart();
         }
+        else if (change.Action == DeploymentAction.StopService)
+        {
+            this.WaitForTheStop();
+        }
+    }
+
+    private static readonly TimeSpan StopWait = TimeSpan.FromSeconds(30);
+
+    /// `sc stop` returns while the stop is still pending: the step is done once Windows says so.
+    private void WaitForTheStop()
+    {
+        Stopwatch watch = Stopwatch.StartNew();
+        ObservedService service = this.ObserveService();
+
+        while (service.State != ServiceRunState.Stopped && watch.Elapsed < StopWait)
+        {
+            Thread.Sleep(StartWatchInterval);
+            service = this.ObserveService();
+        }
+
+        if (service.State != ServiceRunState.Stopped)
+        {
+            throw new InvalidOperationException(
+                $"Windows still reports the service as {service.State} after {StopWait.TotalSeconds:0} s");
+        }
     }
 
     private static readonly TimeSpan StartWatch = TimeSpan.FromSeconds(5);
@@ -291,6 +316,11 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
                 $"config {DeploymentPlan.ServiceName} "
                 + $"binPath= \"\\\"{desired.BinaryPath}\\\" serve\""),
             ("sc.exe", $"start {DeploymentPlan.ServiceName}"),
+        ],
+
+        DeploymentAction.StopService =>
+        [
+            ("sc.exe", $"stop {DeploymentPlan.ServiceName}"),
         ],
 
         DeploymentAction.RemoveService =>

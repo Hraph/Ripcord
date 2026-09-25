@@ -1,16 +1,18 @@
 # `ripcord service`
 
-The listener service: what it is doing, and the three things that change it.
+The listener service: what it is doing, and the things that change it.
 
 ```
 ripcord service [status]            is it running, and if not, why
 ripcord service install [--dry-run]
 ripcord service remove  [--dry-run]
 ripcord service restart [--dry-run]
+ripcord service start   [--dry-run]
+ripcord service stop    [--dry-run]
 ```
 
 Bare, it changes nothing. `ripcord service status` is the same report under the word an
-operator types by habit — one report, two spellings. `install`, `remove` and `restart` are words rather than flags,
+operator types by habit — one report, two spellings. `install`, `remove`, `restart`, `start` and `stop` are words rather than flags,
 because all three mutate a host that may be running a domain controller, and a word is harder
 to type by accident than a flag next to the one you meant.
 
@@ -204,13 +206,25 @@ a second, it changes nothing that outlives it, and it is typed several times an 
 a configuration is being got right. A confirmation asked for that would become the reflex the
 failover confirmations must never be.
 
+## `start` and `stop`
+
+`start` starts a listener that is installed and not running, with no confirmation, for the
+same reason as `restart`. On a running listener it changes nothing and says so — unlike
+`restart`, which restarts it.
+
+`stop` leaves the service installed and stops it. It is **confirmed by typing the node name**:
+unlike a restart it outlives itself, and until somebody starts the listener again the other
+host cannot read this one and shows it `SILENT`. The step is done once Windows reports the
+service stopped, or fails after 30 seconds. On a stopped listener it changes nothing and asks
+nothing. It works with `listener.enabled: false`, where `start` and `restart` refuse.
+
 ## Exit codes
 
 Bare `ripcord service` (and `service status`): **0** once the report is printed, whatever the
 service is doing; **2** when `ripcord.yaml` cannot be used — the service is still shown above
 the errors; **3** when the host could not be inspected at all.
 
-For `install`, `remove` and `restart`:
+For `install`, `remove`, `restart`, `start` and `stop`:
 **2** when the configuration cannot be deployed on this host — a snapshot path on a missing
 drive, a disabled listener for `install` — and nothing was asked or changed. **4** for
 `restart` on a disabled listener. **4** when the confirmation is declined — nothing was

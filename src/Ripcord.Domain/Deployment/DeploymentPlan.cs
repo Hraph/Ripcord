@@ -105,6 +105,9 @@ public enum DeploymentAction
     RemoveEventSource,
     GrantKeyAccess,
     RevokeKeyAccess,
+
+    /// Leaves the service installed. Until it starts again, the other host cannot read this one.
+    StopService,
 }
 
 /// One change, and why it is needed. The reason is what `--dry-run` prints, so it is written
@@ -157,6 +160,32 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
                     $"Start the '{ServiceName}' service",
                     "it is installed and not running"),
         ]);
+    }
+
+    /// Nothing to stop on a host with no service, or one already stopped: the plan is empty.
+    public static DeploymentPlan ToStop(ObservedDeployment observed)
+    {
+        ArgumentNullException.ThrowIfNull(observed);
+
+        return observed is { ServiceInstalled: true, ServiceRunning: true }
+            ? new DeploymentPlan(
+            [
+                new DeploymentStep(
+                    DeploymentAction.StopService,
+                    $"Stop the '{ServiceName}' service",
+                    "the service stays installed; 'ripcord service start' brings it back"),
+            ])
+            : new DeploymentPlan([]);
+    }
+
+    /// Only a service that is installed and not running has anything to start.
+    public static DeploymentPlan ToStart(ObservedDeployment observed)
+    {
+        ArgumentNullException.ThrowIfNull(observed);
+
+        return observed is { ServiceInstalled: true, ServiceRunning: false }
+            ? ToRestart(observed)
+            : new DeploymentPlan([]);
     }
 
     /// Re-running a correct deployment yields an empty plan: an installer that reinstalls

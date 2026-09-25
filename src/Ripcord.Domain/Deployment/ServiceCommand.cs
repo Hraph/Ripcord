@@ -28,7 +28,7 @@ public static class ServiceCommand
         {
             DeploymentAction.StartService => exitCode == AlreadyRunning,
             DeploymentAction.RestartService => exitCode is AlreadyRunning or NotRunning,
-            DeploymentAction.RemoveService => exitCode == NotRunning,
+            DeploymentAction.RemoveService or DeploymentAction.StopService => exitCode == NotRunning,
             _ => false,
         };
 }
