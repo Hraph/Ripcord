@@ -294,7 +294,7 @@ public sealed class WmiHypervProvider(
     /// Only the synchronous return is serviced. A return of 4096 means the provider started a
     /// job instead; that is not overlooked, it is declined — polling a CIM_ConcreteJob for one
     /// column is machinery no test off Windows could exercise. The volume then renders as
-    /// unknown, the same as for a VM with no relationship.
+    /// unknown, and the log says which code came back.
     private long? ReadPendingBytes(
         CimSession session,
         CimInstance vm,
@@ -312,16 +312,12 @@ public sealed class WmiHypervProvider(
             [
                 CimMethodParameter.Create("ComputerSystem", vm, CimType.Reference, CimFlags.In),
 
-                // The parameter carries the EmbeddedInstance qualifier. The Microsoft sample
-                // serialises it with System.Management's GetText, which MI has no equivalent
-                // for, so the instance goes across directly. Named in the original comment as
-                // the line most likely to be wrong on the first real host, and it was:
-                // `Incompatibilité de type pour le paramètre « ReplicationRelationship »`.
-                //
-                // Inside the try because the refusal comes from building the parameter, not
-                // from the call.
+                // Declared `string` EmbeddedInstance: the instance's text, not the instance (V38).
                 CimMethodParameter.Create(
-                    "ReplicationRelationship", relationship, CimType.Instance, CimFlags.In),
+                    "ReplicationRelationship",
+                    CimEmbeddedInstance.Text(relationship),
+                    CimType.String,
+                    CimFlags.In),
             ];
 
             using CimInstance service = ReplicationService(session, options);
@@ -329,21 +325,42 @@ public sealed class WmiHypervProvider(
             using CimMethodResult result = session.InvokeMethod(
                 Namespace, service, "GetReplicationStatisticsEx", parameters, options);
 
-            if (Convert.ToUInt32(result.ReturnValue.Value, CultureInfo.InvariantCulture) != 0)
+            uint returned =
+                Convert.ToUInt32(result.ReturnValue.Value, CultureInfo.InvariantCulture);
+            if (returned != 0)
             {
+                Unread(vm, $"GetReplicationStatisticsEx returned {returned}");
                 return null;
             }
 
-            // Declared as a string array while the prose calls it a single embedded instance.
-            // Read as an array and take the first: a scalar read would throw on real hardware.
-            if (result.OutParameters["ReplicationStatistics"]?.Value is not CimInstance[]
-                { Length: > 0 } statistics)
+            // Declared `string[]` EmbeddedInstance; which shape MI hands back is unverified (V65).
+            object? statistics = result.OutParameters["ReplicationStatistics"]?.Value;
+            switch (statistics)
             {
-                return null;
-            }
+                case CimInstance[] { Length: > 0 } instances:
+                    try
+                    {
+                        return CimValues.Size(instances[0], "PendingReplicationSize");
+                    }
+                    finally
+                    {
+                        foreach (CimInstance instance in instances)
+                        {
+                            instance.Dispose();
+                        }
+                    }
 
-            using CimInstance first = statistics[0];
-            return CimValues.Size(first, "PendingReplicationSize");
+                case string[] { Length: > 0 } texts:
+                    return PendingBytes(vm, texts[0]);
+
+                case string text:
+                    return PendingBytes(vm, text);
+
+                default:
+                    string shape = statistics?.GetType().Name ?? "nothing";
+                    Unread(vm, $"ReplicationStatistics came back as {shape}");
+                    return null;
+            }
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -362,6 +379,29 @@ public sealed class WmiHypervProvider(
 
             return null;
         }
+    }
+
+    private long? PendingBytes(CimInstance vm, string text)
+    {
+        long? bytes = CimReplicationValues.PendingBytes(
+            EmbeddedInstanceText.Property(text, "PendingReplicationSize"));
+
+        if (bytes is null)
+        {
+            Unread(vm, "PendingReplicationSize was not found in the statistics text", text);
+        }
+
+        return bytes;
+    }
+
+    private void Unread(CimInstance vm, string reason, string? detail = null)
+    {
+        string message = $"the pending replication size could not be read for "
+            + $"'{CimValues.Text(vm, "ElementName")}': {reason}";
+
+        diagnostics.Write(detail is null
+            ? DiagnosticEntry.Of("hyper-v", message)
+            : DiagnosticEntry.Of("hyper-v", message, detail));
     }
 
     private static CimInstance ReplicationService(
