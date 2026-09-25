@@ -294,10 +294,13 @@ public class RipcordCliTests
     [Fact]
     public async Task The_configuration_path_can_be_overridden()
     {
+        // Fully qualified on the OS running the tests: `/etc/...` gains a drive letter on the
+        // Windows release runner.
+        string path = Path.Combine(Path.GetTempPath(), "ripcord", "other.yaml");
         RecordingConfigStore store = new();
-        await Run(["status", "--config", "/etc/ripcord/other.yaml"], configStore: store);
+        await Run(["status", "--config", path], configStore: store);
 
-        Assert.Equal("/etc/ripcord/other.yaml", store.RequestedPath);
+        Assert.Equal(path, store.RequestedPath);
     }
 
     [Fact]
