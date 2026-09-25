@@ -69,6 +69,28 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
   and names the way out, and `remove` works. `install` is refused before anything changes.
 - **`ripcord service` shows how old the snapshot is**, or that it was never written, and ends
   by naming `ripcord status` when the peer would read this host as offline or stale.
+- **The test failover's cleanup destroyed the replica, not the test copy.** It named the
+  replicated VM, and the adapter destroyed whatever VM carried that name. Test VMs are now
+  destroyed by their own name, and the adapter refuses any VM that is not a test replica. A
+  create that fails after making the copy is cleaned up by listing the test VMs before and
+  after it. Unverified on hardware.
+- **The created test VM was read from a reference that carries key properties only**, so its
+  name came back empty and the copy was left behind; it is re-read. The test network is set by
+  the switch's name rather than its GUID and read back, and a copy that is not on the declared
+  test switch is destroyed without being started. Unverified on hardware.
+- **A planned failover prepared while the guest was still shutting down**, which Hyper-V
+  refuses. Step 1 now waits for the VM to read Off, up to ten minutes, and the restore after a
+  failed step is retried fifteen seconds apart instead of back to back.
+- **The listener service could not use its own certificate's private key**: machine keys are
+  readable by SYSTEM and Administrators only. `service install` now grants the service account
+  read access to the key file, `ripcord service` shows it, `remove` revokes it, and the
+  listener logs that refusal as its own rather than as a caller with no certificate.
+  Unverified on hardware.
+- **A second `update`, or a `rollback`, failed with a bare access-denied** while the listener
+  still ran the binary the first update set aside. Both now refuse first and name
+  `ripcord service restart`.
+- A VM name holding a backslash or a quote no longer breaks the Hyper-V lookup; the listener
+  reads the snapshot without blocking the replace `ripcord status` makes.
 - **Re-running `ripcord init` over the sample lost the comments explaining the file.** An
   indented comment closing a section was attached to the next one: the `# snapshot_path:`
   explanation left `listener` and was dropped with `vms`, and `replication`'s commented keys
