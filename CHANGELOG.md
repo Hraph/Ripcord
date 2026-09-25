@@ -55,6 +55,12 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ### Fixed
 
+- **`ripcord init` explains what P1/P2 and the domain-controller answer change**, once, above
+  the first VM: P1 fails over first and `check` makes sure the DR host can start every P1 at
+  once; the domain-controller answer only adds `check`'s USN rollback reminder, so a domain
+  controller should be P1. The written `ripcord.yaml` no longer claims a P1 running on both
+  hosts is special — split brain halts mutation for a VM of either priority.
+
 - **`ripcord init` pre-answers the VM question with the file's VMs as list numbers**, in its
   order, instead of a line of names that ran off the console. Enter reproduces the selection,
   names are still accepted, and a VM name containing a comma now survives being picked.

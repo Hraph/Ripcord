@@ -35,7 +35,7 @@ that step is easy to leave out and expensive to forget.
 
 ## What stops it
 
-A **split brain** — a P1 VM positively running on both hosts — halts every mutating command.
+A **split brain** — a VM of either priority positively running on both hosts — halts every mutating command.
 Silence is not a claim: a host that could not be read is not a second claimant.
 
 A **version mismatch** between the two binaries refuses any sequence spanning both. The

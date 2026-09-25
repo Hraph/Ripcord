@@ -66,8 +66,8 @@ would fail over", and a sweep refuses. A file with no `vms` key at all is still 
 
 | Key | Effect |
 |---|---|
-| `priority` | `P1` comes back first. A sweep moves P1 before P2 |
-| `is_domain_controller` | USN rollback guard: reported by `check`, and it shapes what a test failover refuses |
+| `priority` | `P1` fails over first: a sweep moves every P1 before any P2, and `failover --priority P1` moves that tier alone. `check` makes sure the DR host can start every P1 at once (its RAM minus `node.host_memory_reserve_gb`), and reads the pair as failed over only when a P1 runs as primary on the DR host — so at least one VM should be P1. Split brain halts mutation for a VM of either priority |
+| `is_domain_controller` | Only makes `check` report the USN rollback risk (Info, on every run). It changes no order and no refusal: a domain controller should be P1, and a test failover's isolation refusal applies to every VM whatever this says |
 | `has_passthrough_disk` | a pass-through disk is not replicated by Hyper-V Replica |
 | `expected_startup_ram_mb` | compared against what the target reports; a drift is a warning |
 | `guest_os_support_ends` | nothing in WMI knows when patches stop; this date is the only source |
