@@ -16,6 +16,23 @@ public static class ServiceExitCode
     public static int ToWindows(ExitCode code) =>
         code == ExitCode.Success ? 0 : CustomerBit | (int)code;
 
+    /// ERROR_SERVICE_SPECIFIC_ERROR: the real code is in the service-specific field.
+    public const int ServiceSpecificError = 1066;
+
+    /// `Win32_Service` carries both fields. Ripcord sets only the first, but a service stopped
+    /// through the service-specific route is still read for what it says.
+    public static ServiceExit FromWindows(int win32ExitCode, int? serviceSpecificExitCode)
+    {
+        if (win32ExitCode == ServiceSpecificError
+            && serviceSpecificExitCode is { } specific and not 0
+            && Enum.IsDefined((ExitCode)specific))
+        {
+            return new ServiceExit(ServiceExitKind.Ripcord, (ExitCode)specific, win32ExitCode);
+        }
+
+        return FromWindows(win32ExitCode);
+    }
+
     public static ServiceExit FromWindows(int win32ExitCode)
     {
         if (win32ExitCode == 0)

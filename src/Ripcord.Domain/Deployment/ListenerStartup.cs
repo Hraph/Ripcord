@@ -24,7 +24,19 @@ public static class ListenerStartup
     /// First lines of every start, so a log appended to all day says where each run begins.
     public static DiagnosticEntry Banner(string version, string configurationPath) =>
         new(
-            "service",
-            $"==== ripcord {version} listener starting",
+            BannerOperation,
+            $"{BannerStart}{version}{BannerEnd}",
             [$"configuration {configurationPath}"]);
+
+    /// Read back by `ripcord service`: what follows the last banner is the last run.
+    public static bool IsBanner(string operation, string message) =>
+        operation == BannerOperation
+        && message.StartsWith(BannerStart, StringComparison.Ordinal)
+        && message.EndsWith(BannerEnd, StringComparison.Ordinal);
+
+    private const string BannerOperation = "service";
+
+    private const string BannerStart = "==== ripcord ";
+
+    private const string BannerEnd = " listener starting";
 }

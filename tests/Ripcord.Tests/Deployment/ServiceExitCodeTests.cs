@@ -49,4 +49,19 @@ public class ServiceExitCodeTests
         Assert.Equal(ServiceExitKind.Other, exit.Kind);
         Assert.Null(exit.Code);
     }
+
+    [Fact]
+    public void A_service_specific_error_carries_ripcords_code()
+    {
+        ServiceExit exit = ServiceExitCode.FromWindows(1066, 2);
+
+        Assert.Equal(ServiceExitKind.Ripcord, exit.Kind);
+        Assert.Equal(ExitCode.InvalidConfiguration, exit.Code);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(99)]
+    public void A_service_specific_code_ripcord_does_not_have_is_not_read_as_ripcords(int specific) =>
+        Assert.Equal(ServiceExitKind.Other, ServiceExitCode.FromWindows(1066, specific).Kind);
 }
