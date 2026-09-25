@@ -184,6 +184,53 @@ public class ServiceInspectionTests
         Assert.Equal(ServiceVerdict.None, report.Verdict);
     }
 
+    /// Shown whether or not `ripcord.yaml` loads: a placeholder thumbprint is why it would not.
+    [Fact]
+    public void This_hosts_certificate_is_shown_to_paste_on_both_hosts()
+    {
+        Host host = new(StoppedService)
+        {
+            Found =
+            [
+                new HostCertificate($"CN={ValidDocument.MachineName}", ValidDocument.LocalThumbprint, Now.AddYears(1)),
+                new HostCertificate("CN=someone-else", "0000000000000000000000000000000000000000", Now.AddYears(1)),
+            ],
+        };
+
+        ServiceReport report = new ServiceInspection(Valid(), host, new Logs()).Inspect(Request(), Now, ThisBuild);
+        string[] lines = DeploymentRenderer.RenderState(report, Palette.None).ReplaceLineEndings("\n").Split('\n');
+
+        Assert.Contains($"    {ValidDocument.LocalThumbprint}  in ripcord.yaml", lines);
+        Assert.DoesNotContain(lines, line => line.Contains("someone-else", StringComparison.Ordinal));
+        Assert.Contains("    listener.peer_certificate_thumbprint on the other one.", lines);
+        Assert.All(lines, line => Assert.True(line.Length <= 75, line));
+    }
+
+    [Fact]
+    public void No_certificate_for_this_host_is_said()
+    {
+        ServiceReport report = new ServiceInspection(Valid(), new Host(StoppedService), new Logs())
+            .Inspect(Request(), Now, ThisBuild);
+
+        Assert.Contains(
+            $"NONE: no certificate for CN={ValidDocument.MachineName}",
+            DeploymentRenderer.RenderState(report, Palette.None),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_store_that_cannot_be_read_is_said_and_the_report_still_comes()
+    {
+        ServiceReport report = new ServiceInspection(Valid(), new Host(StoppedService) { Found = null }, new Logs())
+            .Inspect(Request(), Now, ThisBuild);
+
+        Assert.Equal("Access is denied.", report.Certificates!.Unreadable);
+        Assert.Contains(
+            "LocalMachine\\My could not be read: Access is denied.",
+            DeploymentRenderer.RenderState(report, Palette.None),
+            StringComparison.Ordinal);
+    }
+
     private sealed class Files : Dictionary<string, string[]>, IDiagnosticLogReader
     {
         public LogReading? Tail(string path, int maxLines) =>
@@ -208,6 +255,11 @@ public class ServiceInspectionTests
                 SnapshotWrittenAt = this.WrittenAt,
             };
         }
+
+        public IReadOnlyList<HostCertificate>? Found { get; init; } = [];
+
+        public IReadOnlyList<HostCertificate> Certificates() =>
+            this.Found ?? throw new InvalidOperationException("Access is denied.");
 
         public ObservedService ObserveService()
         {

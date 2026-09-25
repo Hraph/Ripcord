@@ -21,7 +21,10 @@ public sealed record ServiceReport(
     TimeSpan? SnapshotWrittenAgo = null,
 
     /// Null unless the service is running.
-    RunningBuild? Build = null);
+    RunningBuild? Build = null,
+
+    /// What to paste into the two `ripcord.yaml` files, read without either.
+    HostCertificates? Certificates = null);
 
 /// Read-only: the service as Windows sees it, the deployment as the configuration wants it,
 /// the end of the listener's log, and one line on why a stopped listener stopped.
@@ -56,6 +59,17 @@ public sealed class ServiceInspection(
         RunningBuild? build = ListenerProcessReading.Judge(
             logReader, service, logsFolder, thisBuild, request.BinaryPath);
 
+        HostCertificates certificates;
+
+        try
+        {
+            certificates = HostCertificates.For(executor.Certificates(), request.MachineName, now);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            certificates = HostCertificates.CouldNotRead(request.MachineName, exception.Message);
+        }
+
         return new ServiceReport(
             service,
             deployment,
@@ -72,7 +86,8 @@ public sealed class ServiceInspection(
                 ? SnapshotFreshness.Judge(observed.SnapshotWrittenAt, now, desired.SnapshotStaleAfter)
                 : null,
             now - deployment.Observed?.SnapshotWrittenAt,
-            build);
+            build,
+            certificates);
     }
 
     /// Only known for the folder the configuration's deployment looked at.

@@ -116,7 +116,7 @@ public static class PeerIdentity
         string.Equals(left.Trim(), right.Trim(), StringComparison.OrdinalIgnoreCase);
 
     /// Distinguished names differ in spacing between tools; only the content is meaningful.
-    private static bool SameName(string left, string right) =>
+    internal static bool SameName(string left, string right) =>
         Same(left.Replace(" ", "", StringComparison.Ordinal),
             right.Replace(" ", "", StringComparison.Ordinal));
 }

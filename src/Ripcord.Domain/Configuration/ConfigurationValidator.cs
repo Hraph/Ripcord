@@ -751,7 +751,7 @@ public static class ConfigurationValidator
             listener.LocalCertificateThumbprint,
             "listener.local_certificate_thumbprint",
             listener.Enabled,
-            "this host's certificate",
+            "this host's certificate, which 'ripcord service' shows",
             errors,
             ref complete);
 
@@ -759,7 +759,7 @@ public static class ConfigurationValidator
             listener.PeerCertificateThumbprint,
             "listener.peer_certificate_thumbprint",
             listener.Enabled,
-            "the other host's certificate",
+            "the other host's certificate, which 'ripcord service' shows there",
             errors,
             ref complete);
 

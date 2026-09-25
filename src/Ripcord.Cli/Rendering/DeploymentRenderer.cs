@@ -104,6 +104,7 @@ public static class DeploymentRenderer
                     : "Firewall, snapshot and logs access could not be read (below).");
         }
 
+        AppendCertificates(output, report.Certificates, deployment.Desired?.CertificateThumbprint);
         AppendLog(output, report, shownFolder: deployment.Desired?.LogsFolder);
         output.AppendLine();
 
@@ -184,6 +185,52 @@ public static class DeploymentRenderer
             AppendWrapped(
                 output, "    last exit  ", "               ", ServiceDiagnosis.WindowsMeaning(exit));
         }
+    }
+
+    /// The thumbprint to paste on both hosts, shown even when `ripcord.yaml` does not load:
+    /// a placeholder in it is exactly why it does not.
+    private static void AppendCertificates(
+        StringBuilder output, HostCertificates? certificates, string? configured)
+    {
+        if (certificates is null)
+        {
+            return;
+        }
+
+        output.AppendLine();
+        output.AppendLine("  THIS HOST'S CERTIFICATE");
+
+        if (certificates.Unreadable is { } reason)
+        {
+            AppendWrapped(output, "    ", "    ", $"LocalMachine\\My could not be read: {reason}");
+            return;
+        }
+
+        if (certificates.Usable.Count == 0)
+        {
+            AppendWrapped(
+                output,
+                "    ",
+                "    ",
+                $"NONE: no certificate for {certificates.Subject} with a private key in "
+                    + "LocalMachine\\My that has not expired.");
+            return;
+        }
+
+        foreach (HostCertificate certificate in certificates.Usable)
+        {
+            bool inUse = string.Equals(certificate.Thumbprint, configured, StringComparison.OrdinalIgnoreCase);
+
+            output.AppendLine($"    {certificate.Thumbprint}{(inUse ? "  in ripcord.yaml" : "")}");
+            AppendWrapped(
+                output,
+                "      ",
+                "      ",
+                $"{certificate.Subject}, expires {certificate.NotAfter:yyyy-MM-dd}");
+        }
+
+        output.AppendLine("    listener.local_certificate_thumbprint on this host,");
+        output.AppendLine("    listener.peer_certificate_thumbprint on the other one.");
     }
 
     /// The build the process runs, which after `ripcord update` is not the one on disk.
