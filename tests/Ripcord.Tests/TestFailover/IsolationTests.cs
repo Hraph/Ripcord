@@ -204,4 +204,22 @@ public class IsolationTests
     private static VirtualAdapter Adapter(
         string? switchName, bool? connected, string name = "Network Adapter") =>
         new(name, switchName, connected, "00-15-5D-01-02-01", false, null);
+
+    [Fact]
+    public void Adapters_off_the_declared_test_switch_are_named()
+    {
+        VirtualAdapter onIt = new("A", TestSwitch, true, null, null, null);
+        VirtualAdapter onNothing = new("B", null, null, null, null, null);
+        VirtualAdapter unplugged = new("C", TestSwitch, false, null, null, null);
+        VirtualAdapter flagUnread = new("D", TestSwitch, null, null, null, null);
+
+        Assert.Equal(
+            ["B", "C"],
+            Isolation.OffTheTestSwitch([onIt, onNothing, unplugged, flagUnread], TestSwitch));
+    }
+
+    [Fact]
+    public void With_no_declared_test_switch_no_adapter_is_off_it() =>
+        Assert.Empty(Isolation.OffTheTestSwitch(
+            [new VirtualAdapter("B", null, null, null, null, null)], null));
 }

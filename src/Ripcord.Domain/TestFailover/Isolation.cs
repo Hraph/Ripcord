@@ -59,6 +59,19 @@ public static class Isolation
                 .OfType<IsolationBreach>()]);
     }
 
+    /// The adapters not on the switch the operator declared for test failovers. Isolated, but
+    /// a test that boots with no network does not test what `test_failover_switch` set up.
+    /// Empty when no switch was declared: every adapter is then meant to be on nothing.
+    public static IReadOnlyList<string> OffTheTestSwitch(
+        IReadOnlyList<VirtualAdapter>? adapters, string? testFailoverSwitch) =>
+        testFailoverSwitch is null || adapters is null
+            ? []
+            : [.. adapters
+                .Where(adapter => adapter.IsConnected == false
+                    || adapter.SwitchName is not { } name
+                    || !Declared(name, testFailoverSwitch))
+                .Select(adapter => adapter.Name)];
+
     private static IsolationBreach? Judge(
         VirtualAdapter adapter, string? testFailoverSwitch, IReadOnlyList<HostSwitch> switches)
     {
