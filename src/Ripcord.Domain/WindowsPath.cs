@@ -27,6 +27,23 @@ public static class WindowsPath
         return at == 0 || path[at - 1] == ':' ? path[..(at + 1)] : path[..at];
     }
 
+    /// The drive a path is on, `D:\` for `D:\Ripcord\state.json`, or the empty string when the
+    /// path names none — a share, a relative path or a bare file name, which nothing here can
+    /// tell is missing.
+    public static string RootOf(string? path)
+    {
+        if (path is null
+            || path.Length < 3
+            || !char.IsAsciiLetter(path[0])
+            || path[1] != ':'
+            || !Separators.Contains(path[2]))
+        {
+            return "";
+        }
+
+        return path[..3];
+    }
+
     public static string Join(string? folder, string name)
     {
         if (string.IsNullOrEmpty(folder))

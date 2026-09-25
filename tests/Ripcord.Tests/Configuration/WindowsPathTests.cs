@@ -60,4 +60,22 @@ public class WindowsPathTests
             @"C:\Program Files\Ripcord\state.json",
             WindowsPath.Join(
                 WindowsPath.FolderOf(@"C:\Program Files\Ripcord\ripcord.yaml"), "state.json"));
+
+    /// The drive is what `service install` checks exists before it changes anything.
+    [Theory]
+    [InlineData(@"D:\Ripcord\state.json", @"D:\")]
+    [InlineData(@"C:\Program Files\Ripcord\state.json", @"C:\")]
+    [InlineData("d:/x/state.json", "d:/")]
+    public void RootOf_names_the_drive_a_path_is_on(string path, string root) =>
+        Assert.Equal(root, WindowsPath.RootOf(path));
+
+    /// Unknown means "do not block": nothing here can tell that a share is missing.
+    [Theory]
+    [InlineData(@"\\srv\share\state.json")]
+    [InlineData("state.json")]
+    [InlineData("D:state.json")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void RootOf_is_empty_when_no_drive_is_named(string? path) =>
+        Assert.Equal("", WindowsPath.RootOf(path));
 }
