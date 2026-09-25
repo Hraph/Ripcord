@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Ripcord.Domain.Replication;
 
 /// The numeric lookups `root\virtualization\v2` reports, kept in the Domain so the WMI
@@ -50,4 +52,16 @@ public static class CimReplicationValues
             : Enum.IsDefined((AutomaticStartAction)action)
                 ? (AutomaticStartAction)action
                 : AutomaticStartAction.Unknown;
+
+    /// `Msvm_ReplicationStatistics.PendingReplicationSize` read out of the statistics' text
+    /// form: a uint64 in bytes. Past long.MaxValue is a provider bug, not a backlog.
+    public static long? PendingBytes(string? value) =>
+        ulong.TryParse(
+            value,
+            NumberStyles.AllowLeadingWhite | NumberStyles.AllowTrailingWhite,
+            CultureInfo.InvariantCulture,
+            out ulong size)
+            && size <= long.MaxValue
+            ? (long)size
+            : null;
 }

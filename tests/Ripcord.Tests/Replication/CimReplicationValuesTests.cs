@@ -140,4 +140,24 @@ public class CimReplicationValuesTests
     {
         Assert.Equal(AutomaticStartAction.Unknown, CimReplicationValues.StartAction(42));
     }
+
+    [Theory]
+    [InlineData("0", 0L)]
+    [InlineData("123456789012", 123456789012L)]
+    public void Pending_bytes_parse_an_unsigned_size(string value, long expected)
+    {
+        Assert.Equal(expected, CimReplicationValues.PendingBytes(value));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("-1")]
+    [InlineData("abc")]
+    [InlineData("1.5")]
+    [InlineData("18446744073709551615")]
+    public void Pending_bytes_are_unknown_when_unreadable(string? value)
+    {
+        Assert.Null(CimReplicationValues.PendingBytes(value));
+    }
 }
