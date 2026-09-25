@@ -70,15 +70,143 @@ public class ServiceDiagnosisTests
     }
 
     [Fact]
-    public void Logged_exit_after_the_last_banner_wins_over_windows()
+    public void Logged_exit_after_the_last_banner_is_believed_when_windows_agrees()
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
-            Stopped with { Win32ExitCode = ServiceExitCode.ToWindows(ExitCode.LocalAccessFailure) },
+            Stopped with { Win32ExitCode = ServiceExitCode.ToWindows(ExitCode.InvalidConfiguration) },
             true,
             Log(Banner(), Line("serve", "listening"), Exit(ExitCode.InvalidConfiguration)));
 
         Assert.Equal("it stopped with exit 2: the configuration did not load", verdict.Why);
         Assert.Equal(["ripcord check"], verdict.Next);
+    }
+
+    [Fact]
+    public void Logged_exit_is_believed_when_windows_recorded_a_clean_stop()
+    {
+        ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            Stopped, true, Log(Banner(), Exit(ExitCode.InvalidConfiguration)));
+
+        Assert.Equal("it stopped with exit 2: the configuration did not load", verdict.Why);
+    }
+
+    [Fact]
+    public void A_stale_exit_in_the_log_gives_way_to_a_different_ripcord_code_from_windows()
+    {
+        ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            Stopped with { Win32ExitCode = ServiceExitCode.ToWindows(ExitCode.LocalAccessFailure) },
+            true,
+            Log(Banner(), Exit(ExitCode.InvalidConfiguration)));
+
+        Assert.Equal(
+            "Windows recorded exit 3: it could not reach a local resource: log folder, "
+                + "certificate or port; its log is from an earlier run",
+            verdict.Why);
+        Assert.Equal(["ripcord check", "ripcord service install --dry-run"], verdict.Next);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void A_clean_log_never_hides_a_failed_start_windows_recorded(bool cancelled)
+    {
+        ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            Stopped with { Win32ExitCode = ServiceExitCode.ToWindows(ExitCode.LocalAccessFailure) },
+            true,
+            Log(
+                Banner(),
+                cancelled ? CommandEntries.Cancelled("serve").Render(At)[0] : Exit(ExitCode.Success)));
+
+        Assert.StartsWith("Windows recorded exit 3", verdict.Why, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_clean_log_and_logs_not_writable_blames_the_logs_folder()
+    {
+        ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            Stopped with { Win32ExitCode = ServiceExitCode.ToWindows(ExitCode.LocalAccessFailure) },
+            false,
+            Log(Banner(), Exit(ExitCode.Success)));
+
+        Assert.Contains("cannot write its logs folder", verdict.Why, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(1053, "Windows recorded 1053: it did not answer the start request in time")]
+    [InlineData(1069, "Windows recorded 1069: the service account could not log on")]
+    [InlineData(2, "Windows recorded 2: the binary was not found")]
+    public void A_clean_log_never_hides_a_code_windows_set_after_it(int win32, string expected)
+    {
+        ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            Stopped with { Win32ExitCode = win32 }, true, Log(Banner(), Exit(ExitCode.Success)));
+
+        Assert.Equal(expected + "; its log is from an earlier run", verdict.Why);
+        Assert.Equal(ServiceDiagnosis.EventLogCommands, verdict.Next);
+    }
+
+    [Fact]
+    public void A_windows_code_with_no_log_does_not_mention_an_earlier_run()
+    {
+        ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            Stopped with { Win32ExitCode = 1053 }, true, null);
+
+        Assert.Equal("Windows recorded 1053: it did not answer the start request in time", verdict.Why);
+    }
+
+    [Fact]
+    public void Aborted_after_a_logged_exit_is_the_process_dying_after_reporting()
+    {
+        ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            Stopped with { Win32ExitCode = ServiceExitCode.Aborted },
+            true,
+            Log(Banner(), Exit(ExitCode.InvalidConfiguration)));
+
+        Assert.Equal("it stopped with exit 2: the configuration did not load", verdict.Why);
+    }
+
+    [Fact]
+    public void A_crash_logged_agrees_with_the_exit_3_the_host_sets()
+    {
+        ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            Stopped with { Win32ExitCode = ServiceExitCode.ToWindows(ExitCode.LocalAccessFailure) },
+            true,
+            Log(Banner(), CommandEntries.Crashed("serve", "boom").Render(At)[0]));
+
+        Assert.Equal("it stopped on an unhandled error, written to its log", verdict.Why);
+    }
+
+    [Fact]
+    public void Never_started_says_so_and_names_the_restart()
+    {
+        ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            Stopped with { Win32ExitCode = ServiceDiagnosis.NeverStarted },
+            true,
+            Log(Banner(), Exit(ExitCode.Success)));
+
+        Assert.Equal("it has not been started since Windows booted", verdict.Why);
+        Assert.Equal(["ripcord service restart"], verdict.Next);
+    }
+
+    [Fact]
+    public void A_disabled_listener_is_said_before_the_clean_stop_and_points_to_remove()
+    {
+        ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            Stopped, true, Log(Banner(), Exit(ExitCode.Success)), listenerDisabled: true);
+
+        Assert.Equal(
+            "the listener is disabled in ripcord.yaml (listener.enabled: false)", verdict.Why);
+        Assert.Equal(["ripcord service remove"], verdict.Next);
+    }
+
+    [Fact]
+    public void Access_denied_asks_for_an_elevated_console()
+    {
+        ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            Stopped with { State = ServiceRunState.Unknown, Unreadable = ObservedService.AccessDenied },
+            null,
+            null);
+
+        Assert.Contains("elevated console", verdict.Why, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -196,9 +324,10 @@ public class ServiceDiagnosisTests
     [InlineData(0, "0, a normal stop")]
     [InlineData(0x20000002, "0x20000002, Ripcord exit 2: the configuration did not load")]
     [InlineData(1067, "1067, the process ended without reporting to Windows")]
-    [InlineData(2, "2, set by Windows: the binary was not found")]
-    [InlineData(1053, "1053, set by Windows: it did not answer the start request")]
-    [InlineData(1234, "1234, set by Windows, not by Ripcord")]
+    [InlineData(2, "2: the binary was not found")]
+    [InlineData(1053, "1053: it did not answer the start request in time")]
+    [InlineData(1077, "1077: it has not been started since Windows booted")]
+    [InlineData(1234, "1234, a Windows code, not Ripcord's")]
     public void Windows_codes_are_printed_as_sc_prints_them_with_their_meaning(
         int win32, string expected) =>
         Assert.Equal(expected, ServiceDiagnosis.WindowsMeaning(ServiceExitCode.FromWindows(win32)));
@@ -217,4 +346,27 @@ public class ServiceDiagnosisTests
             $"-ProviderName {DeploymentPlan.EventSource} ",
             ServiceDiagnosis.EventLogCommands[0],
             StringComparison.Ordinal);
+
+    [Fact]
+    public void A_start_that_stopped_at_once_is_a_failure_with_windows_code()
+    {
+        string? failure = ServiceDiagnosis.StartFailure(
+            Stopped with { Win32ExitCode = ServiceExitCode.ToWindows(ExitCode.InvalidConfiguration) });
+
+        Assert.Equal(
+            "the service stopped right after it started: 0x20000002, Ripcord exit 2: the "
+                + "configuration did not load",
+            failure);
+    }
+
+    [Theory]
+    [InlineData(ServiceRunState.Running)]
+    [InlineData(ServiceRunState.StartPending)]
+    [InlineData(ServiceRunState.Unknown)]
+    public void A_start_that_runs_starts_or_cannot_be_read_is_not_a_failure(ServiceRunState state) =>
+        Assert.Null(ServiceDiagnosis.StartFailure(Stopped with { State = state }));
+
+    [Fact]
+    public void A_service_that_is_not_there_is_not_judged() =>
+        Assert.Null(ServiceDiagnosis.StartFailure(ObservedService.Absent));
 }

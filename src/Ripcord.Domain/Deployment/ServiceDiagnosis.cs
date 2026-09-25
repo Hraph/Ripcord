@@ -40,6 +40,8 @@ public static class ServiceDiagnosis
 
     private const string Restart = "ripcord service restart";
 
+    private const string Remove = "ripcord service remove";
+
     public static string Meaning(ExitCode code) => code switch
     {
         ExitCode.Success => "a clean stop",
@@ -51,6 +53,9 @@ public static class ServiceDiagnosis
         ExitCode.IntermediateState => "it stopped part-way through a change",
         _ => string.Create(CultureInfo.InvariantCulture, $"exit {(int)code}"),
     };
+
+    /// ERROR_SERVICE_NEVER_STARTED: nothing has asked Windows to start it since it booted.
+    public const int NeverStarted = 1077;
 
     /// The code as `sc.exe query` prints it, and what it means.
     public static string WindowsMeaning(ServiceExit exit)
@@ -71,16 +76,39 @@ public static class ServiceDiagnosis
             ServiceExitKind.Crashed => $"{code}, the process ended without reporting to Windows",
             _ => exit.Win32ExitCode switch
             {
-                2 => $"{code}, set by Windows: the binary was not found",
-                1053 => $"{code}, set by Windows: it did not answer the start request",
-                1069 => $"{code}, set by Windows: the service account could not log on",
-                _ => $"{code}, set by Windows, not by Ripcord",
+                2 => $"{code}: the binary was not found",
+                1053 => $"{code}: it did not answer the start request in time",
+                1069 => $"{code}: the service account could not log on",
+                NeverStarted => $"{code}: it has not been started since Windows booted",
+                _ => $"{code}, a Windows code, not Ripcord's",
             },
         };
     }
 
+    /// Read just after `sc start` came back: it returns once the process has answered the
+    /// service manager, not once the listener has come up, so a listener that stops at once
+    /// looks started. Null while it runs, starts or cannot be read.
+    public static string? StartFailure(ObservedService service)
+    {
+        ArgumentNullException.ThrowIfNull(service);
+
+        if (!service.Installed || service.State != ServiceRunState.Stopped)
+        {
+            return null;
+        }
+
+        return service.LastExit is { } exit
+            ? $"the service stopped right after it started: {WindowsMeaning(exit)}"
+            : "the service stopped right after it started";
+    }
+
     public static ServiceVerdict Diagnose(
-        ObservedService service, bool? logsWritable, LogReading? log)
+        ObservedService service,
+        bool? logsWritable,
+        LogReading? log,
+
+        /// `listener.enabled: false` in the configuration this run read.
+        bool listenerDisabled = false)
     {
         ArgumentNullException.ThrowIfNull(service);
 
@@ -98,19 +126,26 @@ public static class ServiceDiagnosis
                 new ServiceVerdict("Windows is stopping it: look again in a few seconds", []),
             ServiceRunState.Paused =>
                 new ServiceVerdict("it is paused, which Ripcord never does itself", []),
-            ServiceRunState.Stopped => Stopped(service, logsWritable, log),
-            _ => new ServiceVerdict(
-                service.Unreadable is { } reason
-                    ? $"Windows did not say whether it runs: {reason}"
-                    : "Windows did not say whether it runs",
-                []),
+            ServiceRunState.Stopped => Stopped(service, logsWritable, log, listenerDisabled),
+            _ => Unknown(service.Unreadable),
         };
     }
 
-    /// The log is believed before Windows: it says which run it is about, and Windows keeps
-    /// the exit code of whichever stop came last.
+    private static ServiceVerdict Unknown(string? reason) => reason switch
+    {
+        ObservedService.AccessDenied => new ServiceVerdict(
+            "Windows did not say whether it runs: access is denied. Run this again from an "
+                + "elevated console.",
+            []),
+        { } other => new ServiceVerdict($"Windows did not say whether it runs: {other}", []),
+        null => new ServiceVerdict("Windows did not say whether it runs", []),
+    };
+
+    /// Windows holds the latest stop; the log only the last run that got as far as its
+    /// banner. A start that fails before the banner leaves the file as an earlier run left it,
+    /// so the log is believed only where Windows does not contradict it.
     private static ServiceVerdict Stopped(
-        ObservedService service, bool? logsWritable, LogReading? log)
+        ObservedService service, bool? logsWritable, LogReading? log, bool listenerDisabled)
     {
         if (service.IsDisabled)
         {
@@ -119,9 +154,49 @@ public static class ServiceDiagnosis
                 [$"sc.exe config {DeploymentPlan.ServiceName} start= auto", Restart]);
         }
 
+        if (listenerDisabled)
+        {
+            return new ServiceVerdict(
+                "the listener is disabled in ripcord.yaml (listener.enabled: false)", [Remove]);
+        }
+
+        // Before the log: a start that cannot open it writes nothing there.
+        if (logsWritable == false)
+        {
+            return new ServiceVerdict(
+                $"{DeploymentPlan.ServiceAccount} cannot write its logs folder, so it stops "
+                    + "as soon as it starts",
+                [InstallDryRun]);
+        }
+
         ListenerLogSummary summary = log is { Unreadable: null }
             ? ListenerLog.Summarise(log.Lines)
             : ListenerLogSummary.Empty;
+
+        ServiceExit? windows = service.LastExit;
+
+        if (windows is { Kind: ServiceExitKind.Other, Win32ExitCode: NeverStarted })
+        {
+            return new ServiceVerdict("it has not been started since Windows booted", [Restart]);
+        }
+
+        if (windows is { Kind: ServiceExitKind.Other } other)
+        {
+            return new ServiceVerdict(
+                // These codes are set before the listener could write its banner.
+                $"Windows recorded {WindowsMeaning(other)}"
+                    + (summary.SawStart || summary.Said ? EarlierRun : ""),
+                EventLogCommands);
+        }
+
+        if (windows is { Kind: ServiceExitKind.Ripcord, Code: { } recorded }
+            && !Agrees(summary, recorded))
+        {
+            // A banner with no outcome may be this very run: only an outcome that contradicts
+            // Windows dates the log.
+            return Exited(
+                recorded, "Windows recorded", summary.Said ? EarlierRun : "");
+        }
 
         if (summary.Exit is { } logged and not ExitCode.Success)
         {
@@ -136,24 +211,7 @@ public static class ServiceDiagnosis
         if (summary.Exit is ExitCode.Success || summary.Cancelled)
         {
             return new ServiceVerdict(
-                "it stopped cleanly: by an operator, at shutdown, or because the listener "
-                    + "is disabled in ripcord.yaml",
-                [Restart]);
-        }
-
-        if (log is null && logsWritable == false)
-        {
-            return new ServiceVerdict(
-                $"{DeploymentPlan.ServiceAccount} cannot write its logs folder, so it stops "
-                    + "as soon as it starts",
-                [InstallDryRun]);
-        }
-
-        ServiceExit? windows = service.LastExit;
-
-        if (windows is { Kind: ServiceExitKind.Ripcord, Code: { } recorded })
-        {
-            return Exited(recorded, "Windows recorded");
+                "it stopped cleanly: by an operator or at shutdown", [Restart]);
         }
 
         if (windows is { Kind: ServiceExitKind.Crashed })
@@ -165,11 +223,6 @@ public static class ServiceDiagnosis
         if (summary.EndedSilently)
         {
             return new ServiceVerdict("it started, then stopped without writing why", EventLogCommands);
-        }
-
-        if (windows is { Kind: ServiceExitKind.Other })
-        {
-            return new ServiceVerdict($"Windows stopped it: {WindowsMeaning(windows)}", EventLogCommands);
         }
 
         if (log is { Unreadable: { } unreadable })
@@ -185,10 +238,18 @@ public static class ServiceDiagnosis
             : new ServiceVerdict("its log does not say why it stopped", EventLogCommands);
     }
 
-    private static ServiceVerdict Exited(ExitCode code, string source) =>
+    private const string EarlierRun = "; its log is from an earlier run";
+
+    /// A crash is logged, then stopped with exit 3 by the host.
+    private static bool Agrees(ListenerLogSummary summary, ExitCode recorded) =>
+        summary.Exit == recorded
+        || (summary.Crashed && summary.Exit is null && recorded == ExitCode.LocalAccessFailure);
+
+    private static ServiceVerdict Exited(ExitCode code, string source, string note = "") =>
         new(
             string.Create(
-                CultureInfo.InvariantCulture, $"{source} exit {(int)code}: {Meaning(code)}"),
+                CultureInfo.InvariantCulture,
+                $"{source} exit {(int)code}: {Meaning(code)}{note}"),
             code switch
             {
                 ExitCode.InvalidConfiguration => [Check],

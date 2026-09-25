@@ -31,6 +31,10 @@ public sealed record ObservedService(
     public static ObservedService Absent { get; } =
         new(false, null, ServiceRunState.Stopped, null, null, null);
 
+    /// The reason the adapter gives when Windows refused the read, in place of a message in the
+    /// host's language that nothing could recognise.
+    public const string AccessDenied = "access is denied";
+
     public string? BinaryPath => BinaryIn(this.CommandLine);
 
     public bool IsDisabled =>

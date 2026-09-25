@@ -7,6 +7,9 @@ public sealed record ListenerLogSummary(bool SawStart, ExitCode? Exit, bool Cras
 {
     public static ListenerLogSummary Empty { get; } = new(false, null, false, false);
 
+    /// The log says how the run ended, one way or another.
+    public bool Said => this.Exit is not null || this.Crashed || this.Cancelled;
+
     /// A start and nothing after it about an end: the process went before it could say.
     public bool EndedSilently => this.SawStart && this.Exit is null && !this.Crashed && !this.Cancelled;
 }
