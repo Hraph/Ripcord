@@ -126,13 +126,13 @@ public static class ConfigurationTemplate
         {
             text.AppendLine();
 
-            foreach (string line in Unpadded(Carried(section, draft)))
+            foreach (string line in Unpadded(WithoutUpdatesExample(Carried(section, draft))))
             {
                 text.AppendLine(line);
             }
         }
 
-        if (WithoutUpdatesExample(YamlSections.Epilogue(previous)) is { Count: > 0 } epilogue)
+        if (Unpadded(WithoutUpdatesExample(YamlSections.Epilogue(previous))) is { Count: > 0 } epilogue)
         {
             text.AppendLine();
 
@@ -146,37 +146,36 @@ public static class ConfigurationTemplate
     }
 
     /// The samples close with a commented-out `updates` example. Once the section is written for
-    /// real, that paragraph reads as a second block contradicting the first, so it goes.
-    private static List<string> WithoutUpdatesExample(IReadOnlyList<string> epilogue)
+    /// real, that paragraph reads as a second block contradicting the first, so it goes — only
+    /// when every line of it is a column-0 comment, so a real key glued to it is never taken.
+    private static List<string> WithoutUpdatesExample(IReadOnlyList<string> lines)
     {
         List<string> kept = [];
         int index = 0;
 
-        while (index < epilogue.Count)
+        while (index < lines.Count)
         {
             int start = index;
 
-            while (index < epilogue.Count && epilogue[index].Length == 0)
+            while (index < lines.Count && lines[index].Length == 0)
             {
                 index++;
             }
 
             int text = index;
 
-            while (index < epilogue.Count && epilogue[index].Length > 0)
+            while (index < lines.Count && lines[index].Length > 0)
             {
                 index++;
             }
 
-            if (!epilogue.Skip(text).Take(index - text).Any(line => line.TrimEnd() == "# updates:"))
-            {
-                kept.AddRange(epilogue.Skip(start).Take(index - start));
-            }
-        }
+            List<string> paragraph = [.. lines.Skip(text).Take(index - text)];
 
-        while (kept.Count > 0 && kept[0].Length == 0)
-        {
-            kept.RemoveAt(0);
+            if (!(paragraph.All(line => line[0] == '#')
+                && paragraph.Any(line => line.TrimEnd() == "# updates:")))
+            {
+                kept.AddRange(lines.Skip(start).Take(index - start));
+            }
         }
 
         return kept;
@@ -196,7 +195,7 @@ public static class ConfigurationTemplate
 
     /// A carried section keeps the blank lines at its edges, and a blank is written between
     /// sections here as well: without this the gap grows by one on every re-run.
-    private static IEnumerable<string> Unpadded(IReadOnlyList<string> lines)
+    private static List<string> Unpadded(List<string> lines)
     {
         int start = 0;
         int end = lines.Count;
@@ -211,7 +210,7 @@ public static class ConfigurationTemplate
             end--;
         }
 
-        return lines.Skip(start).Take(end - start);
+        return lines.GetRange(start, end - start);
     }
 
     private static IReadOnlyList<string> Carried(YamlSection section, ConfigurationDraft draft) =>

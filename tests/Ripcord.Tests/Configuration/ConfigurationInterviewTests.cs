@@ -223,6 +223,40 @@ public class ConfigurationInterviewTests
             StringComparison.Ordinal);
     }
 
+    /// Uncommenting `dashboard` makes the updates example part of the comment block above it.
+    [Fact]
+    public void The_updates_example_goes_even_above_a_carried_section_but_never_a_key_glued_to_it()
+    {
+        string sample = File.ReadAllText(
+                Path.Combine(Architecture.RepositoryLayout.Root, "config", "ripcord.primary.yaml"))
+            .ReplaceLineEndings("\n")
+            .Replace(
+                "# dashboard:\n#   enabled: true\n#   port: 7080\n",
+                "dashboard:\n  enabled: true\n  port: 7080\n",
+                StringComparison.Ordinal);
+        string glued = sample.Replace(
+            "#   install: true\n\n# The read-only", "#   install: true\n# The read-only",
+            StringComparison.Ordinal);
+        InterviewFacts facts = new("HV-PRIMARY-01", [], [new InterviewVm("VM-DC-01", true, true)]);
+
+        string Rerun(string previous) =>
+            ConfigurationTemplate.Render(
+                Answer(
+                    [.. Enumerable.Repeat("", 40)],
+                    new YamlConfigStore().Read(WrittenTo(previous)).Document,
+                    facts),
+                previous).ReplaceLineEndings("\n");
+
+        string rewritten = Rerun(sample);
+
+        Assert.Contains("\ndashboard:\n", sample, StringComparison.Ordinal);
+        Assert.DoesNotContain("# updates:", rewritten, StringComparison.Ordinal);
+        Assert.Contains("# The read-only page", rewritten, StringComparison.Ordinal);
+        Assert.Contains("\ndashboard:\n  enabled: true\n", rewritten, StringComparison.Ordinal);
+        Assert.Contains("# updates:", Rerun(glued), StringComparison.Ordinal);
+        Assert.Contains("\ndashboard:\n  enabled: true\n", Rerun(glued), StringComparison.Ordinal);
+    }
+
     /// The first rewrite of a sample may reshape it; every one after must give it back. Blank
     /// lines between carried sections used to grow by one per run.
     [Theory]

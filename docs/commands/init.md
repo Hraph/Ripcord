@@ -58,7 +58,7 @@ The normal case, and the reason it is safe:
   indented comments closing a section it rewrites (`replication`'s commented
   `# test_failover_switch:`, say) are written back after it, and the commented-out sections
   after the last one (`# alerting:`, `# diagnostics:`) stay at the end of the file — except the
-  `# updates:` example, dropped once `init` writes that section for real. Other
+  `# updates:` example, dropped wherever it sits once `init` writes that section for real. Other
   comments inside a rewritten section are replaced by the ones `init` writes;
 - **the previous file is kept** as `ripcord.yaml.1`, named in the output before you say yes;
 - **a VM the file names but this host does not have is dropped**, and listed as "No longer on
