@@ -55,6 +55,16 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ### Fixed
 
+- **The pending replication size was never read on a real host.** The relationship was passed
+  to `GetReplicationStatisticsEx` as an object where Hyper-V expects its text form, and every
+  `status` logged a type mismatch for each VM. It is now serialised the way Hyper-V's own
+  samples do, and the statistics are read whether they come back as an object or as text; a
+  non-zero return or an unexpected shape is logged. Unverified on hardware.
+
+- **Fencing and the test failover's network isolation passed their settings the same way.**
+  `ModifySystemSettings` and `ModifyResourceSettings` now receive the settings' text form too.
+  Both failed loudly rather than silently; unverified on hardware.
+
 - **`ripcord init` explains what P1/P2 and the domain-controller answer change**, once, above
   the first VM: P1 fails over first and `check` makes sure the DR host can start every P1 at
   once; the domain-controller answer only adds `check`'s USN rollback reminder, so a domain

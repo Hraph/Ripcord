@@ -10,8 +10,8 @@ logs\ripcord-2026-09-14.log
 
 2026-09-14 06:30:12.345Z status: running: status
 2026-09-14 06:30:12.902Z hyper-v: the local Hyper-V state could not be read
-    Microsoft.Management.Infrastructure.CimException: type mismatch for parameter …
-       at Ripcord.Adapters.Wmi.WmiHypervProvider.ReadPendingBytes(…)
+    Microsoft.Management.Infrastructure.CimException: Access denied
+       at Microsoft.Management.Infrastructure.Internal.Operations.CimSyncEnumeratorBase`1.MoveNext()
        at Ripcord.Adapters.Wmi.WmiHypervProvider.ReadLocalState(…)
 2026-09-14 06:30:12.904Z status: exit 3: LocalAccessFailure
 ```
