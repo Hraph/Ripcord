@@ -142,9 +142,9 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         }
         catch (Exception exception)
         {
-            // Recorded and rethrown. The crash is what tells Windows the service stopped
-            // abnormally, and the line is what tells whoever looks why — the two are not
-            // interchangeable and this is the only place both are available.
+            // Recorded and rethrown: the line is what tells whoever looks why, and the caller
+            // decides what the failure is — a crash by hand, an exit code set for Windows by
+            // the listener service.
             ports.Diagnostics.Write(DiagnosticEntry.Of(
                 operation, "the command stopped on an unhandled error", exception.ToString()));
 

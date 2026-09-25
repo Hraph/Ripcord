@@ -1,6 +1,9 @@
+using System.ServiceProcess;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Hosting.WindowsServices;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.EventLog;
 using Ripcord.Adapters.Pairing;
 using Ripcord.Adapters.Pairing.Transport;
 using Ripcord.Adapters.Audit;
@@ -57,9 +60,10 @@ internal static class Program
 
     /// Never silent: every connection the listener handles says who called and what was
     /// decided. `ripcord serve` is run by hand to verify the exit criterion, and a refusal
-    /// nobody can see is a refusal nobody can trust.
-    private static void Report(ServedConnection connection) =>
-        Console.Error.WriteLine(
+    /// nobody can see is a refusal nobody can trust. As a service there is no console, so the
+    /// line goes to the listener log instead.
+    private static void Report(ReportSink sink, ServedConnection connection) =>
+        sink.Writer.WriteLine(
             $"{DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm:ss} {connection.RemoteAddress} "
             + $"{(connection.Served ? "served" : "refused")}: {connection.Verdict.Reason()}");
 
@@ -71,7 +75,7 @@ internal static class Program
     /// that was the log with the noise in it.
     ///
     /// Four ways to end up plain, and each is a real case: the listener service has no console
-    /// and writes to `listener.log`; a redirected stream is a file somebody reads; `NO_COLOR`
+    /// and writes to its log file; a redirected stream is a file somebody reads; `NO_COLOR`
     /// is the convention every tool honours; and `--no-color` is the answer for a terminal
     /// that claims to understand escapes and does not.
     private static Palette PaletteFor(string[] args, bool asService, bool redirected)
@@ -104,6 +108,7 @@ internal static class Program
         string defaultConfigPath = Path.Combine(AppContext.BaseDirectory, "ripcord.yaml");
 
         SystemClock clock = new();
+        ReportSink reportSink = new();
         FileSnapshotStore snapshotStore = new();
         MachineCertificateStore certificates = new();
 
@@ -130,7 +135,7 @@ internal static class Program
                     PeerTrust.MachineStore,
                     snapshotStore,
                     clock,
-                    Report),
+                    connection => Report(reportSink, connection)),
                 new LoopbackDashboardServer(Console.Error.WriteLine),
                 new JsonLinesAuditLog(
                     Path.Combine(AppContext.BaseDirectory, "audit.jsonl")),
@@ -169,8 +174,10 @@ internal static class Program
         // The same binary and the same verb either way; only who is asking changes.
         if (asService)
         {
-            await RunAsServiceAsync(cli, args).ConfigureAwait(false);
-            return (int)ExitCode.Success;
+            ServiceSetup setup = new(
+                cli, args, reportSink, clock, LogFolder.Beside(binaryPath), defaultConfigPath);
+
+            return (int)await RunAsServiceAsync(setup).ConfigureAwait(false);
         }
 
         using CancellationTokenSource cancellation = new();
@@ -189,9 +196,13 @@ internal static class Program
     /// The service control manager's half: answer the handshake, then run the verb it was
     /// installed with until the host is told to stop.
     ///
+    /// Nothing that can fail runs here, before `RunAsync` has answered the manager. Opening the
+    /// log used to, and the service account cannot write beside the binary: the process died
+    /// before the handshake, `sc start` reported 1053, and nothing anywhere said why.
+    ///
     /// `Stop-Service` cancels the token the listener is already built around, so shutting down
     /// is the path that was already there rather than a second one.
-    private static async Task<ExitCode> RunAsServiceAsync(RipcordCli cli, string[] args)
+    private static async Task<ExitCode> RunAsServiceAsync(ServiceSetup setup)
     {
         // Qualified: this project's own namespace is Ripcord.Host.Windows, so a bare `Host`
         // binds to Ripcord.Host and the error names a namespace nobody wrote.
@@ -201,37 +212,43 @@ internal static class Program
         builder.Services.AddWindowsService(options =>
             options.ServiceName = DeploymentPlan.ServiceName);
 
-        // A service has no console. Everything the verb writes would go to a stream nobody can
-        // read, and a listener that refused to start would leave Services.msc saying "Stopped"
-        // and nothing anywhere else — which is the silence rule 5 exists against.
-        //
-        // Truncated at each start: the file holds the run somebody is asking about, rather
-        // than every run since the host was built.
-        await using StreamWriter log = new(
-            new FileStream(
-                Path.Combine(AppContext.BaseDirectory, "listener.log"),
-                FileMode.Create,
-                FileAccess.Write,
-                FileShare.Read))
-        {
-            AutoFlush = true,
-        };
+        // Named rather than taken from the assembly: it is the source `service install`
+        // registers, and an unregistered one cannot be written to by a virtual account.
+        builder.Services.Configure<EventLogSettings>(settings =>
+            settings.SourceName = DeploymentPlan.EventSource);
 
         ServiceOutcome outcome = new();
 
         builder.Services.AddHostedService(provider => new ListenerService(
-            cli, args, log, outcome, provider.GetRequiredService<IHostApplicationLifetime>()));
+            setup,
+            outcome,
+            provider.GetRequiredService<IHostLifetime>(),
+            provider.GetRequiredService<ILogger<ListenerService>>(),
+            provider.GetRequiredService<IHostApplicationLifetime>()));
 
         await builder.Build().RunAsync().ConfigureAwait(false);
 
         return outcome.Code;
     }
 
+    private sealed record ServiceSetup(
+        RipcordCli Cli,
+        string[] Args,
+        ReportSink ReportSink,
+        SystemClock Clock,
+        string LogsFolder,
+        string ConfigurationPath);
+
+    /// Where a served connection is reported: the console by hand, the log as a service.
+    private sealed class ReportSink
+    {
+        public TextWriter Writer { get; set; } = Console.Error;
+    }
+
     /// What the verb decided, carried back out of the hosted service.
     ///
-    /// The process exit code is the only thing Windows reads: its recovery policy fires on an
-    /// abnormal stop, and a service that exits 0 because its configuration will never load is
-    /// indistinguishable from one an operator stopped on purpose.
+    /// Returned from Main for anyone running the binary by hand. Windows does not read it: a
+    /// service that stops itself reports `ServiceBase.ExitCode`, which is set alongside.
     private sealed class ServiceOutcome
     {
         public ExitCode Code { get; set; } = ExitCode.Success;
@@ -239,42 +256,96 @@ internal static class Program
 
     /// Runs one CLI verb for as long as the service is running.
     ///
-    /// A verb that returns on its own — a configuration the listener is disabled in, a file
-    /// that will not load — stops the service rather than leaving it reported as running with
-    /// nothing behind it. The service manager then says it stopped, which is true and visible,
-    /// where a running service serving nothing is neither.
+    /// Runs after the handshake: the host starts hosted services only once the service manager
+    /// has been answered. A verb that returns on its own — a configuration the listener is
+    /// disabled in, a file that will not load — stops the service rather than leaving it
+    /// reported as running with nothing behind it.
     private sealed class ListenerService(
-        RipcordCli cli,
-        string[] args,
-        TextWriter log,
+        ServiceSetup setup,
         ServiceOutcome outcome,
+        IHostLifetime hostLifetime,
+        ILogger<ListenerService> logger,
         IHostApplicationLifetime lifetime) : BackgroundService
     {
+        private static readonly Action<ILogger, string, Exception?> Stopped =
+            LoggerMessage.Define<string>(
+                LogLevel.Error, new EventId(1, "ListenerStopped"), "{Message}");
+
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
+            string path = LogFolder.ListenerLog(setup.LogsFolder, setup.Clock.UtcNow);
+            StreamWriter log;
+
             try
             {
-                outcome.Code = await cli
-                    .RunAsync(args, log, log, stoppingToken)
+                log = OpenLog(path);
+            }
+            catch (Exception exception) when (exception is UnauthorizedAccessException
+                or IOException or NotSupportedException or System.Security.SecurityException)
+            {
+                Stopped(logger, ListenerStartup.LogUnavailable(path, exception.Message), null);
+                this.Stop(ExitCode.LocalAccessFailure, stoppingToken);
+                return;
+            }
+
+            // One writer for the verb and for the connection lines, which arrive on other
+            // threads.
+            TextWriter writer = TextWriter.Synchronized(log);
+
+            try
+            {
+                writer.WriteLine(ListenerStartup.Banner(
+                    BuildInfo.VersionWithCommit, setup.ConfigurationPath, setup.Clock.UtcNow));
+
+                setup.ReportSink.Writer = writer;
+
+                ExitCode code = await setup.Cli
+                    .RunAsync(setup.Args, writer, writer, stoppingToken)
                     .ConfigureAwait(false);
+
+                this.Stop(code, stoppingToken);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                // Written before it is rethrown. The crash alone gives Windows the abnormal
-                // stop it needs; the line gives the operator the reason, which the crash does
-                // not.
-                log.WriteLine($"ripcord: the listener stopped on an error: {exception}");
-                outcome.Code = ExitCode.LocalAccessFailure;
-
-                throw;
+                // Not rethrown: the host would stop cleanly and report 0 anyway. The exit code
+                // set here is what makes the stop abnormal to Windows.
+                writer.WriteLine($"ripcord: the listener stopped on an error: {exception}");
+                Stopped(logger, "The Ripcord listener stopped on an error.", exception);
+                this.Stop(ExitCode.LocalAccessFailure, stoppingToken);
             }
             finally
             {
-                if (!stoppingToken.IsCancellationRequested)
-                {
-                    lifetime.StopApplication();
-                }
+                setup.ReportSink.Writer = Console.Error;
+                await log.DisposeAsync().ConfigureAwait(false);
             }
+        }
+
+        /// Appended, and shared both ways: `ripcord service` reads it while the listener
+        /// writes, and a restart adds to the day's file rather than erasing it.
+        private static StreamWriter OpenLog(string path) =>
+            new(new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
+            {
+                AutoFlush = true,
+            };
+
+        private void Stop(ExitCode code, CancellationToken stoppingToken)
+        {
+            // A stop somebody asked for is not a failure, whatever the verb made of the
+            // cancellation.
+            if (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
+
+            outcome.Code = code;
+
+            // The one exit code Windows reads for a service that stops itself.
+            if (hostLifetime is ServiceBase service)
+            {
+                service.ExitCode = ServiceExitCode.ToWindows(code);
+            }
+
+            lifetime.StopApplication();
         }
     }
 }
