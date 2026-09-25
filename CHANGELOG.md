@@ -25,7 +25,7 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
   its process runs, instead of leaving a missing block to mean it. After an update without a
   restart, a second line names `ripcord service restart`.
 - **`ripcord service start` and `ripcord service stop`.** `start` starts a stopped listener
-  without confirmation and leaves a running one alone. `stop` asks for the node name — the
+  without confirmation and leaves a running one alone. `stop` asks `y/n` — the
   other host cannot read this one until the listener starts again — and waits for Windows to
   report it stopped.
 

@@ -26,7 +26,7 @@ file that was built. Check it before replacing anything.
 ## Updating
 
 `ripcord update` installs a newer release on the host it is run on. It is **off** unless
-`updates.install` says so, it asks for the node name to be typed, and it refuses any release
+`updates.install` says so, it asks `y/n` with Enter declining, and it refuses any release
 whose detached signature does not verify against the key compiled into the running binary.
 Copying the `.exe` by hand still works and is still supported; fully offline operation stays
 possible.
