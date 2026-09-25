@@ -231,8 +231,16 @@ public static class StatusRenderer
             _ => Ink.Red(presence),
         };
 
-    private static string Sentence(string reason) =>
-        char.ToUpperInvariant(reason[0]) + reason[1..] + ".";
+    /// Reasons carried from Windows or a socket can bring their own line breaks and full stop.
+    private static string Sentence(string reason)
+    {
+        string text = string.Join(' ', reason.Split(
+            ['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+        return text.Length == 0
+            ? ""
+            : char.ToUpperInvariant(text[0]) + text[1..] + (text.EndsWith('.') ? "" : ".");
+    }
 
     private static string TimestampOf(DateTimeOffset instant) => Layout.Timestamp(instant);
 

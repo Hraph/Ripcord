@@ -67,6 +67,23 @@ public class StatusRendererTests
             line => Assert.True(line.Length <= StatusRenderer.Width, line));
     }
 
+    /// A reason carried from Windows can end with its own full stop and line break.
+    [Fact]
+    public void A_listener_reason_that_ends_a_sentence_is_not_doubled()
+    {
+        ListenerAlert alert = new(
+            "UNKNOWN", "Windows did not say whether it runs: The RPC server is unavailable.\r\n",
+            "ripcord service", Critical: false);
+
+        string rendered = StatusRenderer.Render(
+            DegradedPair(), TimeSpan.FromSeconds(120), Now, listener: alert);
+
+        Assert.Contains(
+            "  Windows did not say whether it runs: The RPC server is unavailable.\n  Next:",
+            rendered.ReplaceLineEndings("\n"),
+            StringComparison.Ordinal);
+    }
+
     /// The peer answers with a snapshot, never live. Saying how old it is beats the illusion
     /// of live data — a known age is information, not a defect.
     [Fact]
