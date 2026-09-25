@@ -80,7 +80,8 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
   test switch is destroyed without being started. Unverified on hardware.
 - **A planned failover prepared while the guest was still shutting down**, which Hyper-V
   refuses. Step 1 now waits for the VM to read Off, up to ten minutes, and the restore after a
-  failed step is retried fifteen seconds apart instead of back to back.
+  failed step is retried fifteen seconds apart instead of back to back. A shutdown that does
+  not finish hands the operator the way on or back rather than saying nothing was done.
 - **The listener service could not use its own certificate's private key**: machine keys are
   readable by SYSTEM and Administrators only. `service install` now grants the service account
   read access to the key file, `ripcord service` shows it, `remove` revokes it, and the
