@@ -229,30 +229,108 @@ public class InitCliTests
         }
     }
 
-    /// `checks` is carried as the original lines, so an acknowledgement of a dropped VM stays
-    /// and the file would be refused. Said before the yes, never discovered after.
+    /// The validator refuses a file whose `checks` names a VM it does not declare, so the
+    /// acknowledgement goes with the VM, and the operator is told before the yes.
     [Fact]
-    public async Task A_dropped_vm_named_by_an_acknowledgement_is_warned_about_before_writing()
+    public async Task A_dropped_vms_acknowledgement_is_taken_out_and_said_before_writing()
     {
-        string sample = File.ReadAllText(
-            Path.Combine(Architecture.RepositoryLayout.Root, "config", "ripcord.dr.yaml"));
-        MemoryConfigStore store = new(Yaml.Read(sample), sample);
-        FakeHypervProvider provider = new(FakeScenarios.Healthy(TestPorts.Now) with
-        {
-            Vms = [.. FakeScenarios.Healthy(TestPorts.Now).Vms.Where(vm => vm.Name != "VM-BACKUP-01")],
-        });
+        MemoryConfigStore store = new(Yaml.Read(Sample()), Sample());
 
-        CliRun run = await Run(["", "", "", "", "", "", "", "", "", "", "n"], store, provider);
+        CliRun run = await Run(
+            [.. Enumerable.Repeat("", 10), "y"], store, WithoutBackupVm());
 
         Assert.Contains("  - VM-BACKUP-01", run.Output, StringComparison.Ordinal);
+        Assert.Contains(
+            "dropped from checks, VM no longer declared: VM-BACKUP-01",
+            run.Output,
+            StringComparison.Ordinal);
+        Assert.True(
+            run.Output.IndexOf("dropped from checks", StringComparison.Ordinal)
+                < run.Output.IndexOf("Write this to", StringComparison.Ordinal));
+        Assert.Contains("y/n [y]", run.Output, StringComparison.Ordinal);
+        Assert.Empty(Validated(store.Written!).Errors);
+        Assert.Contains("acknowledgements: []", store.Written!, StringComparison.Ordinal);
+    }
+
+    /// One init cannot take out (flow style) keeps the old warning, and Enter no longer writes.
+    [Fact]
+    public async Task An_acknowledgement_init_cannot_take_out_makes_no_the_default()
+    {
+        string previous = Sample().Replace(
+            """
+                - rule: passthrough-disk-on-replicated-vm
+                  vm: VM-BACKUP-01
+                  reason: "the backup repository is a pass-through disk by design; it is not replicated"
+                  expires: 2027-09-01
+            """.ReplaceLineEndings("\n"),
+            "    - { rule: passthrough-disk-on-replicated-vm, vm: VM-BACKUP-01, reason: by design, "
+                + "expires: 2027-09-01 }\n",
+            StringComparison.Ordinal);
+        Assert.Contains("{ rule:", previous, StringComparison.Ordinal);
+        MemoryConfigStore store = new(Yaml.Read(previous), previous);
+
+        CliRun run = await Run([.. Enumerable.Repeat("", 11)], store, WithoutBackupVm());
+
+        Assert.Equal(ExitCode.Refused, run.Code);
+        Assert.Null(store.Written);
+        Assert.Contains("not written, nothing was changed", run.Error, StringComparison.Ordinal);
         Assert.Contains(
             "checks.acknowledgements[0]: VM-BACKUP-01 is no longer declared",
             run.Output,
             StringComparison.Ordinal);
-        Assert.True(
-            run.Output.IndexOf("no longer declared", StringComparison.Ordinal)
-                < run.Output.IndexOf("Write this to", StringComparison.Ordinal));
+        Assert.Contains("y/n [n]", run.Output, StringComparison.Ordinal);
     }
+
+    /// Re-run over the file `install.ps1` leaves behind, Enter throughout: the comments the
+    /// operator reads to understand the file are all still there, and where they were.
+    [Fact]
+    public async Task A_re_run_over_the_sample_keeps_its_comments_in_their_sections()
+    {
+        MemoryConfigStore store = new(Yaml.Read(Sample()), Sample());
+
+        CliRun run = await Run([.. Enumerable.Repeat("", 13), "y"], store);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        string written = store.Written!.ReplaceLineEndings("\n");
+        IReadOnlyList<YamlSection> sections = YamlSections.Split(written);
+
+        Assert.Contains(
+            sections.Single(section => section.Key == "listener").Lines,
+            line => line.StartsWith("  # snapshot_path:", StringComparison.Ordinal));
+        Assert.Contains(
+            sections.Single(section => section.Key == "replication").Lines,
+            line => line.StartsWith("  # test_failover_switch:", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            sections.Single(section => section.Key == "vms").Lines,
+            line => line.Contains("test_failover_switch", StringComparison.Ordinal));
+        Assert.Contains("\n# diagnostics:\n", written, StringComparison.Ordinal);
+        Assert.Contains("\n# alerting:\n", written, StringComparison.Ordinal);
+        Assert.Empty(Validated(written).Errors);
+    }
+
+    /// The listener reads the file once, at start: a carried, enabled listener needs a restart.
+    [Fact]
+    public async Task A_re_run_with_an_enabled_listener_ends_on_the_restart()
+    {
+        MemoryConfigStore store = new(Yaml.Read(Sample()), Sample());
+
+        CliRun run = await Run([.. Enumerable.Repeat("", 13), "y"], store);
+
+        Assert.Contains(
+            "Next:  ripcord status, then ripcord service restart", run.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("pair channel is separate", run.Output, StringComparison.Ordinal);
+    }
+
+    private static string Sample() =>
+        File.ReadAllText(
+                Path.Combine(Architecture.RepositoryLayout.Root, "config", "ripcord.dr.yaml"))
+            .ReplaceLineEndings("\n");
+
+    private static FakeHypervProvider WithoutBackupVm() =>
+        new(FakeScenarios.Healthy(TestPorts.Now) with
+        {
+            Vms = [.. FakeScenarios.Healthy(TestPorts.Now).Vms.Where(vm => vm.Name != "VM-BACKUP-01")],
+        });
 
     [Theory]
     [InlineData("status")]

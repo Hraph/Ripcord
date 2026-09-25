@@ -323,14 +323,30 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             }
         }
 
+        IReadOnlyList<string> dropped =
+            ConfigurationTemplate.DroppedAcknowledgements(interview.Draft!, previous);
+
         return this.WriteConfiguration(
             output,
             error,
             options,
             ConfigurationTemplate.Render(interview.Draft!, previous),
             previous,
-            interview.StaleAcknowledgements);
+            new InitClosing(
+                dropped,
+                // What the file still names after the entries init could take out.
+                interview.StaleAcknowledgements.Count > dropped.Count
+                    ? interview.StaleAcknowledgements
+                    : [],
+                seed?.Listener?.Enabled == true));
     }
+
+    /// `ListenerCarried`: the carried `listener` section switches the listener on, so the
+    /// running service has to be restarted to read the new file.
+    private sealed record InitClosing(
+        IReadOnlyList<string> DroppedAcknowledgements,
+        IReadOnlyList<string> Stale,
+        bool ListenerCarried);
 
     private ExitCode WriteConfiguration(
         TextWriter output,
@@ -338,8 +354,10 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         InitOptions options,
         string yaml,
         string? previous,
-        IReadOnlyList<string> stale)
+        InitClosing closing)
     {
+        IReadOnlyList<string> stale = closing.Stale;
+
         output.WriteLine();
         output.WriteLine(this.Ink.Apply(Rendering.Ink.Bold("THE FILE")));
         output.WriteLine(this.Ink.Apply(Rendering.Ink.Faint(Layout.Line(Layout.Width))));
@@ -356,7 +374,14 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
                 Rendering.Ink.Faint($"  kept as it was: {string.Join(", ", carried)}")));
         }
 
-        // Carried as the original lines, so not edited here: said before the yes, not after.
+        foreach (string vm in closing.DroppedAcknowledgements)
+        {
+            output.WriteLine(this.Ink.Apply(Rendering.Ink.Amber(
+                $"  dropped from checks, VM no longer declared: {vm}")));
+        }
+
+        // What init could not take out itself: said before the yes, and the yes is not the
+        // default, so the reflex Enter does not write a file every command refuses.
         if (stale.Count > 0)
         {
             output.WriteLine();
@@ -368,6 +393,8 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
             output.WriteLine(this.Ink.Apply(Rendering.Ink.Amber(
                 "  Every command refuses the file until these are removed from 'checks'.")));
+            output.WriteLine(this.Ink.Apply(Rendering.Ink.Amber(
+                "  Answer y only if you will edit checks right after.")));
             output.WriteLine();
         }
 
@@ -379,11 +406,16 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         // The previous file is kept, so this is recoverable and asks for a word rather than
         // the typed node name every irreversible operation asks for.
+        bool yesByDefault = stale.Count == 0;
+
         output.Write(this.Ink.Apply(
             "  " + Rendering.Ink.Bold($"Write this to {options.Path}?")
-            + Rendering.Ink.Faint("  y/n [y]") + Rendering.Ink.Cyan(" > ")));
+            + Rendering.Ink.Faint(yesByDefault ? "  y/n [y]" : "  y/n [n]")
+            + Rendering.Ink.Cyan(" > ")));
 
-        if (environment.ConfirmationReader?.ReadLine()?.Trim().ToLowerInvariant() is "n" or "no")
+        string? answer = environment.ConfirmationReader?.ReadLine()?.Trim().ToLowerInvariant();
+
+        if (answer is "n" or "no" || (!yesByDefault && answer is not ("y" or "yes")))
         {
             this.Refuse(error, "ripcord: not written, nothing was changed.");
             return ExitCode.Refused;
@@ -412,9 +444,20 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         }
 
         output.WriteLine();
-        output.WriteLine(this.Ink.Apply("  Next:  " + Rendering.Ink.Bold("ripcord status")));
-        output.WriteLine("  The pair channel is separate and off until two certificates exist");
-        output.WriteLine("  on the hosts - see docs/commands/serve.md.");
+
+        if (closing.ListenerCarried)
+        {
+            output.WriteLine(this.Ink.Apply(
+                "  Next:  " + Rendering.Ink.Bold("ripcord status")
+                + ", then " + Rendering.Ink.Bold("ripcord service restart")));
+            output.WriteLine("  The listener reads this file only when it starts.");
+        }
+        else
+        {
+            output.WriteLine(this.Ink.Apply("  Next:  " + Rendering.Ink.Bold("ripcord status")));
+            output.WriteLine("  The pair channel is separate and off until two certificates exist");
+            output.WriteLine("  on the hosts - see docs/commands/serve.md.");
+        }
 
         return ExitCode.Success;
     }
