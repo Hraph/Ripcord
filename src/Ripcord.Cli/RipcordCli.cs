@@ -324,11 +324,21 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         }
 
         return this.WriteConfiguration(
-            output, error, options, ConfigurationTemplate.Render(interview.Draft!, previous), previous);
+            output,
+            error,
+            options,
+            ConfigurationTemplate.Render(interview.Draft!, previous),
+            previous,
+            interview.StaleAcknowledgements);
     }
 
     private ExitCode WriteConfiguration(
-        TextWriter output, TextWriter error, InitOptions options, string yaml, string? previous)
+        TextWriter output,
+        TextWriter error,
+        InitOptions options,
+        string yaml,
+        string? previous,
+        IReadOnlyList<string> stale)
     {
         output.WriteLine();
         output.WriteLine(this.Ink.Apply(Rendering.Ink.Bold("THE FILE")));
@@ -344,6 +354,21 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         {
             output.WriteLine(this.Ink.Apply(
                 Rendering.Ink.Faint($"  kept as it was: {string.Join(", ", carried)}")));
+        }
+
+        // Carried as the original lines, so not edited here: said before the yes, not after.
+        if (stale.Count > 0)
+        {
+            output.WriteLine();
+
+            foreach (string entry in stale)
+            {
+                output.WriteLine(this.Ink.Apply(Rendering.Ink.Amber($"  {entry}")));
+            }
+
+            output.WriteLine(this.Ink.Apply(Rendering.Ink.Amber(
+                "  Every command refuses the file until these are removed from 'checks'.")));
+            output.WriteLine();
         }
 
         if (options.DryRun)
@@ -409,13 +434,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
                 .GetLocalStateAsync(cancellationToken)
                 .ConfigureAwait(false);
 
-            return new InterviewFacts(
-                environment.MachineName,
-                switches,
-                [.. state.Vms.Select(vm => new InterviewVm(
-                    vm.Name,
-                    vm.Role != ReplicationRole.None,
-                    vm.PowerState == VmPowerState.Running))]);
+            return InterviewFacts.From(environment.MachineName, switches, state);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {

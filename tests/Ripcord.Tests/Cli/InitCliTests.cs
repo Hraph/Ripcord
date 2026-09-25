@@ -191,6 +191,89 @@ public class InitCliTests
             run.Error.ReplaceLineEndings("\n").TrimEnd('\n').Split('\n'));
     }
 
+    /// Decision 3: a host with no VM is set up all the same, with nothing asked per VM.
+    [Fact]
+    public async Task A_host_with_no_vm_is_set_up_and_the_file_validates()
+    {
+        MemoryConfigStore store = new(ConfigurationRead.Absent(ConfigPath, "there is no file"));
+
+        CliRun run = await Run(
+            ["dr", "HV-PRIMARY-01", "192.0.2.10", FakeScenarios.ProductionSwitch, "", "y", "y"],
+            store,
+            NoVm());
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Contains("This host has no virtual machine", run.Output, StringComparison.Ordinal);
+        Assert.Contains("vms: []", store.Written!, StringComparison.Ordinal);
+        Assert.Empty(Validated(store.Written!).Errors);
+    }
+
+    /// The field report: the sample `install.ps1` leaves behind named VMs the host never had.
+    [Fact]
+    public async Task An_unreadable_host_offers_no_name_from_the_previous_file()
+    {
+        string sample = File.ReadAllText(
+            Path.Combine(Architecture.RepositoryLayout.Root, "config", "ripcord.dr.yaml"));
+        MemoryConfigStore store = new(Yaml.Read(sample), sample);
+
+        CliRun run = await Run(
+            ["", "", "", "", "VM-SR-01", "P1", "n", "y", "n"],
+            store,
+            FakeHypervProvider.FailingLocally("WMI is down"));
+
+        string beforeTyping = run.Output[..run.Output.IndexOf("THE FILE", StringComparison.Ordinal)];
+
+        foreach (string placeholder in new[] { "VM-DC-01", "VM-LEGACY-01", "VM-BACKUP-01" })
+        {
+            Assert.DoesNotContain(placeholder, beforeTyping, StringComparison.Ordinal);
+        }
+    }
+
+    /// `checks` is carried as the original lines, so an acknowledgement of a dropped VM stays
+    /// and the file would be refused. Said before the yes, never discovered after.
+    [Fact]
+    public async Task A_dropped_vm_named_by_an_acknowledgement_is_warned_about_before_writing()
+    {
+        string sample = File.ReadAllText(
+            Path.Combine(Architecture.RepositoryLayout.Root, "config", "ripcord.dr.yaml"));
+        MemoryConfigStore store = new(Yaml.Read(sample), sample);
+        FakeHypervProvider provider = new(FakeScenarios.Healthy(TestPorts.Now) with
+        {
+            Vms = [.. FakeScenarios.Healthy(TestPorts.Now).Vms.Where(vm => vm.Name != "VM-BACKUP-01")],
+        });
+
+        CliRun run = await Run(["", "", "", "", "", "", "", "", "", "", "n"], store, provider);
+
+        Assert.Contains("  - VM-BACKUP-01", run.Output, StringComparison.Ordinal);
+        Assert.Contains(
+            "checks.acknowledgements[0]: VM-BACKUP-01 is no longer declared",
+            run.Output,
+            StringComparison.Ordinal);
+        Assert.True(
+            run.Output.IndexOf("no longer declared", StringComparison.Ordinal)
+                < run.Output.IndexOf("Write this to", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("status")]
+    [InlineData("check")]
+    public async Task A_configuration_with_no_vm_says_so(string verb)
+    {
+        ConfigurationDocument document = Tests.Configuration.ValidDocument.Create();
+        document.Vms = [];
+        document.Checks = null;
+        document.Replication!.UnattendedTestFailoverVms = null;
+
+        CliRun run = await RunVerb(
+            [], new MemoryConfigStore(ConfigurationRead.Succeeded(document)), verb, provider: NoVm());
+
+        Assert.Contains(
+            ConfigurationNotes.NoVmDeclared, run.Output + run.Error, StringComparison.Ordinal);
+    }
+
+    private static FakeHypervProvider NoVm() =>
+        new(FakeScenarios.Healthy(TestPorts.Now) with { Vms = [] });
+
     private static ConfigurationValidation Validated(string yaml) =>
         ConfigurationValidator.Validate(
             Yaml.Read(yaml).Document, FakeScenarios.LocalHostName);
@@ -205,17 +288,22 @@ public class InitCliTests
         return await RunVerb(typed, store, "init", arguments);
     }
 
+    private static Task<CliRun> Run(
+        IReadOnlyList<string> typed, MemoryConfigStore store, FakeHypervProvider provider) =>
+        RunVerb(typed, store, "init", provider: provider);
+
     private static async Task<CliRun> RunVerb(
         IReadOnlyList<string> typed,
         MemoryConfigStore store,
         string verb,
-        string[]? options = null)
+        string[]? options = null,
+        FakeHypervProvider? provider = null)
     {
         StringWriter output = new();
         StringWriter error = new();
 
         RipcordCli cli = new(
-            TestPorts.With(store),
+            TestPorts.With(store, provider),
             new CliEnvironment(
                 FakeScenarios.LocalHostName,
                 ConfigPath,

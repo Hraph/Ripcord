@@ -55,7 +55,11 @@ public sealed class CheckQuery(IConfigStore configStore, PairReader pairReader, 
         }
 
         CheckReport report = CheckEngine.Evaluate(
-            new Domain.Checks.CheckRequest(view, configuration, clock.UtcNow, read.Notes));
+            new Domain.Checks.CheckRequest(
+                view,
+                configuration,
+                clock.UtcNow,
+                [.. ConfigurationNotes.Of(configuration), .. read.Notes]));
 
         return new CheckOutcome(report.Code, report, configuration, [], null, view);
     }

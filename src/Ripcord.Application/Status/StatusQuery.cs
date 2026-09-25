@@ -58,6 +58,6 @@ public sealed class StatusQuery(IConfigStore configStore, PairReader pairReader)
             new RenderedStatus(view, configuration),
             [],
             null,
-            read.Notes);
+            [.. ConfigurationNotes.Of(configuration), .. read.Notes]);
     }
 }
