@@ -155,9 +155,11 @@ storage:
 # when something is wrong on a host nobody can attach a debugger to. Webhook URLs and anything
 # whose key names a password or a token are removed on the way in, so it can be sent as it is.
 #
-# Defaults, applied when this block is absent: `ripcord.log` beside the binary, 5 MB, rotated
-# once into `ripcord.log.1` and no further.
+# Defaults, applied when this block is absent: one file a day in `logs` beside the binary,
+# `logs\ripcord-YYYY-MM-DD.log` (UTC date), kept 30 days, 5 MB a day with one `.1` file past
+# that. `path` names a folder. The listener service always writes `logs\listener-YYYY-MM-DD.log`
+# beside the binary, the only folder it may write to, whatever `path` and `enabled` say.
 # diagnostics:
 #   enabled: true
-#   path: D:\Ripcord\ripcord.log
+#   path: D:\Ripcord\logs
 #   max_size_mb: 5

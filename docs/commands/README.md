@@ -61,7 +61,8 @@ identically without it, which is what it is:
 ## When one line is not enough
 
 Every command writes what it ran, what it exited with, and the full exception behind any
-failure to `ripcord.log` beside the binary. The console has room for one sentence; that file
+failure to `logs\ripcord-YYYY-MM-DD.log` beside the binary, one file a day kept for 30 days.
+The console has room for one sentence; that file
 has the type, the stack and the CIM error, and it is written to be sent — secrets are taken out
 on the way in. See [the diagnostic log](../diagnostics.md).
 

@@ -89,7 +89,9 @@ expiry: without one, an acknowledgement is a rule deleted by the back door.
 **`dashboard`** — see [`dashboard`](commands/dashboard.md). Off by default, no address key.
 
 **`diagnostics`** — see [the diagnostic log](diagnostics.md). **On** by default, unlike every
-other optional block, and the only section that refuses nothing it is given.
+other optional block, and the only section that refuses nothing it is given. `path` names a
+folder (an old value naming a `.log` file is read as its folder); the listener service ignores
+it and always writes to `logs\` beside the binary.
 
 ## After an edit
 

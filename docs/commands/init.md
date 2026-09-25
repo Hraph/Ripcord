@@ -77,4 +77,4 @@ what that file is for.
 
 If this host's Hyper-V cannot be read, the switch and VM questions have no list to offer and
 ask you to type instead. The run still completes, and the reason the read failed is in
-[`ripcord.log`](../diagnostics.md).
+[the day's diagnostic log](../diagnostics.md), `logs\ripcord-YYYY-MM-DD.log`.

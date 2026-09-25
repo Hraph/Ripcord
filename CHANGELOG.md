@@ -25,6 +25,14 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 - **`ripcord service` names the snapshot file and says what it is**: the snapshot
   `ripcord status` writes and the listener serves to the peer. The sample configurations say
   the same and no longer show a `D:` path.
+- **The diagnostic log is one file a day in a `logs` folder beside the binary, kept 30
+  days**: `logs\ripcord-YYYY-MM-DD.log` for commands and `logs\listener-YYYY-MM-DD.log` for
+  the listener service, by UTC date. Older files are deleted on the first write of a day; only
+  files named that way are ever touched. `max_size_mb` now caps each day's file, with one `.1`
+  file past it. `diagnostics.path` names a folder — an old value ending in `.log` is read as
+  the folder holding it — and the listener service ignores it, writing only to the folder
+  `service install` grants it. The old `ripcord.log`, `ripcord.log.1` and `listener.log` are
+  left where they are and never deleted; remove them by hand.
 - A `listener.snapshot_path` naming no folder — `state.json` — is now refused. It resolved
   against the working directory of whoever ran the command, and a Windows service's is
   `system32`.
@@ -40,6 +48,10 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
   now opened after the handshake, in a `logs` folder `service install` grants the account
   modify access to — that folder only, never the install folder or the binary. When the file
   still cannot be opened, the service reports why in the Application event log and stops.
+- **The listener service's own diagnostics and its served/refused connection lines were
+  lost.** The first went to `ripcord.log` in the install folder, which the service cannot
+  write; the second to a console a service does not have. Both now go to the day's
+  `logs\listener-YYYY-MM-DD.log`, after a start line naming the version and the configuration.
 - **`service install` whose start fails says to run `ripcord service`**, and `ripcord service`
   now says whether the service account can write its logs folder.
 - **The listener was granted access to the snapshot *file*, which survived one write.**
