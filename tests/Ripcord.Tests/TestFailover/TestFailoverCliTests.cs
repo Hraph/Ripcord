@@ -48,18 +48,34 @@ public class TestFailoverCliTests
         Assert.Contains("VM-TYPO-01", run.Error);
     }
 
-    /// Rule 3: no mutating operation without an explicit typed confirmation. A test failover
-    /// creates and destroys a real VM on the host.
-    [Fact]
-    public async Task A_real_run_does_nothing_until_the_node_name_is_typed()
+    /// Rule 3: a test failover creates and destroys a real VM, but no production one, so it
+    /// asks y/n with Enter declining. The node name is not a yes.
+    [Theory]
+    [InlineData("")]
+    [InlineData("n")]
+    [InlineData(FakeScenarios.LocalHostName)]
+    public async Task A_real_run_does_nothing_until_yes_is_typed(string typed)
     {
         FakeHypervProvider host = new(FakeScenarios.Healthy(Now));
 
         CliRun run = await Run(
-            ["test-failover", "--vm", "VM-DC-01"], provider: host, typed: "not-the-node");
+            ["test-failover", "--vm", "VM-DC-01"], provider: host, typed: typed);
 
         Assert.Equal(ExitCode.Refused, run.Code);
+        Assert.Contains("not confirmed", run.Error);
         Assert.Empty(host.Calls);
+        Assert.All(run.Output.Split('\n'), line => Assert.True(line.Length <= 75, line));
+    }
+
+    [Theory]
+    [InlineData("y")]
+    [InlineData("YES")]
+    public async Task A_yes_gets_past_the_confirmation(string typed)
+    {
+        CliRun run = await Run(["test-failover", "--vm", "VM-DC-01"], typed: typed);
+
+        Assert.Contains("y/n [n]", run.Output);
+        Assert.DoesNotContain("not confirmed", run.Error);
     }
 
     /// And `--dry-run` needs none, because it changes nothing by construction.
@@ -77,7 +93,7 @@ public class TestFailoverCliTests
         Assert.DoesNotContain(host.Calls, call => call.StartsWith("create", StringComparison.Ordinal));
     }
 
-    /// The scheduled mode. It skips the typed confirmation only for VMs the configuration
+    /// The scheduled mode. It skips the confirmation only for VMs the configuration
     /// names, so authorising nothing authorises nothing.
     [Fact]
     public async Task An_unattended_run_of_an_unauthorised_vm_is_refused()
@@ -229,7 +245,7 @@ public class TestFailoverCliTests
         string machineName = FakeScenarios.LocalHostName,
         IHypervProvider? provider = null,
         IConfigStore? configStore = null,
-        string? typed = FakeScenarios.LocalHostName,
+        string? typed = "y",
         FakePeerChannel? peerChannel = null)
     {
         StringWriter output = new();

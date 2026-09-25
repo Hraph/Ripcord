@@ -184,6 +184,32 @@ public class FailoverCliTests
         Assert.Empty(host.Calls);
     }
 
+    /// The longest consequence the tool states, wrapped to the KVM console.
+    [Fact]
+    public async Task The_unplanned_consequence_fits_75_columns()
+    {
+        CliRun run = await Run(
+            ["failover", "--scenario", "unplanned", "--vm", "VM-DC-01"], typed: "no");
+
+        Assert.Contains("Everything written since", run.Output, StringComparison.Ordinal);
+        Assert.All(run.Output.Split('\n'), line => Assert.True(line.Length <= 75, line));
+    }
+
+    /// Failback moves production back, so it is confirmed like a failover: y/n is refused.
+    [Theory]
+    [InlineData("y")]
+    [InlineData("yes")]
+    public async Task A_failback_does_nothing_until_the_node_name_is_typed(string typed)
+    {
+        FakeHypervProvider host = new(FakeScenarios.Healthy(Now));
+
+        CliRun run = await Run(["failback", "--vm", "VM-DC-01"], provider: host, typed: typed);
+
+        Assert.Equal(ExitCode.Refused, run.Code);
+        Assert.Contains("not confirmed", run.Error, StringComparison.Ordinal);
+        Assert.Empty(host.Calls);
+    }
+
     /// `--dry-run` is exempt from the confirmation, because it changes nothing — and it must
     /// change nothing even when the operator types nothing at all.
     [Fact]
