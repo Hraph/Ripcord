@@ -65,11 +65,33 @@ public sealed record FailoverRunReport(
 /// discard policy is one bounded attempt because a second try at destroying a copy is unlikely
 /// to fare better. Putting production back is the opposite — giving up quietly is the failure,
 /// so it retries.
-public sealed record FailoverTiming(TimeSpan RestoreDeadline, int RestoreAttempts)
+///
+/// The guest shutdown is waited on: `InitiateShutdown` returns once the request is accepted,
+/// and Hyper-V refuses a planned-failover prepare on a VM that is still running.
+public sealed record FailoverTiming(
+    TimeSpan RestoreDeadline,
+    int RestoreAttempts,
+    TimeSpan ShutdownDeadline,
+    TimeSpan PollInterval,
+    TimeSpan RestoreRetryDelay)
 {
-    public static readonly FailoverTiming Default = new(TimeSpan.FromMinutes(2), 3);
+    public static readonly FailoverTiming Default = new(
+        TimeSpan.FromMinutes(2),
+        3,
+        TimeSpan.FromMinutes(10),
+        TimeSpan.FromSeconds(5),
+        TimeSpan.FromSeconds(15));
 
-    public static readonly FailoverTiming ForTests = new(TimeSpan.FromSeconds(5), 3);
+    public static readonly FailoverTiming ForTests = new(
+        TimeSpan.FromSeconds(5),
+        3,
+        TimeSpan.FromMilliseconds(10),
+        TimeSpan.FromMilliseconds(1),
+        TimeSpan.Zero);
+
+    /// Counted rather than timed against the clock, which a test holds still.
+    public int ShutdownPolls =>
+        Math.Max(1, (int)Math.Ceiling(this.ShutdownDeadline / this.PollInterval));
 }
 
 /// Carries out this host's half of a planned failover.
@@ -253,8 +275,7 @@ public sealed class FailoverSequence(
         FailoverStep step, FailoverRequest request, CancellationToken cancellationToken) =>
         step.Action switch
         {
-            FailoverAction.ShutDownVm =>
-                provider.ShutDownVmAsync(request.VmName, cancellationToken),
+            FailoverAction.ShutDownVm => this.ShutDownAsync(request.VmName, cancellationToken),
             FailoverAction.PrepareFailover =>
                 provider.PrepareFailoverAsync(request.VmName, cancellationToken),
             FailoverAction.StartFailover =>
@@ -266,6 +287,37 @@ public sealed class FailoverSequence(
             FailoverAction.VerifyNetwork => this.VerifyNetworkAsync(request, cancellationToken),
             _ => Task.CompletedTask,
         };
+
+    /// The step is done when the VM is off, not when the guest was asked: the prepare that
+    /// follows is refused on a running VM, and its unwind would then race the shutdown.
+    private async Task ShutDownAsync(string vmName, CancellationToken cancellationToken)
+    {
+        await provider.ShutDownVmAsync(vmName, cancellationToken).ConfigureAwait(false);
+
+        VmPowerState? last = null;
+
+        for (int poll = 0; poll < timing.ShutdownPolls; poll++)
+        {
+            HostState local = await provider.GetLocalStateAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            last = local.Vms.FirstOrDefault(candidate =>
+                string.Equals(candidate.Name, vmName, StringComparison.OrdinalIgnoreCase))
+                ?.PowerState;
+
+            if (last == VmPowerState.Off)
+            {
+                return;
+            }
+
+            await Task.Delay(timing.PollInterval, cancellationToken).ConfigureAwait(false);
+        }
+
+        throw new TimeoutException(
+            $"'{vmName}' was asked to shut down and was not off after "
+                + $"{(int)timing.ShutdownDeadline.TotalMinutes} minutes "
+                + $"(last seen: {last?.ToString() ?? "unreadable"})");
+    }
 
     /// Step 6. Not a formality: a VM that boots without network is a failed failover, and the
     /// host-level checks all passed while that was true.
@@ -400,6 +452,14 @@ public sealed class FailoverSequence(
             if (last.Succeeded)
             {
                 return last;
+            }
+
+            // Back-to-back attempts all land in the same few seconds, against a VM that may
+            // still be finishing what the failed step started.
+            if (attempt + 1 < timing.RestoreAttempts)
+            {
+                await Task.Delay(timing.RestoreRetryDelay, CancellationToken.None)
+                    .ConfigureAwait(false);
             }
         }
 

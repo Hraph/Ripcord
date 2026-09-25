@@ -40,10 +40,16 @@ public sealed class FakeHypervProvider : IHypervProvider
     public static FakeHypervProvider FailingLocally(string message) =>
         new(new InvalidOperationException(message));
 
-    public Task<HostState> GetLocalStateAsync(CancellationToken cancellationToken) =>
-        this.localFailure is null
-            ? Task.FromResult(this.LocalState)
-            : Task.FromException<HostState>(this.localFailure);
+    public Task<HostState> GetLocalStateAsync(CancellationToken cancellationToken)
+    {
+        if (this.localFailure is not null)
+        {
+            return Task.FromException<HostState>(this.localFailure);
+        }
+
+        this.Observe();
+        return Task.FromResult(this.LocalState);
+    }
 
     /// Every call the sequence made, in order. The cleanup guarantee is an ordering claim —
     /// "stop ran, even though start threw" — and an ordering claim needs an ordered record.
@@ -196,8 +202,57 @@ public sealed class FakeHypervProvider : IHypervProvider
 
     public Exception? StartActionFailure { get; set; }
 
-    public Task ShutDownVmAsync(string vmName, CancellationToken cancellationToken) =>
-        this.Record($"shutdown:{vmName}", this.ShutDownFailure, cancellationToken);
+    /// How many state reads after a shutdown the VM still reads as shutting down. Hyper-V
+    /// accepts the request at once and the guest takes its time; zero is an instant guest.
+    /// Null leaves the VM running for ever: a guest that never finishes shutting down.
+    public int? ShutdownCompletesAfter { get; set; } = 0;
+
+    private string? shuttingDown;
+
+    private int readsSinceShutdown;
+
+    public Task ShutDownVmAsync(string vmName, CancellationToken cancellationToken)
+    {
+        Task recorded = this.Record($"shutdown:{vmName}", this.ShutDownFailure, cancellationToken);
+
+        if (this.ShutDownFailure is null)
+        {
+            this.shuttingDown = vmName;
+            this.readsSinceShutdown = 0;
+            this.SetPower(vmName, VmPowerState.ShuttingDown);
+        }
+
+        return recorded;
+    }
+
+    /// Advances a pending shutdown by one read.
+    private void Observe()
+    {
+        if (this.shuttingDown is not { } vmName)
+        {
+            return;
+        }
+
+        if (this.ShutdownCompletesAfter is { } after && this.readsSinceShutdown >= after)
+        {
+            this.SetPower(vmName, VmPowerState.Off);
+            this.shuttingDown = null;
+        }
+
+        this.readsSinceShutdown++;
+    }
+
+    private void SetPower(string vmName, VmPowerState state) =>
+        this.LocalState = this.LocalState with
+        {
+            Vms =
+            [
+                .. this.LocalState.Vms.Select(vm =>
+                    string.Equals(vm.Name, vmName, StringComparison.OrdinalIgnoreCase)
+                        ? vm with { PowerState = state }
+                        : vm),
+            ],
+        };
 
     public Task PrepareFailoverAsync(string vmName, CancellationToken cancellationToken) =>
         this.Record($"prepare:{vmName}", this.PrepareFailure, cancellationToken);

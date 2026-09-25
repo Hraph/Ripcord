@@ -46,6 +46,37 @@ public class FailoverSequenceTests
         Assert.Contains(Replica, report.Continuation, StringComparison.Ordinal);
     }
 
+    /// `InitiateShutdown` returns when the request is accepted. The prepare waits for the VM
+    /// to read Off: Hyper-V refuses it on a running VM.
+    [Fact]
+    public async Task The_prepare_waits_for_the_guest_to_finish_shutting_down()
+    {
+        FakeHypervProvider provider = Provider(VmPowerState.Running);
+        provider.ShutdownCompletesAfter = 3;
+
+        FailoverRunReport report = await Run(provider, Primary, Fresh());
+
+        Assert.Equal(ExitCode.Success, report.Code);
+        Assert.Equal(
+            VmPowerState.Off,
+            provider.LocalState.Vms.Single(vm => vm.Name == Vm).PowerState);
+        Assert.Equal([$"shutdown:{Vm}", $"prepare:{Vm}"], provider.Calls);
+    }
+
+    /// A guest that never goes off fails step 1 on a deadline, and nothing is prepared.
+    [Fact]
+    public async Task A_guest_that_never_shuts_down_fails_the_step_and_prepares_nothing()
+    {
+        FakeHypervProvider provider = Provider(VmPowerState.Running);
+        provider.ShutdownCompletesAfter = null;
+
+        FailoverRunReport report = await Run(provider, Primary, Fresh());
+
+        Assert.Equal(ExitCode.IntermediateState, report.Code);
+        Assert.DoesNotContain($"prepare:{Vm}", provider.Calls);
+        Assert.Contains("was not off after", report.Steps[0].FailureMessage, StringComparison.Ordinal);
+    }
+
     /// Run on the replica before the primary's half has happened, nothing is touched: the next
     /// step belongs to the other host, and exit 4 says nothing changed.
     [Fact]
