@@ -16,7 +16,7 @@ Six questions, plus two per VM. Everything has a default; Enter accepts it.
 | the role | primary or DR. The pair's two files are mirror images and nothing observable says which way round replication should run. `--role` answers it from the command line. |
 | the other host | its name, and the address it answers on — written in full, because it is compared against where a connection came from and it lands in a firewall rule |
 | the switch | **chosen from this host's switches**, with what each one reaches |
-| which VMs | **chosen from the VMs Hyper-V reports on this host**, with whether each replicates and whether it is running. `all` is the default. A test-failover copy is not offered. On a host with no VM it says so, writes `vms: []` and asks nothing per VM |
+| which VMs | **chosen from the VMs Hyper-V reports on this host**, with whether each replicates and whether it is running. Answer with numbers from the list or names, separated by commas, or `all` on its own. A number within the list is read as that number first, so a VM named `2019` on a smaller host is still picked by name. `all` is the default on a first run; on a re-run the default is the numbers of the file's VMs still on this host, in the file's order (e.g. `3,1`), and that order is the start order within a priority. A test-failover copy is not offered. On a host with no VM it says so, writes `vms: []` and asks nothing per VM |
 | per VM | `P1` or `P2`, and whether it is a domain controller |
 | six figures | memory reserve, offline-after, frequency, lag multiplier, volume, free-space warning — shown together and accepted in one answer, or unrolled into six prompts |
 
@@ -43,7 +43,8 @@ closing lines say so. See [`serve`](serve.md).
 The normal case, and the reason it is safe:
 
 - **every question is pre-answered** from the current file, so Enter through the whole thing
-  changes nothing;
+  changes nothing — except for VMs no longer on this host, below. The VM question is
+  pre-answered with list numbers, the form it asks for, not with names;
 - **every section it does not ask about is carried across untouched** — `listener`,
   `alerting`, `dashboard`, `diagnostics`, `checks`, and any key a later version adds that this
   one has never heard of. Carried as the original lines, comments included, because

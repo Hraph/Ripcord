@@ -55,6 +55,10 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ### Fixed
 
+- **`ripcord init` pre-answers the VM question with the file's VMs as list numbers**, in its
+  order, instead of a line of names that ran off the console. Enter reproduces the selection,
+  names are still accepted, and a VM name containing a comma now survives being picked.
+
 - **`ripcord init` offered VMs this host does not have** — the sample's `VM-DC-01`,
   `VM-LEGACY-01` and `VM-BACKUP-01` among them — and kept them on Enter. It now offers only
   what Hyper-V reports, never a test-failover copy, and names each VM of the previous file it
