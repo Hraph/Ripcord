@@ -211,8 +211,27 @@ public class RipcordCliTests
             provider: FakeHypervProvider.FailingLocally("the WMI service is not running"));
 
         Assert.Equal(ExitCode.LocalAccessFailure, run.Code);
-        Assert.Contains("the WMI service is not running", run.Error, StringComparison.Ordinal);
+        Assert.Contains("cannot read the local Hyper-V state", Unwrapped(run.Error), StringComparison.Ordinal);
+        Assert.Contains("the WMI service is not running", Unwrapped(run.Error), StringComparison.Ordinal);
     }
+
+    /// A refusal is wrapped at 75 columns, whatever the length of the reason inside it.
+    [Fact]
+    public async Task A_long_failure_is_wrapped_to_the_console()
+    {
+        CliRun run = await Run(
+            ["check"],
+            provider: FakeHypervProvider.FailingLocally(
+                "Incompatibilite de type pour le parametre ReplicationRelationship dans "
+                + "GetReplicationStatisticsEx sur Msvm_ReplicationService.\r\n"));
+
+        Assert.All(
+            run.Error.Split(Environment.NewLine),
+            line => Assert.True(line.Length <= Ripcord.Cli.Rendering.StatusRenderer.Width, line));
+    }
+
+    private static string Unwrapped(string text) =>
+        string.Join(' ', text.Split((char[])[' ', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
 
     [Fact]
     public async Task The_usage_names_check_and_its_exit_code()

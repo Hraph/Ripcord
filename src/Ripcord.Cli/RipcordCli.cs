@@ -1669,12 +1669,29 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         return true;
     }
 
+    /// A reason from Windows or the network can run to 150 columns on a 75-column console.
+    private static void WriteWrapped(TextWriter error, string failure)
+    {
+        const string Prefix = "ripcord: ";
+        string indent = new(' ', Prefix.Length);
+        bool first = true;
+
+        string flat = failure.ReplaceLineEndings(" ").Trim();
+
+        foreach (string line in Rendering.Layout.Wrap(flat, Rendering.Layout.Width - Prefix.Length))
+        {
+            error.WriteLine((first ? Prefix : indent) + line);
+            first = false;
+        }
+    }
+
     /// Every error at once, so six typos take one run rather than six.
     private void WriteFailure(TextWriter error, StatusOutcome outcome)
     {
         if (outcome.FailureMessage is { } failure)
         {
-            error.WriteLine($"ripcord: cannot read the local Hyper-V state: {failure}");
+            // Said by whoever failed: an update refusal is not a Hyper-V read.
+            WriteWrapped(error, failure);
             return;
         }
 

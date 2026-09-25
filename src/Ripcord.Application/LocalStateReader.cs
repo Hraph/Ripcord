@@ -46,7 +46,7 @@ public sealed class LocalStateReader(
             diagnostics.Write(DiagnosticEntry.Of(
                 "hyper-v", "the local Hyper-V state could not be read", exception.ToString()));
 
-            return LocalRead.Failed(exception.Message);
+            return LocalRead.Failed($"cannot read the local Hyper-V state: {exception.Message}");
         }
 
         List<string> notes = [];
