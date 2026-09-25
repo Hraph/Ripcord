@@ -2,44 +2,37 @@ using Ripcord.Domain.Configuration;
 
 namespace Ripcord.Domain.Diagnostics;
 
-/// Where the diagnostic log is written, and how large it may grow.
+/// Which folder the diagnostic log is written to, and how large one day's file may grow.
 ///
 /// Read from the raw document rather than from a validated configuration, and **tolerant of
 /// everything it finds there**. A file whose job is to explain why a command failed must not
 /// become a reason a command refuses to run — least of all on the host where the only way to
 /// see anything is that file. So a figure out of range is replaced by the default and a blank
-/// path falls back beside the binary; nothing here produces an error.
+/// path falls back to the `logs` folder; nothing here produces an error.
 ///
 /// That is the opposite of every other section, and deliberately so: the rest of `ripcord.yaml`
 /// describes the pair, where a wrong value moves production to the wrong place. This describes
 /// a log.
-public sealed record DiagnosticDestination(bool Enabled, string Path, long MaxBytes)
+public sealed record DiagnosticDestination(bool Enabled, string Folder, long MaxBytes)
 {
-    /// Beside the binary, like the audit trail and the alert state: one directory holds
-    /// everything a host writes about itself, and it is the directory the operator is already
-    /// standing in.
-    public const string DefaultFileName = "ripcord.log";
-
-    /// Big enough to hold every run since the last update on a host nobody touches, small
-    /// enough to be pasted somewhere or sent as an attachment.
+    /// Big enough to hold a busy day on a host nobody touches, small enough to be pasted
+    /// somewhere or sent as an attachment.
     public const int DefaultMaxSizeMb = 5;
 
     /// A gigabyte of debug log is a full volume on a host whose volume matters. Past this the
     /// figure is not believed.
     public const int MaxSizeMbCeiling = 1_024;
 
-    /// The previous file, kept whole. Two files and no more: a log that rotates into an
-    /// unbounded series is the thing that fills the volume it was meant to explain.
-    public string PreviousPath => this.Path + ".1";
+    private const string OldFileExtension = ".log";
 
-    public static DiagnosticDestination Default(string path) =>
-        new(true, path, (long)DefaultMaxSizeMb * 1024 * 1024);
+    public static DiagnosticDestination Default(string folder) =>
+        new(true, folder, (long)DefaultMaxSizeMb * 1024 * 1024);
 
-    public static DiagnosticDestination From(DiagnosticsDocument? document, string defaultPath)
+    public static DiagnosticDestination From(DiagnosticsDocument? document, string defaultFolder)
     {
         if (document is null)
         {
-            return Default(defaultPath);
+            return Default(defaultFolder);
         }
 
         int megabytes = document.MaxSizeMb is { } given and > 0 and <= MaxSizeMbCeiling
@@ -51,8 +44,17 @@ public sealed record DiagnosticDestination(bool Enabled, string Path, long MaxBy
         // would read a block that only sets `path` as a block that switches logging off.
         return new DiagnosticDestination(
             document.Enabled ?? true,
-            document.Path is { } path && path.Trim().Length > 0 ? path.Trim() : defaultPath,
+            FolderFrom(document.Path, defaultFolder),
             (long)megabytes * 1024 * 1024);
+    }
+
+    /// The listener service writes only to the folder `service install` granted it, whatever
+    /// the configuration asks: a folder it cannot write is a service with no log at all.
+    public DiagnosticDestination Applied(DiagnosticOrigin origin, DiagnosticDestination asked)
+    {
+        ArgumentNullException.ThrowIfNull(asked);
+
+        return origin == DiagnosticOrigin.Listener ? this : asked;
     }
 
     /// Rotation is decided before the write, not after: a file allowed past its limit and
@@ -60,4 +62,23 @@ public sealed record DiagnosticDestination(bool Enabled, string Path, long MaxBy
     /// out of room.
     public bool MustRotate(long existingBytes, long incomingBytes) =>
         existingBytes > 0 && existingBytes + incomingBytes > this.MaxBytes;
+
+    /// `path` used to name a file. A configuration written then still works: a value ending in
+    /// `.log` is read as the folder holding it.
+    private static string FolderFrom(string? path, string defaultFolder)
+    {
+        if (path is null || path.Trim().Length == 0)
+        {
+            return defaultFolder;
+        }
+
+        string given = path.Trim();
+
+        if (!given.EndsWith(OldFileExtension, StringComparison.OrdinalIgnoreCase))
+        {
+            return given;
+        }
+
+        return WindowsPath.FolderOf(given) is { Length: > 0 } folder ? folder : defaultFolder;
+    }
 }

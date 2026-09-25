@@ -1,4 +1,4 @@
-using System.Globalization;
+using Ripcord.Domain.Diagnostics;
 
 namespace Ripcord.Domain.Deployment;
 
@@ -22,11 +22,9 @@ public static class ListenerStartup
             "Then run 'ripcord service' to check.");
 
     /// First lines of every start, so a log appended to all day says where each run begins.
-    public static string Banner(string version, string configurationPath, DateTimeOffset at) =>
-        string.Join(
-            Environment.NewLine,
-            string.Create(
-                CultureInfo.InvariantCulture,
-                $"==== {at.ToUniversalTime():yyyy-MM-dd HH:mm:ss}Z ripcord {version} listener starting"),
-            $"     configuration {configurationPath}");
+    public static DiagnosticEntry Banner(string version, string configurationPath) =>
+        new(
+            "service",
+            $"==== ripcord {version} listener starting",
+            [$"configuration {configurationPath}"]);
 }

@@ -10,7 +10,7 @@ namespace Ripcord.Cli.Rendering;
 /// text is built:
 ///
 /// - **The log must stay readable.** The listener passes the same writer for output and error
-///   into `listener.log`, and a redirected `ripcord status > state.txt` is a file somebody
+///   into the listener log, and a redirected `ripcord status > state.txt` is a file somebody
 ///   reads. Escapes in either are noise nobody asked for, so the default is `None` and the
 ///   colour is switched on only where a console said it would understand it.
 /// - **Columns must not move.** A marker is stripped before anything is measured, and the

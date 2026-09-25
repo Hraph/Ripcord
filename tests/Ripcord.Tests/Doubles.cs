@@ -28,6 +28,14 @@ public sealed class FixedClock(DateTimeOffset now, DateTimeOffset? localNow = nu
     public DateTimeOffset LocalNow => localNow ?? now;
 }
 
+/// A clock a test moves forward, for what changes when the day does.
+public sealed class MovableClock(DateTimeOffset now) : IClock
+{
+    public DateTimeOffset UtcNow { get; set; } = now;
+
+    public DateTimeOffset LocalNow => this.UtcNow;
+}
+
 /// For the commands that never listen or deploy but have to be handed something.
 public sealed class NoOpPeerListener : IPeerListener
 {

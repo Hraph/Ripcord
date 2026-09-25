@@ -1,3 +1,4 @@
+using System.Security;
 using System.Text;
 using Ripcord.Domain.Diagnostics;
 using Ripcord.Ports.Diagnostics;
@@ -5,22 +6,40 @@ using Ripcord.Ports;
 
 namespace Ripcord.Adapters.Diagnostics;
 
-/// The diagnostic log as a plain text file, appended to and rotated once.
+/// The diagnostic log as plain text files, one per origin and per UTC day, appended to.
 ///
 /// Deliberately not the audit trail's neighbour. That file is JSON Lines, never rewritten, and
-/// its value is that nothing removes a line; this one is read with `type` on a console and
-/// **is** trimmed when it gets large. Keeping them in separate files — and separate projects —
-/// is what stops rotation ever being pointed at the trail.
+/// its value is that nothing removes a line; these are read with `type` on a console and
+/// **are** trimmed and pruned. Keeping them in separate files — and separate projects — is
+/// what stops rotation ever being pointed at the trail.
+///
+/// No handle is held between writes: each one works out today's file from the clock, so the
+/// service running for weeks moves to a new file at midnight UTC like a command would.
 ///
 /// Every failure here is swallowed. A log that throws takes down the command it exists to
 /// explain, and on a host with no console that is the difference between a bad morning and an
 /// unexplained one.
-public sealed class FileDiagnosticLog(IClock clock, DiagnosticDestination destination)
-    : IDiagnosticLog
+public sealed class FileDiagnosticLog(
+    IClock clock, DiagnosticOrigin origin, DiagnosticDestination destination) : IDiagnosticLog
 {
     private readonly Lock gate = new();
 
     private DiagnosticDestination current = destination;
+
+    /// The file last written to; a different one means a new folder or a new day.
+    private string? lastFile;
+
+    /// Today's file, where the next line will go.
+    public string CurrentFile
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.FileAt(this.current, clock.UtcNow);
+            }
+        }
+    }
 
     public void SendTo(DiagnosticDestination destination)
     {
@@ -28,79 +47,121 @@ public sealed class FileDiagnosticLog(IClock clock, DiagnosticDestination destin
 
         lock (this.gate)
         {
-            this.current = destination;
+            this.current = this.current.Applied(origin, destination);
         }
     }
 
-    public void Write(DiagnosticEntry entry)
+    public void Write(DiagnosticEntry entry) => _ = this.TryWrite(entry);
+
+    /// Null once written, or why it could not be. Only the listener's first line looks: a
+    /// service that cannot write its log has to say so somewhere else.
+    public string? TryWrite(DiagnosticEntry entry)
     {
         ArgumentNullException.ThrowIfNull(entry);
 
-        DiagnosticDestination writing;
-
-        lock (this.gate)
-        {
-            writing = this.current;
-        }
-
-        if (!writing.Enabled)
-        {
-            return;
-        }
+        DateTimeOffset now = clock.UtcNow;
 
         // The newline is written explicitly rather than by the framework: the listener writes
-        // this file as a service and an operator reads it over a share from the other host, so
-        // one format whatever wrote it.
+        // these files as a service and an operator reads them over a share from the other host,
+        // so one format whatever wrote it.
         byte[] bytes = Encoding.UTF8.GetBytes(
-            string.Concat(entry.Render(clock.UtcNow).Select(line => line + "\r\n")));
+            string.Concat(entry.Render(now).Select(line => line + "\r\n")));
 
         try
         {
-            // Within this process only. The listener runs as a separate service and appends
-            // to the same file, which is why each entry is built in full and written in one
-            // call rather than line by line: two processes cannot be locked against each
-            // other here, but one write each is the smallest thing they can interleave.
+            // Within this process only. A command and the listener may append to the same
+            // folder, which is why each entry is built in full and written in one call rather
+            // than line by line: two processes cannot be locked against each other here, but
+            // one write each is the smallest thing they can interleave.
             lock (this.gate)
             {
-                Rotate(writing, bytes.Length);
+                if (!this.current.Enabled)
+                {
+                    return null;
+                }
 
-                using FileStream stream = new(
-                    writing.Path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+                string file = this.FileAt(this.current, now);
 
-                stream.Write(bytes);
+                if (file != this.lastFile)
+                {
+                    // The operator may have pointed the log at a folder that does not exist
+                    // yet — `D:\Ripcord` on a host where only the binary's own folder exists.
+                    Directory.CreateDirectory(this.current.Folder);
+                    Prune(this.current.Folder, now);
+                    this.lastFile = file;
+                }
+
+                Rotate(this.current, file, bytes.Length);
+
+                using FileStream output = new(
+                    file, FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
+
+                output.Write(bytes);
             }
+
+            return null;
         }
-        catch (Exception exception) when (
-            exception is IOException or UnauthorizedAccessException
-                or ArgumentException or NotSupportedException)
+        catch (Exception exception) when (IsFileFailure(exception))
         {
-            // A read-only directory, a path that is not a path, another process holding the
+            // A read-only folder, a path that is not a path, another process holding the
             // file. None of them is a reason for the command to stop.
+            return exception.Message;
         }
     }
 
-    /// One generation kept, replaced rather than numbered. A series of `.1 .2 .3` files is what
-    /// fills the volume the log was written to explain — and on these hosts that volume is the
-    /// one the VMs live on.
-    private static void Rotate(DiagnosticDestination writing, int incomingBytes)
+    private string FileAt(DiagnosticDestination writing, DateTimeOffset at) =>
+        Path.Combine(writing.Folder, LogFolder.FileName(origin, at));
+
+    /// Once per process and once per day, never more: a listing per line would be a listing
+    /// per served connection.
+    private static void Prune(string folder, DateTimeOffset now)
     {
-        FileInfo current = new(writing.Path);
+        IReadOnlyList<string> expired;
 
-        if (!current.Exists)
+        try
         {
-            // The operator may have pointed the log at a directory that does not exist yet —
-            // `D:\Ripcord` on a host where only the binary's own folder was created.
-            if (Path.GetDirectoryName(current.FullName) is { Length: > 0 } directory)
-            {
-                Directory.CreateDirectory(directory);
-            }
-
+            expired = LogFolder.Expired(
+                Directory.EnumerateFiles(folder).Select(Path.GetFileName).OfType<string>(), now);
+        }
+        catch (Exception exception) when (IsFileFailure(exception))
+        {
             return;
         }
 
-        if (writing.MustRotate(current.Length, incomingBytes))
+        foreach (string name in expired)
         {
-            File.Move(writing.Path, writing.PreviousPath, overwrite: true);
+            try
+            {
+                File.Delete(Path.Combine(folder, name));
+            }
+            catch (Exception exception) when (IsFileFailure(exception))
+            {
+                // Held by the other process, or not ours to delete. Next day it is tried again.
+            }
         }
     }
+
+    /// One extra file a day, replaced rather than numbered: a series of `.1 .2 .3` files is
+    /// what fills the volume the log was written to explain — and on these hosts that volume
+    /// is the one the VMs live on.
+    private static void Rotate(DiagnosticDestination writing, string file, int incomingBytes)
+    {
+        try
+        {
+            FileInfo existing = new(file);
+
+            if (existing.Exists && writing.MustRotate(existing.Length, incomingBytes))
+            {
+                File.Move(file, LogFolder.PreviousOf(file), overwrite: true);
+            }
+        }
+        catch (Exception exception) when (IsFileFailure(exception))
+        {
+            // The other process is rotating the same file. The line is still worth writing.
+        }
+    }
+
+    private static bool IsFileFailure(Exception exception) =>
+        exception is IOException or UnauthorizedAccessException or ArgumentException
+            or NotSupportedException or SecurityException;
 }

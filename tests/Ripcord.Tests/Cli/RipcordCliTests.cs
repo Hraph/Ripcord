@@ -981,8 +981,8 @@ public class RipcordCliTests
     }
 
     /// The path is in the file, and the file is the thing most likely to be wrong. So the log
-    /// is pointed at it before anything is validated, and stays beside the binary when the
-    /// section is absent.
+    /// is pointed at it before anything is validated, and stays in the logs folder beside the
+    /// binary when the section is absent.
     [Fact]
     public async Task The_log_goes_where_the_configuration_asks()
     {
@@ -990,14 +990,13 @@ public class RipcordCliTests
 
         await Run(["status"], diagnostics: log);
 
-        // Stated as the rule — the log sits beside the binary, under that name — rather than
+        // Stated as the rule — the log sits in the logs folder beside the binary — rather than
         // as a literal path. `Path.Combine` writes a backslash on Windows, and the release
         // workflow runs this same suite on windows-latest, so a hard-coded POSIX path passed
         // locally and failed the moment a release was rehearsed.
-        Assert.Equal("ripcord.log", Path.GetFileName(log.Destination?.Path));
-
         Assert.Equal(
-            Path.GetDirectoryName(BinaryPath), Path.GetDirectoryName(log.Destination?.Path));
+            Path.Combine(Path.GetDirectoryName(BinaryPath) ?? "", "logs"),
+            log.Destination?.Folder);
 
         Assert.True(log.Destination?.Enabled);
     }

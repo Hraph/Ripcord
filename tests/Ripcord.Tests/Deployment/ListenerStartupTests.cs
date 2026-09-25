@@ -29,14 +29,14 @@ public class ListenerStartupTests
             line => Assert.True(line.Length <= 75, line));
 
     [Fact]
-    public void The_banner_says_when_which_version_and_which_configuration()
+    public void The_banner_says_which_version_and_which_configuration()
     {
-        string banner = ListenerStartup.Banner(
-            "0.4.0+32aac02",
-            @"C:\Program Files\Ripcord\ripcord.yaml",
-            new DateTimeOffset(2026, 9, 25, 8, 30, 0, TimeSpan.FromHours(2)));
+        string banner = string.Join(
+            "\n",
+            ListenerStartup.Banner("0.4.0+32aac02", @"C:\Program Files\Ripcord\ripcord.yaml")
+                .Render(new DateTimeOffset(2026, 9, 25, 8, 30, 0, TimeSpan.FromHours(2))));
 
-        Assert.Contains("2026-09-25 06:30:00Z", banner, StringComparison.Ordinal);
+        Assert.Contains("2026-09-25 06:30:00.000Z", banner, StringComparison.Ordinal);
         Assert.Contains("0.4.0+32aac02", banner, StringComparison.Ordinal);
         Assert.Contains(@"C:\Program Files\Ripcord\ripcord.yaml", banner, StringComparison.Ordinal);
     }

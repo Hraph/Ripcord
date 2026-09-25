@@ -176,21 +176,19 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         try
         {
             ports.Diagnostics.SendTo(DiagnosticDestination.From(
-                ports.ConfigStore.Read(path).Document?.Diagnostics, this.DefaultLogPath));
+                ports.ConfigStore.Read(path).Document?.Diagnostics, this.DefaultLogFolder));
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             // Unreadable, unparseable, not there at all. The log stays where it started,
-            // which is beside the binary, and the command carries on to report it properly.
+            // the logs folder beside the binary, and the command carries on to report it properly.
         }
     }
 
-    /// Beside the binary, with the audit trail and the alert state: one directory holds
-    /// everything this host writes about itself.
-    private string DefaultLogPath =>
-        Path.Combine(
-            Path.GetDirectoryName(environment.BinaryPath) ?? "",
-            DiagnosticDestination.DefaultFileName);
+    /// The logs folder beside the binary, with the audit trail and the alert state next to
+    /// it: one directory holds everything this host writes about itself.
+    private string DefaultLogFolder =>
+        Path.Combine(Path.GetDirectoryName(environment.BinaryPath) ?? "", LogFolder.Name);
 
     private async Task<ExitCode> DispatchAsync(
         string[] args, TextWriter output, TextWriter error, CancellationToken cancellationToken)
@@ -398,7 +396,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
     /// What the host can say about itself before there is a configuration. Neither list is
     /// required: a host whose Hyper-V cannot be read still completes the interview by typing,
-    /// and the reason it could not be read is in `ripcord.log`.
+    /// and the reason it could not be read is in the diagnostic log.
     private async Task<InterviewFacts> ReadFactsAsync(CancellationToken cancellationToken)
     {
         try

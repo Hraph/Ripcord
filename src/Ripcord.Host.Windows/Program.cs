@@ -62,10 +62,21 @@ internal static class Program
     /// decided. `ripcord serve` is run by hand to verify the exit criterion, and a refusal
     /// nobody can see is a refusal nobody can trust. As a service there is no console, so the
     /// line goes to the listener log instead.
-    private static void Report(ReportSink sink, ServedConnection connection) =>
-        sink.Writer.WriteLine(
-            $"{DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm:ss} {connection.RemoteAddress} "
-            + $"{(connection.Served ? "served" : "refused")}: {connection.Verdict.Reason()}");
+    private static void Report(
+        bool asService, FileDiagnosticLog diagnostics, ServedConnection connection)
+    {
+        string line = $"{connection.RemoteAddress} "
+            + $"{(connection.Served ? "served" : "refused")}: {connection.Verdict.Reason()}";
+
+        if (asService)
+        {
+            diagnostics.Write(DiagnosticEntry.Of("listener", line));
+        }
+        else
+        {
+            Console.Error.WriteLine($"{DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm:ss} {line}");
+        }
+    }
 
     /// Whether a rendered block may carry colour, decided once, here — and **per stream**.
     ///
@@ -108,17 +119,17 @@ internal static class Program
         string defaultConfigPath = Path.Combine(AppContext.BaseDirectory, "ripcord.yaml");
 
         SystemClock clock = new();
-        ReportSink reportSink = new();
         FileSnapshotStore snapshotStore = new();
         MachineCertificateStore certificates = new();
 
-        // Starts beside the binary and is moved to wherever `ripcord.yaml` asks, once that
-        // file has been read. The first thing worth logging is often the reason it cannot be,
-        // so the log cannot wait for it.
+        // Starts in the logs folder and, for a command, is moved to wherever `ripcord.yaml`
+        // asks once that file has been read. The first thing worth logging is often the reason
+        // it cannot be, so the log cannot wait for it.
         FileDiagnosticLog diagnostics = new(
             clock,
+            asService ? DiagnosticOrigin.Listener : DiagnosticOrigin.Command,
             DiagnosticDestination.Default(
-                Path.Combine(AppContext.BaseDirectory, DiagnosticDestination.DefaultFileName)));
+                Path.Combine(AppContext.BaseDirectory, LogFolder.Name)));
 
         RipcordCli cli = new(
             new RipcordPorts(
@@ -135,7 +146,7 @@ internal static class Program
                     PeerTrust.MachineStore,
                     snapshotStore,
                     clock,
-                    connection => Report(reportSink, connection)),
+                    connection => Report(asService, diagnostics, connection)),
                 new LoopbackDashboardServer(Console.Error.WriteLine),
                 new JsonLinesAuditLog(
                     Path.Combine(AppContext.BaseDirectory, "audit.jsonl")),
@@ -174,8 +185,7 @@ internal static class Program
         // The same binary and the same verb either way; only who is asking changes.
         if (asService)
         {
-            ServiceSetup setup = new(
-                cli, args, reportSink, clock, LogFolder.Beside(binaryPath), defaultConfigPath);
+            ServiceSetup setup = new(cli, args, diagnostics, defaultConfigPath);
 
             return (int)await RunAsServiceAsync(setup).ConfigureAwait(false);
         }
@@ -234,16 +244,8 @@ internal static class Program
     private sealed record ServiceSetup(
         RipcordCli Cli,
         string[] Args,
-        ReportSink ReportSink,
-        SystemClock Clock,
-        string LogsFolder,
+        FileDiagnosticLog Diagnostics,
         string ConfigurationPath);
-
-    /// Where a served connection is reported: the console by hand, the log as a service.
-    private sealed class ReportSink
-    {
-        public TextWriter Writer { get; set; } = Console.Error;
-    }
 
     /// What the verb decided, carried back out of the hosted service.
     ///
@@ -273,32 +275,24 @@ internal static class Program
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            string path = LogFolder.ListenerLog(setup.LogsFolder, setup.Clock.UtcNow);
-            StreamWriter log;
-
-            try
+            // The first line decides whether there is a log at all. Nothing else can say so
+            // but the event log: a service has no console.
+            if (setup.Diagnostics.TryWrite(ListenerStartup.Banner(
+                    BuildInfo.VersionWithCommit, setup.ConfigurationPath)) is { } reason)
             {
-                log = OpenLog(path);
-            }
-            catch (Exception exception) when (exception is UnauthorizedAccessException
-                or IOException or NotSupportedException or System.Security.SecurityException)
-            {
-                Stopped(logger, ListenerStartup.LogUnavailable(path, exception.Message), null);
+                Stopped(
+                    logger,
+                    ListenerStartup.LogUnavailable(setup.Diagnostics.CurrentFile, reason),
+                    null);
                 this.Stop(ExitCode.LocalAccessFailure, stoppingToken);
                 return;
             }
 
-            // One writer for the verb and for the connection lines, which arrive on other
-            // threads.
-            TextWriter writer = TextWriter.Synchronized(log);
+            // What the verb would have printed on a console becomes lines of the same log.
+            using DiagnosticTextWriter writer = new(setup.Diagnostics, "serve");
 
             try
             {
-                writer.WriteLine(ListenerStartup.Banner(
-                    BuildInfo.VersionWithCommit, setup.ConfigurationPath, setup.Clock.UtcNow));
-
-                setup.ReportSink.Writer = writer;
-
                 ExitCode code = await setup.Cli
                     .RunAsync(setup.Args, writer, writer, stoppingToken)
                     .ConfigureAwait(false);
@@ -308,25 +302,12 @@ internal static class Program
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 // Not rethrown: the host would stop cleanly and report 0 anyway. The exit code
-                // set here is what makes the stop abnormal to Windows.
-                writer.WriteLine($"ripcord: the listener stopped on an error: {exception}");
+                // set here is what makes the stop abnormal to Windows. The verb has already
+                // written the exception to the log.
                 Stopped(logger, "The Ripcord listener stopped on an error.", exception);
                 this.Stop(ExitCode.LocalAccessFailure, stoppingToken);
             }
-            finally
-            {
-                setup.ReportSink.Writer = Console.Error;
-                await log.DisposeAsync().ConfigureAwait(false);
-            }
         }
-
-        /// Appended, and shared both ways: `ripcord service` reads it while the listener
-        /// writes, and a restart adds to the day's file rather than erasing it.
-        private static StreamWriter OpenLog(string path) =>
-            new(new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
-            {
-                AutoFlush = true,
-            };
 
         private void Stop(ExitCode code, CancellationToken stoppingToken)
         {

@@ -13,7 +13,7 @@ namespace Ripcord.Tests.Rendering;
 /// Two things have to stay true, and neither is obvious from reading the renderers: a block
 /// with the colour on must be the same text once the escapes are removed — same words, same
 /// columns, same widths — and a block with the colour off must contain no escape and no marker
-/// at all, because that is what goes into `listener.log`, into `ripcord.log` and into
+/// at all, because that is what goes into the `logs` folder and into
 /// `ripcord status > state.txt`.
 ///
 /// The trap is padding a string that already carries a marker: the marker counts toward the

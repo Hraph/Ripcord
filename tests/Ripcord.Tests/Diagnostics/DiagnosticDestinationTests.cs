@@ -4,48 +4,60 @@ using Ripcord.Domain.Diagnostics;
 namespace Ripcord.Tests.Diagnostics;
 
 /// The one section of `ripcord.yaml` that refuses nothing. Everywhere else a value out of
-/// range is an error, because it describes the pair; here it describes a log file, and a host
-/// that will not run because its log size is silly is a host with no log and no command.
+/// range is an error, because it describes the pair; here it describes a log, and a host that
+/// will not run because its log size is silly is a host with no log and no command.
 public class DiagnosticDestinationTests
 {
-    private const string Beside = @"C:\Program Files\Ripcord\ripcord.log";
+    private const string Logs = @"C:\Program Files\Ripcord\logs";
 
     [Fact]
-    public void No_block_at_all_logs_beside_the_binary()
+    public void No_block_at_all_logs_into_the_logs_folder()
     {
-        DiagnosticDestination destination = DiagnosticDestination.From(null, Beside);
+        DiagnosticDestination destination = DiagnosticDestination.From(null, Logs);
 
         Assert.True(destination.Enabled);
-        Assert.Equal(Beside, destination.Path);
+        Assert.Equal(Logs, destination.Folder);
         Assert.Equal(5L * 1024 * 1024, destination.MaxBytes);
     }
 
     /// The listener and the dashboard are off until switched on; this is on until switched
-    /// off, so a block that only moves the file must not also silence it.
+    /// off, so a block that only moves the folder must not also silence it.
     [Fact]
-    public void A_block_that_only_names_a_path_leaves_the_log_on()
+    public void A_block_that_only_names_a_folder_leaves_the_log_on()
     {
         DiagnosticDestination destination = DiagnosticDestination.From(
-            new DiagnosticsDocument { Path = @"D:\Ripcord\ripcord.log" }, Beside);
+            new DiagnosticsDocument { Path = @"D:\Ripcord\logs" }, Logs);
 
         Assert.True(destination.Enabled);
-        Assert.Equal(@"D:\Ripcord\ripcord.log", destination.Path);
+        Assert.Equal(@"D:\Ripcord\logs", destination.Folder);
     }
+
+    /// `path` used to name the file; a configuration written then keeps working.
+    [Theory]
+    [InlineData(@"D:\Ripcord\ripcord.log", @"D:\Ripcord")]
+    [InlineData(@"D:\Ripcord\Ripcord.LOG", @"D:\Ripcord")]
+    [InlineData(@"D:\ripcord.log", @"D:\")]
+    [InlineData("ripcord.log", Logs)]
+    public void An_old_style_file_path_is_read_as_the_folder_that_holds_it(
+        string path, string folder) =>
+        Assert.Equal(
+            folder,
+            DiagnosticDestination.From(new DiagnosticsDocument { Path = path }, Logs).Folder);
 
     [Fact]
     public void The_log_can_be_switched_off_by_name() =>
         Assert.False(
             DiagnosticDestination.From(
-                new DiagnosticsDocument { Enabled = false }, Beside).Enabled);
+                new DiagnosticsDocument { Enabled = false }, Logs).Enabled);
 
     [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void A_blank_path_falls_back_beside_the_binary(string? path) =>
+    public void A_blank_path_falls_back_to_the_logs_folder(string? path) =>
         Assert.Equal(
-            Beside,
-            DiagnosticDestination.From(new DiagnosticsDocument { Path = path }, Beside).Path);
+            Logs,
+            DiagnosticDestination.From(new DiagnosticsDocument { Path = path }, Logs).Folder);
 
     [Theory]
     [InlineData(0)]
@@ -55,14 +67,31 @@ public class DiagnosticDestinationTests
         Assert.Equal(
             5L * 1024 * 1024,
             DiagnosticDestination.From(
-                new DiagnosticsDocument { MaxSizeMb = megabytes }, Beside).MaxBytes);
+                new DiagnosticsDocument { MaxSizeMb = megabytes }, Logs).MaxBytes);
 
     [Fact]
     public void A_size_within_range_is_taken_as_written() =>
         Assert.Equal(
             20L * 1024 * 1024,
             DiagnosticDestination.From(
-                new DiagnosticsDocument { MaxSizeMb = 20 }, Beside).MaxBytes);
+                new DiagnosticsDocument { MaxSizeMb = 20 }, Logs).MaxBytes);
+
+    /// A command goes where the configuration asks; the service stays in the one folder it
+    /// was granted, or it has no log at all.
+    [Theory]
+    [InlineData(DiagnosticOrigin.Command, @"D:\Elsewhere", false)]
+    [InlineData(DiagnosticOrigin.Listener, Logs, true)]
+    public void Only_a_command_follows_the_configuration(
+        DiagnosticOrigin origin, string folder, bool enabled)
+    {
+        DiagnosticDestination asked =
+            DiagnosticDestination.Default(@"D:\Elsewhere") with { Enabled = false };
+
+        DiagnosticDestination applied = DiagnosticDestination.Default(Logs).Applied(origin, asked);
+
+        Assert.Equal(folder, applied.Folder);
+        Assert.Equal(enabled, applied.Enabled);
+    }
 
     /// Decided before the write: a file allowed past its limit and trimmed afterwards is a
     /// file that was over the limit on the one run where the volume was full.
@@ -74,11 +103,5 @@ public class DiagnosticDestinationTests
     public void Rotation_is_decided_on_what_the_file_would_become(
         long existing, long incoming, bool expected) =>
         Assert.Equal(
-            expected, DiagnosticDestination.Default(Beside).MustRotate(existing, incoming));
-
-    /// Two files and no more. A series of numbered logs is the thing that fills the volume it
-    /// was written to explain.
-    [Fact]
-    public void The_previous_file_sits_beside_the_current_one() =>
-        Assert.Equal(Beside + ".1", DiagnosticDestination.Default(Beside).PreviousPath);
+            expected, DiagnosticDestination.Default(Logs).MustRotate(existing, incoming));
 }
