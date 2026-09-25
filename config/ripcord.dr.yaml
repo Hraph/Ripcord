@@ -48,6 +48,7 @@ replication:
 listener:
   enabled: true
   port: 7443
+  # Placeholders, refused as they are: this host's certificate, then the other host's.
   local_certificate_thumbprint: "AAAA1111BBBB2222CCCC3333DDDD4444EEEE5555"
   peer_certificate_thumbprint: "1111AAAA2222BBBB3333CCCC4444DDDD5555EEEE"
   # The snapshot `ripcord status` writes and the listener serves to the peer. Left out, it is

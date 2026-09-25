@@ -1,3 +1,4 @@
+using Ripcord.Tests.Configuration;
 using Ripcord.Adapters.Fake;
 using Ripcord.Cli;
 using Ripcord.Domain;
@@ -323,9 +324,7 @@ public class InitCliTests
     }
 
     private static string Sample() =>
-        File.ReadAllText(
-                Path.Combine(Architecture.RepositoryLayout.Root, "config", "ripcord.dr.yaml"))
-            .ReplaceLineEndings("\n");
+        Samples.Filled(Samples.Read("ripcord.dr.yaml")).ReplaceLineEndings("\n");
 
     private static FakeHypervProvider WithoutBackupVm() =>
         new(FakeScenarios.Healthy(TestPorts.Now) with

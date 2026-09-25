@@ -86,11 +86,26 @@ public class ListenerSettingsValidationTests
         AssertError(Validate(document), "listener.local_certificate_thumbprint");
     }
 
+    /// Well-formed, so without this they would pass and the channel fail as a SILENT peer.
+    [Theory]
+    [InlineData("AAAA1111BBBB2222CCCC3333DDDD4444EEEE5555")]
+    [InlineData("11 11 aa aa 22 22 bb bb 33 33 cc cc 44 44 dd dd 55 55 ee ee")]
+    public void The_samples_placeholder_thumbprints_are_refused_by_name(string thumbprint)
+    {
+        ConfigurationDocument document = Valid();
+        document.Listener!.LocalCertificateThumbprint = thumbprint;
+
+        ConfigurationError error = Assert.Single(Validate(document).Errors);
+        Assert.Equal("listener.local_certificate_thumbprint", error.Path);
+        Assert.Contains("sample's placeholder", error.Message, StringComparison.Ordinal);
+        Assert.Contains("this host's certificate", error.Message, StringComparison.Ordinal);
+    }
+
     /// Windows certificate tooling copies thumbprints with spaces and in either case; both
     /// paste forms are the same certificate.
     [Theory]
-    [InlineData("aaaa1111bbbb2222cccc3333dddd4444eeee5555")]
-    [InlineData("AA AA 11 11 BB BB 22 22 CC CC 33 33 DD DD 44 44 EE EE 55 55")]
+    [InlineData("a1b2c3d4e5f60718293a4b5c6d7e8f9012345678")]
+    [InlineData("A1 B2 C3 D4 E5 F6 07 18 29 3A 4B 5C 6D 7E 8F 90 12 34 56 78")]
     public void A_thumbprint_is_normalised_rather_than_rejected_for_its_formatting(
         string thumbprint)
     {

@@ -152,8 +152,7 @@ public class ConfigurationInterviewTests
     [Fact]
     public void A_re_run_over_the_shipped_sample_keeps_every_field_it_never_asked_about()
     {
-        string sample = File.ReadAllText(
-            Path.Combine(Architecture.RepositoryLayout.Root, "config", "ripcord.primary.yaml"));
+        string sample = Samples.Filled(Samples.Read("ripcord.primary.yaml"));
 
         ConfigurationDocument? seed = new YamlConfigStore().Read(WrittenTo(sample)).Document;
 

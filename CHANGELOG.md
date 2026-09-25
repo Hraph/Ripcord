@@ -27,6 +27,13 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
   runs the old build and ends with `ripcord service restart`. A listener started before this
   version has no record: `unknown` until it restarts.
 
+### Changed
+
+- **The samples' placeholder thumbprints are refused by name.** A `listener` block still
+  carrying `AAAA1111…` or `1111AAAA…` used to load, and the pair channel then failed as a
+  `SILENT` peer, which reads as a network fault. **A `ripcord.yaml` that still has them no
+  longer loads**: put the thumbprints of the two hosts' certificates, or remove the block.
+
 ### Fixed
 
 - **A refusal no longer blames Hyper-V when Hyper-V was not involved.** Every failure line

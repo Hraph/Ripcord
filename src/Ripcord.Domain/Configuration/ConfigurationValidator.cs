@@ -751,6 +751,7 @@ public static class ConfigurationValidator
             listener.LocalCertificateThumbprint,
             "listener.local_certificate_thumbprint",
             listener.Enabled,
+            "this host's certificate",
             errors,
             ref complete);
 
@@ -758,6 +759,7 @@ public static class ConfigurationValidator
             listener.PeerCertificateThumbprint,
             "listener.peer_certificate_thumbprint",
             listener.Enabled,
+            "the other host's certificate",
             errors,
             ref complete);
 
@@ -815,6 +817,7 @@ public static class ConfigurationValidator
         string? value,
         string path,
         bool required,
+        string whose,
         List<ConfigurationError> errors,
         ref bool complete)
     {
@@ -834,6 +837,14 @@ public static class ConfigurationValidator
         if (normalised.Length != 40 || !normalised.All(Uri.IsHexDigit))
         {
             errors.Add(new ConfigurationError(path, "must be 40 hexadecimal characters"));
+            complete = false;
+            return null;
+        }
+
+        if (ListenerSettings.SamplePlaceholders.Contains(normalised))
+        {
+            errors.Add(new ConfigurationError(
+                path, $"is the sample's placeholder: put the thumbprint of {whose}"));
             complete = false;
             return null;
         }

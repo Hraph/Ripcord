@@ -97,6 +97,14 @@ public sealed record ListenerSettings(
 {
     public const int DefaultPort = 7443;
 
+    /// The shipped samples' two values. Well-formed, so without this they pass as real and the
+    /// failure surfaces as a SILENT peer, which reads as a network fault.
+    public static readonly string[] SamplePlaceholders =
+    [
+        "AAAA1111BBBB2222CCCC3333DDDD4444EEEE5555",
+        "1111AAAA2222BBBB3333CCCC4444DDDD5555EEEE",
+    ];
+
     /// Beside the configuration file, which is beside the binary — with the log, the audit
     /// trail and the alert state. A default on another volume is a default that does not
     /// exist on a host that has no such volume, and the listener would be deployed onto a

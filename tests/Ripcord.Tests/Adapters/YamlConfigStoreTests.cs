@@ -1,3 +1,4 @@
+using Ripcord.Tests.Configuration;
 using Ripcord.Adapters.Yaml;
 using Ripcord.Domain.Checks;
 using Ripcord.Domain.Configuration;
@@ -123,15 +124,33 @@ public sealed class YamlConfigStoreTests : IDisposable
         Assert.NotEmpty(read.Errors);
     }
 
-    /// The two shipped samples are part of the deliverable; a sample that does not validate
-    /// is a broken one.
+    /// As shipped, a sample is refused on exactly its two placeholder thumbprints: nothing
+    /// else in it may need an edit before it describes a host.
+    [Theory]
+    [InlineData("ripcord.dr.yaml", "HV-REPLICA-01")]
+    [InlineData("ripcord.primary.yaml", "HV-PRIMARY-01")]
+    public void A_shipped_sample_is_refused_only_on_its_placeholder_thumbprints(
+        string fileName, string machineName)
+    {
+        ConfigurationRead read = new YamlConfigStore()
+            .Read(Path.Combine(RepositoryLayout.Root, "config", fileName));
+
+        Assert.Equal(
+            ["listener.local_certificate_thumbprint", "listener.peer_certificate_thumbprint"],
+            ConfigurationValidator.Validate(read.Document, machineName).Errors.Select(error => error.Path));
+    }
+
+    /// The two shipped samples are part of the deliverable: once the thumbprints are filled
+    /// in, a sample that does not validate is a broken one.
     [Theory]
     [InlineData("ripcord.dr.yaml", "HV-REPLICA-01")]
     [InlineData("ripcord.primary.yaml", "HV-PRIMARY-01")]
     public void The_shipped_sample_configurations_are_valid(string fileName, string machineName)
     {
-        ConfigurationRead read = new YamlConfigStore()
-            .Read(Path.Combine(RepositoryLayout.Root, "config", fileName));
+        string path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".yaml");
+        File.WriteAllText(path, Samples.Filled(Samples.Read(fileName)));
+
+        ConfigurationRead read = new YamlConfigStore().Read(path);
 
         Assert.Empty(read.Errors);
 

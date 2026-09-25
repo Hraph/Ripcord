@@ -9,8 +9,8 @@ internal static class ValidDocument
 {
     public const string MachineName = "HV-REPLICA-01";
     public const string PeerName = "HV-PRIMARY-01";
-    public const string LocalThumbprint = "AAAA1111BBBB2222CCCC3333DDDD4444EEEE5555";
-    public const string PeerThumbprint = "1111AAAA2222BBBB3333CCCC4444DDDD5555EEEE";
+    public const string LocalThumbprint = "A1B2C3D4E5F60718293A4B5C6D7E8F9012345678";
+    public const string PeerThumbprint = "0F1E2D3C4B5A69788796A5B4C3D2E1F012345678";
 
     public static ConfigurationDocument Create() => new()
     {
