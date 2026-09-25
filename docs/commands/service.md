@@ -150,7 +150,7 @@ itself would survive exactly one write. The folder is created if it is not there
 fresh host nothing has written a snapshot, and `icacls` cannot grant access to a path that does
 not exist.
 
-Nothing happens until the node name is typed in full.
+Nothing happens until `y` is answered; Enter declines.
 
 ## When it does not start
 
@@ -213,7 +213,7 @@ failover confirmations must never be.
 same reason as `restart`. On a running listener it changes nothing and says so — unlike
 `restart`, which restarts it.
 
-`stop` leaves the service installed and stops it. It is **confirmed by typing the node name**:
+`stop` leaves the service installed and stops it. It asks **`y/n`**, Enter declining:
 unlike a restart it outlives itself, and until somebody starts the listener again the other
 host cannot read this one and shows it `SILENT`. The step is done once Windows reports the
 service stopped, or fails after 30 seconds. On a stopped listener it changes nothing and asks

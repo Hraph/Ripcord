@@ -33,7 +33,7 @@ path; the copy by hand is still supported and is what a host with no outbound ac
    not be able to tell afterwards which problem you caused.
 2. `ripcord update --dry-run` — read the plan and the consequence it prints.
 3. `Stop-Service ripcord`, so the file is not held open.
-4. `ripcord update`, and type the node name. It downloads, verifies the signature against the
+4. `ripcord update`, and answer `y`. It downloads, verifies the signature against the
    key compiled into the running binary, and refuses without touching anything if it does not
    verify.
 5. `Start-Service ripcord`, then `ripcord version` — the new binary runs from here, not
@@ -144,7 +144,7 @@ dotnet publish src/Ripcord.Host.Windows/Ripcord.Host.Windows.csproj \
   discover.
 - **No unattended update.** `ripcord update` exists and is documented above, but it is never a
   scheduled task: it is off unless the configuration says otherwise, and it replaces the binary
-  only after somebody types the node name. Updating one host makes the pair unfailoverable until
+  only after somebody answers `y`. Updating one host makes the pair unfailoverable until
   the other follows, which is not a thing to discover from a log the next morning.
 - **No update of the peer from here.** Ripcord drives only the host it is run on (decision D49).
   The command names the host to run next; it does not reach across.

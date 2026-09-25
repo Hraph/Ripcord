@@ -68,9 +68,13 @@ on the way in. See [the diagnostic log](../diagnostics.md).
 
 ## Two rules that shape all of this
 
-**Read-only by default.** Nothing mutates without a word typed in full — the node name for a
-failover, the verb for a service. There is no `--force` anywhere, and no flag that skips a
-verification.
+**Read-only by default.** Nothing mutates without an explicit answer, and the answer matches the
+stakes. What moves production VMs — `failover`, `failback`, `fence` — takes **the node name
+typed in full**. Everything else that changes something — `service install`, `remove`, `stop`,
+`test-failover`, `update`, `rollback` — asks **`y/n [n]`**: it is undone by running it again or
+touches only a test VM, and Enter declines. Keeping the typed name for the few commands that
+need it keeps it from becoming a reflex. There is no `--force` anywhere, and no flag that skips
+a verification.
 
 **Never silent.** A degraded state is printed, not swallowed. A rule that could not be
 evaluated is listed as unevaluated, never as satisfied: a reassuring false negative is the

@@ -70,8 +70,8 @@ The normal case, and the reason it is safe:
   to `n`, so Enter does not write a file every command refuses. This is what happens over the sample `install.ps1` leaves behind: its `VM-DC-01`, `VM-LEGACY-01` and
   `VM-BACKUP-01` are examples, and only this host's own VMs are offered.
 
-The previous file being kept is why this asks `y/n [y]` rather than for the node name typed in full, as every
-irreversible command does. Nothing here is irreversible.
+The previous file being kept is why this asks `y/n [y]`, the one prompt where Enter accepts.
+Nothing here is irreversible.
 
 Fields inside the sections it *does* rewrite are carried too, not just whole sections: a VM's
 `failover: manual`, `has_passthrough_disk`, `expected_startup_ram_mb` and

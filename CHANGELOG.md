@@ -11,6 +11,14 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ## Unreleased
 
+### Changed
+
+- **Two confirmation levels.** Only what moves production VMs — `failover`, `failback`,
+  `fence` — still asks for the node name typed in full. `service install`, `remove` and `stop`,
+  `test-failover`, `update` and `rollback` ask `y/n [n]` instead, Enter declining: each is
+  undone by running it again or touches only a test VM, and a typed name asked for every
+  change becomes the reflex the failover confirmation must never be.
+
 ### Added
 
 - **`ripcord status` says the listener is running**, in one `LISTENER` line with the build

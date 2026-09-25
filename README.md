@@ -71,7 +71,8 @@ One page each, in [`docs/commands/`](docs/commands/).
 | [`check-update`](docs/commands/check-update.md) | is a newer release published | read-only |
 | [`version`](docs/commands/version.md) | which binary is this | read-only |
 
-Nothing mutates without a word typed in full. Every mutating command takes `--dry-run` and
+Nothing mutates without an explicit answer: the node name typed in full for what moves
+production VMs (`failover`, `failback`, `fence`), `y/n` with Enter declining for the rest. Every mutating command takes `--dry-run` and
 prints its whole plan without touching anything. The exit codes are the same everywhere and are
 listed once, in [the command index](docs/commands/README.md#exit-codes).
 

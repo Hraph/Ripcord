@@ -48,7 +48,7 @@ a convention, and conventions are what a half-finished run breaks.
 
 ## `--unattended`
 
-Waives the typed confirmation for VMs the configuration authorises by name, one at a time. It
+Waives the `y/n` confirmation for VMs the configuration authorises by name, one at a time. It
 does not make the run easier: it is **stricter**. Every unevaluable finding blocks an
 unattended run, where an attended one blocks on six.
 

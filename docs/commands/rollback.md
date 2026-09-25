@@ -63,7 +63,7 @@ find out the following week.
 | nothing set aside — this host has never updated | **2**, and it names `ripcord update` as the only thing that keeps one |
 | the binary set aside is still running — the listener, not restarted since the update | **2**, naming `ripcord service restart`: the exchange writes over that file, and Windows will not replace a running binary |
 | an earlier exchange did not finish | **2**. The file it left holds the only copy of a version this host was running; move it somewhere safe first |
-| the node name is not typed in full | **4**, nothing moved |
+| anything but `y` answered | **4**, nothing moved |
 | it failed before anything moved | **3**, and the host runs what it was running |
 | it failed part way and went back | **3**, same answer, with the reason it could not go on |
 | it failed part way and **could not** go back | **5**, and it names the file the old binary is under |
