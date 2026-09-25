@@ -98,6 +98,16 @@ public class ConfigurationInterviewTests
         Assert.Equal(ConfigurationTemplate.Render(again, original), original);
     }
 
+    /// The snapshot's default sits beside the file; `init` must not write one on another volume.
+    [Fact]
+    public void Init_never_writes_a_snapshot_path()
+    {
+        string yaml = ConfigurationTemplate.Render(Answer(FirstRun));
+
+        Assert.DoesNotContain("snapshot_path", yaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("state.json", yaml, StringComparison.Ordinal);
+    }
+
     /// The other half of "without losing it". A section the interview never asks about — and,
     /// worse, a key no version of this binary models — has to come back out.
     [Fact]
@@ -109,6 +119,7 @@ public class ConfigurationInterviewTests
             listener:
               enabled: true
               port: 7443
+              snapshot_path: "D:\\Ripcord\\state.json"
 
             something_a_later_version_added:
               with: a value
@@ -123,6 +134,7 @@ public class ConfigurationInterviewTests
 
         Assert.Contains("# The pair channel, set up by hand months ago.", rewritten, StringComparison.Ordinal);
         Assert.Contains("  port: 7443", rewritten, StringComparison.Ordinal);
+        Assert.Contains(@"  snapshot_path: ""D:\\Ripcord\\state.json""", rewritten, StringComparison.Ordinal);
         Assert.Contains("something_a_later_version_added:", rewritten, StringComparison.Ordinal);
         Assert.Equal(["listener", "something_a_later_version_added"], ConfigurationTemplate.CarriedOver(original));
     }
