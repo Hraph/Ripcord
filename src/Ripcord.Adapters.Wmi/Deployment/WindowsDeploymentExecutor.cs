@@ -40,7 +40,8 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             SnapshotReadable(desired.SnapshotFolder),
             imagePath is not null && ServiceIsStarted(),
             LogsWritable(desired.LogsFolder),
-            EventSourceRegistered());
+            EventSourceRegistered(),
+            desired.SnapshotVolume.Length == 0 || Directory.Exists(desired.SnapshotVolume));
     }
 
     public void Apply(DeploymentStep change, DesiredDeployment desired)
@@ -49,7 +50,7 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         ArgumentNullException.ThrowIfNull(desired);
 
         // icacls cannot grant on a path that does not exist, and a host being deployed for
-        // the first time has no D:\Ripcord until the first `ripcord status` writes one.
+        // the first time may have no snapshot folder until the first `ripcord status` writes one.
         if (change.Action == DeploymentAction.GrantSnapshotAccess)
         {
             Directory.CreateDirectory(desired.SnapshotFolder);
