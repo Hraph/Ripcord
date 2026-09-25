@@ -186,6 +186,43 @@ public class ConfigurationInterviewTests
                 "HV-PRIMARY-01").Errors);
     }
 
+    /// Once `updates` is written for real, the sample's commented example of it would read as a
+    /// second block. The examples around it are other sections' and stay.
+    [Fact]
+    public void A_re_run_over_the_sample_drops_its_commented_updates_example_only()
+    {
+        string sample = File.ReadAllText(
+            Path.Combine(Architecture.RepositoryLayout.Root, "config", "ripcord.primary.yaml"));
+        ConfigurationDocument? seed = new YamlConfigStore().Read(WrittenTo(sample)).Document;
+        InterviewFacts facts = new(
+            "HV-PRIMARY-01",
+            [],
+            [
+                new InterviewVm("VM-DC-01", true, true),
+                new InterviewVm("VM-LEGACY-01", true, true),
+                new InterviewVm("VM-BACKUP-01", false, true),
+            ]);
+
+        string rewritten = ConfigurationTemplate.Render(
+            Answer([.. Enumerable.Repeat("", 40)], seed, facts), sample);
+
+        Assert.Contains("# updates:", sample, StringComparison.Ordinal);
+        Assert.DoesNotContain("# updates:", rewritten, StringComparison.Ordinal);
+        Assert.DoesNotContain("#   install: true", rewritten, StringComparison.Ordinal);
+        Assert.DoesNotContain("Two switches, because they buy different things", rewritten, StringComparison.Ordinal);
+        Assert.Single(rewritten.Split('\n'), line => line == "updates:");
+
+        foreach (string example in new[] { "# alerting:", "# dashboard:", "# diagnostics:" })
+        {
+            Assert.Contains(example, rewritten, StringComparison.Ordinal);
+        }
+
+        Assert.Contains(
+            "#     url: \"https://hooks.example.net/ripcord\"\n\n# The read-only page",
+            rewritten.ReplaceLineEndings("\n"),
+            StringComparison.Ordinal);
+    }
+
     /// The pair's two files are mirror images, so running this over the other host's copy is a
     /// mistake somebody will make. The peer name it carries is this machine, and offering it as
     /// the default would leave a question Enter refuses for ever.

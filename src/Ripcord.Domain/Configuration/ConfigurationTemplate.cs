@@ -132,7 +132,7 @@ public static class ConfigurationTemplate
             }
         }
 
-        if (YamlSections.Epilogue(previous) is { Count: > 0 } epilogue)
+        if (WithoutUpdatesExample(YamlSections.Epilogue(previous)) is { Count: > 0 } epilogue)
         {
             text.AppendLine();
 
@@ -143,6 +143,43 @@ public static class ConfigurationTemplate
         }
 
         return text.ToString();
+    }
+
+    /// The samples close with a commented-out `updates` example. Once the section is written for
+    /// real, that paragraph reads as a second block contradicting the first, so it goes.
+    private static List<string> WithoutUpdatesExample(IReadOnlyList<string> epilogue)
+    {
+        List<string> kept = [];
+        int index = 0;
+
+        while (index < epilogue.Count)
+        {
+            int start = index;
+
+            while (index < epilogue.Count && epilogue[index].Length == 0)
+            {
+                index++;
+            }
+
+            int text = index;
+
+            while (index < epilogue.Count && epilogue[index].Length > 0)
+            {
+                index++;
+            }
+
+            if (!epilogue.Skip(text).Take(index - text).Any(line => line.TrimEnd() == "# updates:"))
+            {
+                kept.AddRange(epilogue.Skip(start).Take(index - start));
+            }
+        }
+
+        while (kept.Count > 0 && kept[0].Length == 0)
+        {
+            kept.RemoveAt(0);
+        }
+
+        return kept;
     }
 
     /// The acknowledgements `Render` took out of `checks` because their VM is no longer declared.
