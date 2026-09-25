@@ -16,10 +16,20 @@ public static class AccessControl
 
     private const string Deny = "(DENY)";
 
+    /// Rights that include modifying, and so deleting, a file. The listener's log folder needs
+    /// this rather than write alone: pruning an old log deletes it.
+    private static readonly string[] ModifyRights = ["M", "F", "GA"];
+
     /// Deny wins, as it does in Windows itself. An account named nowhere in the output has no
     /// access, which is the same answer as no output at all — the caller treats both as "grant
     /// it", and granting access that already exists changes nothing.
-    public static bool GrantsRead(string? icaclsOutput, string account)
+    public static bool GrantsRead(string? icaclsOutput, string account) =>
+        Grants(icaclsOutput, account, ReadRights);
+
+    public static bool GrantsModify(string? icaclsOutput, string account) =>
+        Grants(icaclsOutput, account, ModifyRights);
+
+    private static bool Grants(string? icaclsOutput, string account, string[] wanted)
     {
         ArgumentNullException.ThrowIfNull(account);
 
@@ -38,7 +48,7 @@ public static class AccessControl
             }
 
             granted |= Rights(rights).Any(right =>
-                ReadRights.Contains(right, StringComparer.OrdinalIgnoreCase));
+                wanted.Contains(right, StringComparer.OrdinalIgnoreCase));
         }
 
         return granted;

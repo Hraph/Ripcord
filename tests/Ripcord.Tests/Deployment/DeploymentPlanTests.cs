@@ -11,7 +11,8 @@ public class DeploymentPlanTests
         BinaryPath: @"D:\Ripcord\ripcord.exe",
         SnapshotPath: @"D:\Ripcord\state.json",
         Port: 7443,
-        PeerAddress: "192.0.2.11");
+        PeerAddress: "192.0.2.11",
+        LogsFolder: @"D:\Ripcord\logs");
 
     [Fact]
     public void On_a_fresh_host_everything_is_created()
@@ -20,7 +21,8 @@ public class DeploymentPlanTests
 
         Assert.Equal(
             [DeploymentAction.CreateService, DeploymentAction.CreateFirewallRule,
-             DeploymentAction.GrantSnapshotAccess, DeploymentAction.StartService],
+             DeploymentAction.GrantSnapshotAccess, DeploymentAction.GrantLogsAccess,
+             DeploymentAction.RegisterEventSource, DeploymentAction.StartService],
             plan.Steps.Select(step => step.Action));
         Assert.True(plan.ChangesAnything);
     }
@@ -121,7 +123,8 @@ public class DeploymentPlanTests
         DeploymentPlan plan = DeploymentPlan.ToRemove(Matching());
 
         Assert.Equal(
-            [DeploymentAction.RevokeSnapshotAccess, DeploymentAction.RemoveFirewallRule,
+            [DeploymentAction.RemoveEventSource, DeploymentAction.RevokeLogsAccess,
+             DeploymentAction.RevokeSnapshotAccess, DeploymentAction.RemoveFirewallRule,
              DeploymentAction.RemoveService],
             plan.Steps.Select(step => step.Action));
     }
@@ -220,5 +223,94 @@ public class DeploymentPlanTests
         FirewallPort: 7443,
         FirewallRemoteAddress: "192.0.2.11",
         SnapshotReadableByService: true,
-        ServiceRunning: true);
+        ServiceRunning: true,
+        LogsWritableByService: true,
+        EventSourceRegistered: true);
+
+    /// The field failure: the service account could write nowhere, so the listener died
+    /// before it answered Windows. The grant is on the logs folder and only there — never on
+    /// the install folder holding the binary.
+    [Fact]
+    public void A_logs_folder_the_service_cannot_write_is_granted_modify_on_that_folder_only()
+    {
+        DeploymentStep step = Assert.Single(
+            DeploymentPlan.For(Desired, Matching() with { LogsWritableByService = false }).Steps);
+
+        Assert.Equal(DeploymentAction.GrantLogsAccess, step.Action);
+        Assert.Contains(@"'D:\Ripcord\logs'", step.Description, StringComparison.Ordinal);
+        Assert.DoesNotContain(@"'D:\Ripcord'", step.Description, StringComparison.Ordinal);
+        Assert.Contains("modify", step.Description, StringComparison.Ordinal);
+    }
+
+    /// Running and missing its folder: grant it, and leave the running service alone.
+    [Fact]
+    public void A_running_service_missing_its_logs_folder_is_granted_without_a_restart()
+    {
+        DeploymentPlan plan = DeploymentPlan.For(
+            Desired, Matching() with { LogsWritableByService = false, EventSourceRegistered = false });
+
+        Assert.Equal(
+            [DeploymentAction.GrantLogsAccess, DeploymentAction.RegisterEventSource],
+            plan.Steps.Select(step => step.Action));
+    }
+
+    /// The host as the field test left it: installed, stopped, nowhere to write. Re-running
+    /// the install repairs it and only then starts the service.
+    [Fact]
+    public void A_stopped_service_gets_its_folder_and_source_before_it_is_started()
+    {
+        DeploymentPlan plan = DeploymentPlan.For(
+            Desired,
+            Matching() with
+            {
+                ServiceRunning = false,
+                LogsWritableByService = false,
+                EventSourceRegistered = false,
+            });
+
+        Assert.Equal(
+            [DeploymentAction.GrantLogsAccess, DeploymentAction.RegisterEventSource,
+             DeploymentAction.StartService],
+            plan.Steps.Select(step => step.Action));
+    }
+
+    /// An update restarts the service, so it waits for the folders like a start does.
+    [Fact]
+    public void A_service_update_comes_after_the_grants_it_needs()
+    {
+        DeploymentPlan plan = DeploymentPlan.For(
+            Desired,
+            Matching() with
+            {
+                ServiceBinaryPath = @"C:\Old\ripcord.exe",
+                LogsWritableByService = false,
+            });
+
+        Assert.Equal(
+            [DeploymentAction.GrantLogsAccess, DeploymentAction.UpdateService],
+            plan.Steps.Select(step => step.Action));
+    }
+
+    /// The logs themselves stay, like the snapshot: they explain what happened before.
+    [Fact]
+    public void Removal_revokes_the_logs_folder_without_deleting_it()
+    {
+        DeploymentStep step = Assert.Single(
+            DeploymentPlan.ToRemove(ObservedDeployment.Nothing with { LogsWritableByService = true })
+                .Steps);
+
+        Assert.Equal(DeploymentAction.RevokeLogsAccess, step.Action);
+        Assert.DoesNotContain("delete", step.Description, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static TheoryData<DeploymentAction> Actions => new(Enum.GetValues<DeploymentAction>());
+
+    [Theory]
+    [MemberData(nameof(Actions))]
+    public void Only_a_start_a_restart_or_an_update_starts_the_service(DeploymentAction action) =>
+        Assert.Equal(
+            action is DeploymentAction.StartService
+                or DeploymentAction.RestartService
+                or DeploymentAction.UpdateService,
+            DeploymentPlan.StartsTheService(action));
 }

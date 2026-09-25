@@ -5,7 +5,10 @@ public sealed record DesiredDeployment(
     string BinaryPath,
     string SnapshotPath,
     int Port,
-    string PeerAddress)
+    string PeerAddress,
+
+    /// The only folder the service account may write to: the listener's log goes there.
+    string LogsFolder)
 {
     /// Access is granted on the folder, never on the snapshot file. `ripcord` rewrites the
     /// snapshot by moving a temporary file over it, and a move brings the new file's access
@@ -37,7 +40,12 @@ public sealed record ObservedDeployment(
     /// registered and stopped serves nothing, and the pair view on the other host degrades to
     /// "offline" — which reads as a network problem rather than as a service somebody has to
     /// start.
-    bool ServiceRunning = false)
+    bool ServiceRunning = false,
+    bool LogsWritableByService = false,
+
+    /// The Application event log source the listener reports a failed start under. Without it
+    /// registered, a virtual account cannot write there at all.
+    bool EventSourceRegistered = false)
 {
     public static ObservedDeployment Nothing { get; } =
         new(false, null, false, null, null, false);
@@ -64,6 +72,10 @@ public enum DeploymentAction
     RemoveFirewallRule,
     GrantSnapshotAccess,
     RevokeSnapshotAccess,
+    GrantLogsAccess,
+    RevokeLogsAccess,
+    RegisterEventSource,
+    RemoveEventSource,
 }
 
 /// One change, and why it is needed. The reason is what `--dry-run` prints, so it is written
@@ -80,6 +92,8 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps)
     public const string ServiceAccount = @"NT SERVICE\ripcord";
 
     public const string FirewallRuleName = "Ripcord listener";
+
+    public const string EventSource = "ripcord";
 
     public bool ChangesAnything => Steps.Count > 0;
 
@@ -124,6 +138,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps)
 
         // Set when the service will need starting, and acted on last — see below.
         string? start = null;
+        DeploymentStep? update = null;
 
         // Order matters: the service exists before the port is opened, so the port is never
         // open onto nothing.
@@ -139,10 +154,11 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps)
         }
         else if (!SamePath(observed.ServiceBinaryPath, desired.BinaryPath))
         {
-            steps.Add(new DeploymentStep(
+            // Applied last, like a start: it restarts the service, which needs its folders.
+            update = new DeploymentStep(
                 DeploymentAction.UpdateService,
                 $"Point the '{ServiceName}' service at '{desired.BinaryPath} serve'",
-                $"it currently runs '{observed.ServiceBinaryPath}'"));
+                $"it currently runs '{observed.ServiceBinaryPath}'");
         }
         else if (!observed.ServiceRunning)
         {
@@ -177,10 +193,31 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps)
                 "the service account cannot read the folder holding the snapshot it serves"));
         }
 
-        // Started last, after the rule that lets the peer in and the access it needs to the
-        // file it serves. Starting it first would bring up a listener that cannot read its own
-        // snapshot, and the peer would be told this host has nothing to say rather than that
-        // it is half-deployed.
+        if (!observed.LogsWritableByService)
+        {
+            steps.Add(new DeploymentStep(
+                DeploymentAction.GrantLogsAccess,
+                $"Create '{desired.LogsFolder}' and grant {ServiceAccount} modify access to it",
+                "the listener writes its log there; it may write nowhere else"));
+        }
+
+        if (!observed.EventSourceRegistered)
+        {
+            steps.Add(new DeploymentStep(
+                DeploymentAction.RegisterEventSource,
+                $"Register the '{EventSource}' source in the Application event log",
+                "the listener reports there a start it cannot log to its file"));
+        }
+
+        // Started last, after the rule that lets the peer in, the access it needs to the file
+        // it serves and the folder it logs to. Starting it first would bring up a listener that
+        // cannot read its own snapshot, and the peer would be told this host has nothing to say
+        // rather than that it is half-deployed.
+        if (update is not null)
+        {
+            steps.Add(update);
+        }
+
         if (start is not null)
         {
             steps.Add(new DeploymentStep(
@@ -198,6 +235,23 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps)
         ArgumentNullException.ThrowIfNull(observed);
 
         List<DeploymentStep> steps = [];
+
+        if (observed.EventSourceRegistered)
+        {
+            steps.Add(new DeploymentStep(
+                DeploymentAction.RemoveEventSource,
+                $"Remove the '{EventSource}' source from the Application event log",
+                "nothing will report under it any more"));
+        }
+
+        // The folder and its logs stay, like the snapshot: they are what explains the past.
+        if (observed.LogsWritableByService)
+        {
+            steps.Add(new DeploymentStep(
+                DeploymentAction.RevokeLogsAccess,
+                $"Revoke {ServiceAccount}'s access to the logs folder",
+                "the service account no longer needs it"));
+        }
 
         if (observed.SnapshotReadableByService)
         {
@@ -225,6 +279,13 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps)
 
         return new DeploymentPlan(steps);
     }
+
+    /// The steps after which the service is expected to be running, and so the ones whose
+    /// failure is a service that did not start rather than a command that did not run.
+    public static bool StartsTheService(DeploymentAction action) =>
+        action is DeploymentAction.StartService
+            or DeploymentAction.RestartService
+            or DeploymentAction.UpdateService;
 
     /// Windows paths and addresses are case-insensitive; a difference in case is not a change.
     private static bool SamePath(string? left, string? right) =>

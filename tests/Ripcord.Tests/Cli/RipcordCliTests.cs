@@ -362,7 +362,8 @@ public class RipcordCliTests
         Assert.Equal(ExitCode.Success, run.Code);
         Assert.Equal(
             [DeploymentAction.CreateService, DeploymentAction.CreateFirewallRule,
-             DeploymentAction.GrantSnapshotAccess, DeploymentAction.StartService],
+             DeploymentAction.GrantSnapshotAccess, DeploymentAction.GrantLogsAccess,
+             DeploymentAction.RegisterEventSource, DeploymentAction.StartService],
             executor.Applied);
     }
 
@@ -393,7 +394,8 @@ public class RipcordCliTests
 
         Assert.Equal(ExitCode.Success, run.Code);
         Assert.Equal(
-            [DeploymentAction.RevokeSnapshotAccess, DeploymentAction.RemoveFirewallRule,
+            [DeploymentAction.RemoveEventSource, DeploymentAction.RevokeLogsAccess,
+             DeploymentAction.RevokeSnapshotAccess, DeploymentAction.RemoveFirewallRule,
              DeploymentAction.RemoveService],
             executor.Applied);
     }
@@ -632,7 +634,9 @@ public class RipcordCliTests
         FirewallPort: 7443,
         FirewallRemoteAddress: "192.0.2.11",
         SnapshotReadableByService: true,
-        ServiceRunning: true);
+        ServiceRunning: true,
+        LogsWritableByService: true,
+        EventSourceRegistered: true);
 
     private const string DefaultConfigPath = "/opt/ripcord/ripcord.yaml";
 

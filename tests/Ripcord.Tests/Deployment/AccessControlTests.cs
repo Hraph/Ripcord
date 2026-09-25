@@ -70,4 +70,32 @@ public class AccessControlTests
     public void The_account_is_matched_whatever_its_case() =>
         Assert.True(AccessControl.GrantsRead(
             "state.json nt service\\RIPCORD:(R)\n", Account));
+
+    /// The logs folder needs modify: pruning an old log deletes it, which write alone does not
+    /// allow. The inheritable form is what `service install` grants.
+    [Theory]
+    [InlineData("(OI)(CI)(M)")]
+    [InlineData("(I)(OI)(CI)(M)")]
+    [InlineData("(F)")]
+    public void Modify_or_full_control_counts_as_modify(string rights) =>
+        Assert.True(AccessControl.GrantsModify($"logs NT SERVICE\\ripcord:{rights}\n", Account));
+
+    [Theory]
+    [InlineData("(RX)")]
+    [InlineData("(W)")]
+    [InlineData("(OI)(CI)(R)")]
+    public void Read_or_write_alone_is_not_modify(string rights) =>
+        Assert.False(AccessControl.GrantsModify($"logs NT SERVICE\\ripcord:{rights}\n", Account));
+
+    [Fact]
+    public void A_deny_outranks_a_modify_grant() =>
+        Assert.False(AccessControl.GrantsModify(
+            "logs NT SERVICE\\ripcord:(OI)(CI)(M)\n"
+            + "     NT SERVICE\\ripcord:(DENY)(W)\n",
+            Account));
+
+    [Fact]
+    public void Another_account_holding_modify_gives_this_one_nothing() =>
+        Assert.False(AccessControl.GrantsModify(
+            "logs BUILTIN\\Administrators:(OI)(CI)(M)\n", Account));
 }

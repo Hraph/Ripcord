@@ -1,4 +1,5 @@
 using Ripcord.Domain.Configuration;
+using Ripcord.Domain.Diagnostics;
 
 namespace Ripcord.Domain.Deployment;
 
@@ -15,7 +16,8 @@ public static class DesiredDeploymentFactory
                 binaryPath,
                 configuration.Listener.SnapshotPath,
                 configuration.Listener.Port,
-                configuration.Peer.Address)
+                configuration.Peer.Address,
+                LogFolder.Beside(binaryPath))
             : null;
     }
 }
