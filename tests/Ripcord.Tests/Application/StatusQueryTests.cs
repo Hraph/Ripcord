@@ -1,3 +1,4 @@
+using Ripcord.Ports.Diagnostics;
 using Ripcord.Adapters.Fake;
 using Ripcord.Application.Status;
 using Ripcord.Application;
@@ -149,10 +150,11 @@ public class StatusQueryTests
         StatusQuery query = new(
             new StubConfigStore(ConfigurationRead.Failed("ripcord.yaml", "file not found")),
             Pair(new FakeHypervProvider(FakeScenarios.Healthy(Now))),
-            ListenerService.Running());
+            ListenerService.Running(),
+            new NoLogs());
 
         StatusOutcome outcome = await query.ExecuteAsync(
-            new StatusRequest("ripcord.yaml", FakeScenarios.LocalHostName), CancellationToken.None);
+            Request(FakeScenarios.LocalHostName), CancellationToken.None);
 
         Assert.Equal(ExitCode.InvalidConfiguration, outcome.Code);
         Assert.Contains("file not found", Assert.Single(outcome.Errors).Message);
@@ -232,7 +234,8 @@ public class StatusQueryTests
         IPeerChannel? peerChannel = null,
         ISnapshotStore? snapshotStore = null,
         FakeHostSystemProvider? hostSystem = null,
-        IDeploymentExecutor? executor = null)
+        IDeploymentExecutor? executor = null,
+        IDiagnosticLogReader? logReader = null)
     {
         StatusQuery query = new(
             new StubConfigStore(ConfigurationRead.Succeeded(ValidDocument())),
@@ -241,11 +244,16 @@ public class StatusQueryTests
                 hostSystem,
                 peerChannel,
                 snapshotStore),
-            executor ?? ListenerService.Running());
+            executor ?? ListenerService.Running(),
+            logReader ?? new NoLogs());
 
-        return query.ExecuteAsync(
-            new StatusRequest("ripcord.yaml", machineName), CancellationToken.None);
+        return query.ExecuteAsync(Request(machineName), CancellationToken.None);
     }
+
+    private static StatusRequest Request(string machineName) =>
+        new("ripcord.yaml", machineName, ThisBuild, @"C:\Program Files\Ripcord\ripcord.exe");
+
+    private const string ThisBuild = "0.7.0+def5678";
 
     /// The shared well-formed document. The snapshot path carries a folder because a path
     /// without one is refused: it would resolve against the working directory of whoever runs

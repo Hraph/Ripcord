@@ -359,6 +359,49 @@ public class StatusRendererTests
         Assert.Equal(["vm-backup-01", "VM-DC-01", "VM-LEGACY-01"], names);
     }
 
+    /// A running listener is one line, its build at the right edge, like a host's presence.
+    [Fact]
+    public void A_running_listener_is_one_line_with_its_build()
+    {
+        string rendered = StatusRenderer.Render(
+            DegradedPair(), TimeSpan.FromSeconds(120), Now,
+            running: new ListenerRunning(false, "0.7.0+def5678", false));
+        string[] lines = rendered.Split('\n');
+
+        string line = Assert.Single(lines, line => line.StartsWith("LISTENER", StringComparison.Ordinal));
+        Assert.StartsWith("LISTENER  running", line, StringComparison.Ordinal);
+        Assert.EndsWith("0.7.0+def5678", line, StringComparison.Ordinal);
+        Assert.Equal(StatusRenderer.Width, line.Length);
+        Assert.DoesNotContain("Next:", rendered, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_listener_on_another_build_than_this_binary_points_to_the_restart()
+    {
+        string rendered = StatusRenderer.Render(
+            DegradedPair(), TimeSpan.FromSeconds(120), Now,
+            running: new ListenerRunning(false, "0.6.0+abc1234", true));
+
+        Assert.EndsWith(
+            "  Not the build of this ripcord.exe. Next: ripcord service restart\n",
+            rendered.ReplaceLineEndings("\n"),
+            StringComparison.Ordinal);
+        Assert.All(rendered.Split('\n'), line => Assert.True(line.Length <= StatusRenderer.Width, line));
+    }
+
+    /// A problem is the block, never the line: the two cannot both be on the page.
+    [Fact]
+    public void An_alert_takes_the_place_of_the_running_line()
+    {
+        string rendered = StatusRenderer.Render(
+            DegradedPair(), TimeSpan.FromSeconds(120), Now,
+            listener: new ListenerAlert("NOT RUNNING", "stopped", "ripcord service", Critical: true),
+            running: new ListenerRunning(false, "0.7.0+def5678", false));
+
+        Assert.DoesNotContain("running", rendered.Split('\n').Last(line => line.Length > 0), StringComparison.Ordinal);
+        Assert.Contains("LISTENER  NOT RUNNING", rendered, StringComparison.Ordinal);
+    }
+
     private static string Render(PairView view) =>
         StatusRenderer.Render(view, TimeSpan.FromSeconds(120), Now);
 

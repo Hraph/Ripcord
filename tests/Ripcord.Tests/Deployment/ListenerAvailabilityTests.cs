@@ -86,6 +86,36 @@ public sealed class ListenerAvailabilityTests
             Judge(Enabled, unreadable)!.Reason);
     }
 
+    /// The other half: when nothing is wrong, the line says so rather than leaving silence.
+    [Theory]
+    [InlineData(ServiceRunState.Running, false)]
+    [InlineData(ServiceRunState.StartPending, true)]
+    public void A_listener_the_peer_can_read_is_said(ServiceRunState state, bool starting)
+    {
+        RunningBuild build = new("0.7.0+def5678", null, Outdated: true);
+
+        Assert.Equal(
+            new ListenerRunning(starting, "0.7.0+def5678", Outdated: true),
+            ListenerAvailability.Running(Enabled, Service(state), build));
+    }
+
+    /// Exactly when `Judge` raises something, or the listener is switched off, there is no line.
+    [Fact]
+    public void Nothing_is_said_running_when_it_is_not()
+    {
+        Assert.Null(ListenerAvailability.Running(Enabled, Service(ServiceRunState.Stopped), null));
+        Assert.Null(ListenerAvailability.Running(Enabled, Service(ServiceRunState.Unknown), null));
+        Assert.Null(ListenerAvailability.Running(Enabled, ObservedService.Absent, null));
+        Assert.Null(ListenerAvailability.Running(
+            Enabled with { Enabled = false }, Service(ServiceRunState.Running), null));
+    }
+
+    [Fact]
+    public void An_unrecorded_build_still_says_running() =>
+        Assert.Equal(
+            new ListenerRunning(false, null, false),
+            ListenerAvailability.Running(Enabled, Service(ServiceRunState.Running), null));
+
     private static readonly ListenerSettings Enabled =
         new(true, ListenerSettings.DefaultPort, "AA", "BB", @"C:\Program Files\Ripcord\state.json");
 

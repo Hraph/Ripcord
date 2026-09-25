@@ -60,8 +60,18 @@ LISTENER  NOT RUNNING
 | `NOT RUNNING` | the service is stopped, stopping or paused. Next: `ripcord service`, which says why |
 | `UNKNOWN` | Windows would not describe the service — the reason is printed, in the words `ripcord service` uses. Never read as stopped |
 
-A running or starting service adds nothing, and neither does a listener switched off in
-`ripcord.yaml`: that is a choice, and the `PEER` section already says no channel is configured.
+A running or starting service is one line instead, so a listener that is up is seen rather than
+inferred from a missing block — with the build its process recorded when it started, right
+aligned, as `ripcord service` shows it:
+
+```
+LISTENER  running                                           0.7.0+def5678
+```
+
+No build when the process recorded none. When it runs another build than this `ripcord.exe` —
+after `ripcord update`, before the restart — a second line says so and names
+`ripcord service restart`. A listener switched off in `ripcord.yaml` adds nothing: that is a
+choice, and the `PEER` section already says no channel is configured.
 The block never changes the exit code: it is a fact about this host's listener, not a failed
 read.
 

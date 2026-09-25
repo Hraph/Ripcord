@@ -53,14 +53,8 @@ public sealed class ServiceInspection(
             }
         }
 
-        ListenerProcess? recorded =
-            service.State == ServiceRunState.Running
-            && logReader.Tail(WindowsPath.Join(logsFolder, ListenerProcess.FileName), 4) is
-                { Unreadable: null } record
-                ? ListenerProcess.Parse(record.Lines)
-                : null;
-
-        RunningBuild? build = RunningBuild.Judge(service, recorded, thisBuild, request.BinaryPath);
+        RunningBuild? build = ListenerProcessReading.Judge(
+            logReader, service, logsFolder, thisBuild, request.BinaryPath);
 
         return new ServiceReport(
             service,

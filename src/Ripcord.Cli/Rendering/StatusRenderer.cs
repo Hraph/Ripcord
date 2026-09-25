@@ -28,7 +28,8 @@ public static class StatusRenderer
         DateTimeOffset now,
         string? updateNotice = null,
         Palette? palette = null,
-        ListenerAlert? listener = null)
+        ListenerAlert? listener = null,
+        ListenerRunning? running = null)
     {
         ArgumentNullException.ThrowIfNull(view);
 
@@ -41,17 +42,19 @@ public static class StatusRenderer
         AppendHost(output, "LOCAL", view.Local, offlineAfter, now);
         output.AppendLine();
         AppendHost(output, "PEER", view.Peer, offlineAfter, now, view.PeerCapturedAt);
-        AppendListener(output, listener);
+        AppendListener(output, listener, running);
 
         return Layout.Rendered(output, palette);
     }
 
     /// Last, after both hosts: it explains what the other host will show about this one,
     /// which only this side can see.
-    private static void AppendListener(StringBuilder output, ListenerAlert? alert)
+    private static void AppendListener(
+        StringBuilder output, ListenerAlert? alert, ListenerRunning? running)
     {
         if (alert is null)
         {
+            AppendRunning(output, running);
             return;
         }
 
@@ -67,6 +70,32 @@ public static class StatusRenderer
         }
 
         output.AppendLine($"{new string(' ', Indent)}Next: {alert.Next}");
+    }
+
+    /// One line when nothing is wrong: a running listener is said, not inferred from silence.
+    private static void AppendRunning(StringBuilder output, ListenerRunning? running)
+    {
+        if (running is null)
+        {
+            return;
+        }
+
+        string state = running.Starting ? "starting" : "running";
+        string build = running.Build ?? "";
+
+        output.AppendLine();
+        output.AppendLine(
+            Ink.Bold(Pad("LISTENER", LabelColumn + 2))
+            + Ink.Green(Pad(state, Width - LabelColumn - 2 - build.Length))
+            + build);
+
+        if (running.Outdated)
+        {
+            output.AppendLine(
+                new string(' ', Indent)
+                + Ink.Amber("Not the build of this ripcord.exe.")
+                + " Next: ripcord service restart");
+        }
     }
 
     /// Beside the version line, because that is what it is about, and below the banner

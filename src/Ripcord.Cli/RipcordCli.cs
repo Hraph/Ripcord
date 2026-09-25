@@ -554,10 +554,14 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             return ExitCode.InvalidConfiguration;
         }
 
-        StatusQuery query = new(ports.ConfigStore, this.Pair(), ports.DeploymentExecutor);
+        StatusQuery query = new(
+            ports.ConfigStore, this.Pair(), ports.DeploymentExecutor, ports.LogReader);
 
         StatusOutcome outcome = await query
-            .ExecuteAsync(new StatusRequest(path, environment.MachineName), cancellationToken)
+            .ExecuteAsync(
+                new StatusRequest(
+                    path, environment.MachineName, BuildInfo.VersionWithCommit, environment.BinaryPath),
+                cancellationToken)
             .ConfigureAwait(false);
 
         // Degradations are never silent: a host whose free space could not be read renders
@@ -575,7 +579,8 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
                 ports.Clock.UtcNow,
                 this.KnownUpdate(),
                 this.Ink,
-                rendered.Listener));
+                rendered.Listener,
+                rendered.Running));
             return outcome.Code;
         }
 
