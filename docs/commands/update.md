@@ -23,6 +23,11 @@ which an unverified release is installed.
 
 The new version runs from the next service start, not from the command that installed it.
 
+**Restart the listener after updating.** Until then it runs the binary set aside as
+`ripcord.exe.old`, and Windows renames a running binary but will not delete or replace it.
+The next `update` or `rollback` finds it still running and refuses before anything is fetched
+or moved, naming `ripcord service restart`.
+
 ## The consequence it prints every time
 
 Updating one host makes the pair disagree, and a failover spanning both is refused while it

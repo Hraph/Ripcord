@@ -23,6 +23,10 @@ Shut the VM down, prepare the failover, start it on the replica, reverse replica
 VM, and verify it came up on the expected switch. The last one is not a formality: a VM that
 boots with no network has failed over into an outage.
 
+The shutdown is done when the VM reads *Off*, not when the guest accepted the request: Hyper-V
+refuses the prepare on a VM that is still running. It is polled every five seconds for up to
+ten minutes; a guest still on after that fails step 1, and nothing is prepared.
+
 ## `--scenario unplanned` — three steps, all here
 
 Nothing is asked of the host that is gone. Replication is not reversed, because reversing needs
@@ -55,7 +59,7 @@ fewer machines than were asked for.
 ## If a step fails
 
 What this invocation did is undone, and only that. A shutdown that succeeded before a failed
-prepare puts the VM back on. If the undo itself fails, the command says so unmissably and names
+prepare puts the VM back on, retried three times fifteen seconds apart. If the undo itself fails, the command says so unmissably and names
 the command to type by hand — that is exit code 5, and it is the answer nobody may walk away
 from.
 

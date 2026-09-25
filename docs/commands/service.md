@@ -29,6 +29,8 @@ RIPCORD LISTENER
                written by 'ripcord status', served to the peer
                written 40s ago
                readable by NT SERVICE\ripcord
+    key        readable by NT SERVICE\ripcord
+               0123456789ABCDEF0123456789ABCDEF01234567
     logs       writable by NT SERVICE\ripcord
                C:\Program Files\Ripcord\logs
     log        listener-2026-09-25.log
@@ -71,6 +73,7 @@ running two versions.
 | `command` | what Windows runs. The service always reads `ripcord.yaml` beside that binary. |
 | `last exit` | only when it is not running: the code Windows recorded, and what it means. |
 | `firewall`, `snapshot`, `logs` | what the configuration needs, and whether the host has it. Left out when `ripcord.yaml` does not load. |
+| `key` | whether the service account can read the private key of `listener.local_certificate_thumbprint`, or that no key was found for it in `LocalMachine\My`. Machine keys are readable by SYSTEM and Administrators only. |
 | `snapshot`, third line | how long ago `state.json` was written, `STALE` past `peer.offline_after_sec`, or `NOT written yet`. When missing or stale, the report ends by naming `ripcord status`: until it runs, the peer shows this host offline or stale. |
 | `log` | the day's `logs\listener-YYYY-MM-DD.log` (UTC date) beside the service's binary, or yesterday's when today has none, and its last 20 lines. |
 
@@ -119,11 +122,16 @@ correct host does nothing. A moved binary, a changed port or a changed peer addr
 update rather than a teardown. `remove` is the same list read backwards — and it leaves the
 snapshot file alone, because an uninstaller that deletes data is one people are afraid to run.
 
-Six steps at most, in this order: create the service, open the port to the peer only, grant
+Seven steps at most, in this order: create the service, open the port to the peer only, grant
 the service account read access to the folder holding the snapshot, create `logs` beside the
-binary and grant the service account **modify** access to it, register the `ripcord` source in
-the Application event log, **and start or repoint the service last** — after the rule that lets
+binary and grant the service account **modify** access to it, grant it read access to the
+private key of this host's certificate, register the `ripcord` source in the Application event
+log, **and start or repoint the service last** — after the rule that lets
 the peer in and the access it needs to the file it serves and the folder it logs to.
+
+The key grant is read, on the key file only. Without it the handshake fails on this host's own
+key, and the listener logs the refusal as *this host could not use its own private key* rather
+than blaming the caller.
 
 The logs folder is the only place the service account may write. Modify rather than write,
 because pruning an old log deletes it; on that folder only, never on the install folder or the

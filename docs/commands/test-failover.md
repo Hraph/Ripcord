@@ -16,6 +16,16 @@ ripcord test-failover (--vm <name> | --all) [--dry-run] [--unattended] [--config
 5. Report what booted, how long it took, and what did not.
 6. Destroy the test copy — **always**, including after a failure or an interruption.
 
+The copy is destroyed by its own name, as Hyper-V returned it, and the adapter refuses to
+destroy any VM whose replication mode is not *test replica*: the replicated VM is production. A
+create that fails after Hyper-V made the copy returns no name, so the test VMs are listed
+before and after it, and whatever appeared is destroyed. When they could not be listed, the
+report says a copy may be left behind; the next run lists it as an orphan.
+
+With `test_failover_switch` set, a copy whose adapters are not on that switch is destroyed
+without being started: it is isolated, but it would boot with no network, which is not the
+rehearsal the configuration describes.
+
 VMs run one at a time, never in parallel: the target has finite memory and a test copy consumes
 real RAM. The second is not created before the first is gone.
 
