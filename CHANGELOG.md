@@ -11,7 +11,20 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ## Unreleased
 
+### Added
+
+- **`ripcord service` says why a stopped listener stopped**: the command Windows runs, its
+  start mode, the exit code Windows recorded (`0x2000000N` is Ripcord's exit N) with what it
+  means, the day's `logs\listener-YYYY-MM-DD.log` and its last 20 lines, and one line on the
+  likely cause with the command to run next — `ripcord check`, `service install --dry-run`, or
+  the two `Get-WinEvent` commands when it died before it could log anything.
+  `ripcord service status` is the same report; there is no second one.
+
 ### Changed
+
+- **`ripcord service` shows the service even when `ripcord.yaml` does not load** — the
+  likeliest reason the listener stopped. The firewall, snapshot and logs rows need the
+  configuration and are left out; its errors follow, and the exit code is still 2.
 
 - **The snapshot defaults beside `ripcord.yaml`, not to `D:\Ripcord\state.json`.** A host
   without a `D:` volume was being deployed onto a path Windows could not even grant access to.

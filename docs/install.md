@@ -58,6 +58,10 @@ The listener service runs as `NT SERVICE\ripcord` and may write to one place onl
 `logs\` beside the binary, which [`ripcord service install`](commands/service.md) creates and
 grants it. Nothing else in the install folder is writable by it, the binary least of all.
 
+After `service install`, run `ripcord service`: it says whether the listener is running and,
+when it is not, why — the exit code Windows recorded, the end of the listener's log, and what
+to run next.
+
 Installing is not configuring. `node.hostname`, the peer address and both certificate
 thumbprints are per-host, and `ripcord status` refuses a file that names another machine — by
 name, at startup. The installer ends by saying so, and by naming the three commands to run in

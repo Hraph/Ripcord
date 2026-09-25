@@ -47,6 +47,9 @@ may write to `logs\` beside the binary and nowhere else — [`service install`](
 creates that folder and grants it. A service pointed at a folder it cannot write would have no
 log at all. `max_size_mb` applies to both.
 
+[`ripcord service`](commands/service.md) reads the listener's log for you: it shows the day's
+file (or yesterday's), its last 20 lines, and what the last run said about how it ended.
+
 Before this layout the log was `ripcord.log` (and `ripcord.log.1`) beside the binary, and the
 service wrote `listener.log`. Nothing writes or deletes those any more; delete them by hand.
 

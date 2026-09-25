@@ -49,23 +49,23 @@ public class DocumentedNamesTests
             name => Assert.Equal(DeploymentPlan.ServiceName, name, ignoreCase: true));
     }
 
-    /// The event log source the service page tells an operator to filter on is the one
-    /// `service install` registers; the runtime's own source is the only other one named.
+    /// The event log commands the service page shows are the ones `ripcord service` prints,
+    /// which name the source `service install` registers.
     [Fact]
-    public void The_documented_event_source_is_the_one_that_is_registered()
+    public void The_documented_event_log_commands_are_the_printed_ones()
     {
         string text = File.ReadAllText(
             Path.Combine(RepositoryLayout.Root, "docs", "commands", "service.md"));
 
-        string[] sources =
+        string[] commands =
         [
-            .. Regex
-                .Matches(text, @"ProviderName='([^']+)'")
-                .Select(match => match.Groups[1].Value)
-                .Where(source => source != ".NET Runtime"),
+            .. text.Split('\n')
+                .Select(line => line.Trim())
+                .Where(line => line.StartsWith("Get-WinEvent", StringComparison.Ordinal))
+                .Distinct(StringComparer.Ordinal),
         ];
 
-        Assert.NotEmpty(sources);
-        Assert.All(sources, source => Assert.Equal(DeploymentPlan.EventSource, source));
+        Assert.Equal(ServiceDiagnosis.EventLogCommands.Count, commands.Length);
+        Assert.All(commands, command => Assert.Contains(command, ServiceDiagnosis.EventLogCommands));
     }
 }
