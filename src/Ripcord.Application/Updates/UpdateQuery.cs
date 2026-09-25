@@ -47,8 +47,7 @@ public sealed class UpdateQuery(IConfigStore configStore, IReleaseFeed feed)
                 ExitCode.InvalidConfiguration,
                 null,
                 [],
-                "update checking is switched off in the configuration (updates.check); "
-                + "these hosts are meant to have no outbound access.");
+                UpdateSettings.CheckOff);
         }
 
         ReleaseLookup lookup = await feed.LatestAsync(cancellationToken).ConfigureAwait(false);

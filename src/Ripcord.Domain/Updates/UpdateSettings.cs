@@ -11,6 +11,13 @@ namespace Ripcord.Domain.Updates;
 public sealed record UpdateSettings(bool Check, bool Install = false)
 {
     public static UpdateSettings Disabled() => new(false);
+
+    /// Says how to turn it on, not only that it is off: the refusal is read by whoever wants it on.
+    public const string CheckOff =
+        "update checking is off: set updates.check: true in ripcord.yaml to allow it";
+
+    public const string InstallOff =
+        "installing is off: set updates.install: true in ripcord.yaml to allow it";
 }
 
 /// What the release feed came back with. One of the two fields is set, never both: a lookup

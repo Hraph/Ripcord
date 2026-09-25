@@ -1125,7 +1125,8 @@ public class RipcordCliTests
         CliRun run = await Run(["check-update"]);
 
         Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
-        Assert.Contains("switched off", run.Error, StringComparison.Ordinal);
+        Assert.Contains("updates.check: true", Unwrapped(run.Error), StringComparison.Ordinal);
+        Assert.DoesNotContain("Hyper-V", run.Error, StringComparison.Ordinal);
     }
 
     [Fact]

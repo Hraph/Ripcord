@@ -54,8 +54,7 @@ public sealed record UpdatePlan(
         {
             return Halted(
                 subject.Status,
-                "installing is switched off in the configuration (updates.install); "
-                + "this host may look for a release but not replace itself");
+                UpdateSettings.InstallOff);
         }
 
         // A version that cannot be read cannot be compared, and a binary that replaces itself
