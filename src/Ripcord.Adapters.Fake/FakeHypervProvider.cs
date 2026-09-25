@@ -105,8 +105,12 @@ public sealed class FakeHypervProvider : IHypervProvider
     {
         cancellationToken.ThrowIfCancellationRequested();
         this.Calls.Add("test-vms");
-        return Task.FromResult<IReadOnlyList<TestVm>>([.. this.ExistingTestVms]);
+        return this.TestVmsFailure is null
+            ? Task.FromResult<IReadOnlyList<TestVm>>([.. this.ExistingTestVms])
+            : Task.FromException<IReadOnlyList<TestVm>>(this.TestVmsFailure);
     }
+
+    public Exception? TestVmsFailure { get; set; }
 
     public Task AttachTestNetworkAsync(
         string vmName, string? switchName, CancellationToken cancellationToken)

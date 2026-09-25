@@ -137,6 +137,26 @@ public class TestFailoverSequenceTests
             host.Calls.Where(call => call.StartsWith("stop:", StringComparison.Ordinal)));
     }
 
+    /// With no list of test VMs to compare against, nothing is destroyed on a guess: the
+    /// report says one may be left behind.
+    [Fact]
+    public async Task A_create_that_fails_unscanned_destroys_nothing_and_says_so()
+    {
+        FakeHypervProvider host = new(FakeScenarios.Healthy(Start))
+        {
+            CreateFailure = new InvalidOperationException("Hyper-V did not name it"),
+            CreateFailsAfterCreating = true,
+            TestVmsFailure = new InvalidOperationException("WMI timed out"),
+        };
+
+        TestFailoverReport report = await Run(host, "VM-DC-01");
+
+        VmTestFailoverResult result = Assert.Single(report.Results);
+        Assert.Equal(TestFailoverStatus.Failed, result.Status);
+        Assert.Contains("may be left behind", result.FailureMessage);
+        Assert.DoesNotContain(host.Calls, call => call.StartsWith("stop:", StringComparison.Ordinal));
+    }
+
     /// Isolated, but on no switch while one was declared: the test would boot with no network,
     /// which is not what the configuration set up. Refused, and the copy destroyed.
     [Fact]
