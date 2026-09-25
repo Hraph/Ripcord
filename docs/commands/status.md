@@ -42,6 +42,28 @@ peer's *published* view, with its age, and marks it `STALE` past `peer.offline_a
 
 A host with the listener switched off degrades to the local half rather than failing.
 
+## Why the other host cannot read this one
+
+On the other host this one shows `SILENT`, which reads as a network fault. Often the cause is
+here, where only this side can see it, so a `LISTENER` block closes the page whenever the other
+host cannot read this one:
+
+```
+LISTENER  NOT RUNNING
+  The listener service is stopped, so HV-DR-01 cannot read this host.
+  Next: ripcord service
+```
+
+| | |
+|---|---|
+| `NOT INSTALLED` | the configuration wants a listener and no service exists. Next: `ripcord service install --dry-run` |
+| `NOT RUNNING` | the service is stopped, stopping or paused. Next: `ripcord service`, which says why |
+| `OFF` | `listener` is absent or `enabled: false` in `ripcord.yaml`: a choice, not a fault |
+| `UNKNOWN` | Windows would not describe the service — the reason is printed. Never read as stopped |
+
+A running or starting service adds nothing. The block never changes the exit code: it is a
+fact about this host's listener, not a failed read.
+
 When it exits **3**, the console says which read failed and the day's `logs\ripcord-YYYY-MM-DD.log` says why — the
 exception, its type and its stack. See [the diagnostic log](../diagnostics.md).
 
