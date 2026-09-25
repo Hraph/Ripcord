@@ -14,7 +14,4 @@ public interface IDeploymentExecutor
     ObservedService ObserveService();
 
     void Apply(DeploymentStep change, DesiredDeployment desired);
-
-    /// `LocalMachine\My`, only the certificates with a private key. Needs no configuration.
-    IReadOnlyList<HostCertificate> Certificates() => [];
 }

@@ -8,6 +8,7 @@ means — in that order, because that is the order they matter in at three in th
 | [`status`](status.md) | what both hosts are doing right now | no |
 | [`check`](check.md) | would a failover work, if it had to happen now | no |
 | [`service`](service.md) | is the listener running, and if not, why (`service status` is the same) | only with `install`, `remove`, `restart`, `start`, `stop` |
+| [`pair`](pair.md) | set both certificate thumbprints from the line `service` prints on the other host | yes |
 | [`serve`](serve.md) | — it *is* the listener | no |
 | [`dashboard`](dashboard.md) | the same answer as `check`, in a browser | no |
 | [`test-failover`](test-failover.md) | would this VM actually boot on the other host | yes, and undoes it |

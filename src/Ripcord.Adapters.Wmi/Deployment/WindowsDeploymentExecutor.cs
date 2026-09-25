@@ -88,28 +88,6 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         }
     }
 
-    public IReadOnlyList<HostCertificate> Certificates()
-    {
-        using X509Store store = new(StoreName.My, StoreLocation.LocalMachine);
-        store.Open(OpenFlags.ReadOnly);
-
-        List<HostCertificate> found = [];
-
-        foreach (X509Certificate2 certificate in store.Certificates)
-        {
-            using (certificate)
-            {
-                if (certificate.HasPrivateKey)
-                {
-                    found.Add(new HostCertificate(
-                        certificate.Subject, certificate.Thumbprint, new DateTimeOffset(certificate.NotAfter)));
-                }
-            }
-        }
-
-        return found;
-    }
-
     private static string? KeyFileOf(X509Certificate2 certificate)
     {
         using AsymmetricAlgorithm? key =

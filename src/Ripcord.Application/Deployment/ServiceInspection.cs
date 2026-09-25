@@ -4,6 +4,7 @@ using Ripcord.Domain.Diagnostics;
 using Ripcord.Ports.Configuration;
 using Ripcord.Ports.Deployment;
 using Ripcord.Ports.Diagnostics;
+using Ripcord.Ports.Hosts;
 
 namespace Ripcord.Application.Deployment;
 
@@ -29,7 +30,10 @@ public sealed record ServiceReport(
 /// Read-only: the service as Windows sees it, the deployment as the configuration wants it,
 /// the end of the listener's log, and one line on why a stopped listener stopped.
 public sealed class ServiceInspection(
-    IConfigStore configStore, IDeploymentExecutor executor, IDiagnosticLogReader logReader)
+    IConfigStore configStore,
+    IDeploymentExecutor executor,
+    IDiagnosticLogReader logReader,
+    ICertificateProvider certificateStore)
 {
     /// `thisBuild` is the build of the binary running this command, which is the one on disk.
     public ServiceReport Inspect(DeploymentRequest request, DateTimeOffset now, string thisBuild)
@@ -59,16 +63,7 @@ public sealed class ServiceInspection(
         RunningBuild? build = ListenerProcessReading.Judge(
             logReader, service, logsFolder, thisBuild, request.BinaryPath);
 
-        HostCertificates certificates;
-
-        try
-        {
-            certificates = HostCertificates.For(executor.Certificates(), request.MachineName, now);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            certificates = HostCertificates.CouldNotRead(request.MachineName, exception.Message);
-        }
+        HostCertificates certificates = HostCertificateReading.Read(certificateStore, request.MachineName, now);
 
         return new ServiceReport(
             service,

@@ -1,17 +1,17 @@
+using Ripcord.Domain.Inventory;
 using Ripcord.Domain.Pairing;
 
 namespace Ripcord.Domain.Deployment;
 
-/// A certificate in `LocalMachine\My` that has a private key, as the adapter found it.
-public sealed record HostCertificate(string Subject, string Thumbprint, DateTimeOffset NotAfter);
-
-/// This host's certificates the other host would accept by subject: what to paste into the two
-/// `ripcord.yaml` files. Read without the configuration, which is the file being filled in.
-public sealed record HostCertificates(IReadOnlyList<HostCertificate> Usable, string Subject, string? Unreadable)
+/// This host's certificates the other host would accept by subject: what `ripcord pair` needs
+/// on both sides. Read without the configuration, which is the file being filled in.
+public sealed record HostCertificates(IReadOnlyList<CertificateFact> Usable, string MachineName, string? Unreadable)
 {
-    /// `CN=<this host>`, as the peer checks it, not expired, latest expiry first.
+    public string Subject => $"CN={this.MachineName}";
+
+    /// `CN=<this host>`, compared as the peer compares it, not expired, latest expiry first.
     public static HostCertificates For(
-        IReadOnlyList<HostCertificate> found, string machineName, DateTimeOffset now)
+        IReadOnlyList<CertificateFact> found, string machineName, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(found);
 
@@ -19,21 +19,27 @@ public sealed record HostCertificates(IReadOnlyList<HostCertificate> Usable, str
 
         return new HostCertificates(
             [.. found
-                .Where(certificate => PeerIdentity.SameName(certificate.Subject, subject)
-                    && certificate.NotAfter > now)
+                .Where(certificate => PeerIdentity.SameName(certificate.CommonName, subject)
+                    && !certificate.HasExpiredAt(now))
                 .OrderByDescending(certificate => certificate.NotAfter)],
-            subject,
+            machineName,
             null);
     }
 
     public static HostCertificates CouldNotRead(string machineName, string reason) =>
-        new([], $"CN={machineName}", reason);
+        new([], machineName, reason);
+
+    /// Whether the configured thumbprint is one of these; the configuration holds it normalised.
+    public bool Lists(string? thumbprint) =>
+        thumbprint is not null
+        && this.Usable.Any(certificate =>
+            string.Equals(certificate.Thumbprint, thumbprint, StringComparison.OrdinalIgnoreCase));
 
     public bool Equals(HostCertificates? other) =>
         other is not null
-        && this.Subject == other.Subject
+        && this.MachineName == other.MachineName
         && this.Unreadable == other.Unreadable
         && Structural.Same(this.Usable, other.Usable);
 
-    public override int GetHashCode() => HashCode.Combine(this.Subject, this.Unreadable);
+    public override int GetHashCode() => HashCode.Combine(this.MachineName, this.Unreadable);
 }

@@ -13,4 +13,8 @@ public interface ICertificateProvider
     /// Null when nothing in the store carries that thumbprint. That is a finding for the
     /// rules to report, not an exception for the command to fail on.
     CertificateFact? Find(string thumbprint);
+
+    /// Every certificate in `LocalMachine\My` that has a private key: the ones this host could
+    /// present. For `ripcord service` and `ripcord pair`, which read no configuration.
+    IReadOnlyList<CertificateFact> WithPrivateKey();
 }

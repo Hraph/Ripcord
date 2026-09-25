@@ -113,6 +113,8 @@ public class LocalStateReaderTests
     {
         public List<string> Requested { get; } = [];
 
+        public IReadOnlyList<CertificateFact> WithPrivateKey() => [];
+
         public CertificateFact? Find(string thumbprint)
         {
             this.Requested.Add(thumbprint);

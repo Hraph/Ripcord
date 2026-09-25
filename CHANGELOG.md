@@ -22,10 +22,14 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 ### Added
 
 - **`ripcord service` shows this host's certificate**: the thumbprint of each unexpired
-  certificate for `CN=<this host>` with a private key in `LocalMachine\My`, marked when it is
-  the one in `ripcord.yaml`, even when that file does not load. Paste it into
-  `listener.local_certificate_thumbprint` here and `listener.peer_certificate_thumbprint` on
-  the other host; the placeholder refusal points there.
+  certificate whose CN is this host's, with a private key in `LocalMachine\My`, marked when it
+  is the one in `ripcord.yaml`, even when that file does not load — with the one line to run
+  on the other host.
+- **`ripcord pair <host>:<thumbprint>`** writes both certificate thumbprints into
+  `ripcord.yaml` from that line: this host's own is found in `LocalMachine\My`, the other's is
+  the one pasted. Two lines change, the previous file is kept as `.1`, `y/n`, `--dry-run`.
+  A key pasted on the host it came from, or naming another host than `peer.hostname`, is
+  refused. No more editing the thumbprints by hand.
 - **`ripcord status` says the listener is running**, in one `LISTENER` line with the build
   its process runs, instead of leaving a missing block to mean it. After an update without a
   restart, a second line names `ripcord service restart`.

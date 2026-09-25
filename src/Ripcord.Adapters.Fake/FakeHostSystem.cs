@@ -69,6 +69,9 @@ public sealed class FakeCertificateProvider(params CertificateFact[] certificate
         string thumbprint, string commonName, DateTimeOffset notAfter) =>
         new(new CertificateFact(thumbprint, commonName, notAfter));
 
+    public IReadOnlyList<CertificateFact> WithPrivateKey() =>
+        this.failure is not null ? throw this.failure : certificates;
+
     public CertificateFact? Find(string thumbprint) =>
         this.failure is not null
             ? throw this.failure

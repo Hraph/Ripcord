@@ -232,6 +232,9 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             case "service":
                 return this.Service(args[1..], output, error);
 
+            case "pair":
+                return this.PairHosts(args[1..], output, error);
+
             case "update":
                 return await this.UpdateAsync(args[1..], output, error, cancellationToken)
                     .ConfigureAwait(false);
@@ -837,6 +840,129 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
                     outcome.Errors.Select(error => $"{error.Path} {error.Message}".Trim()))
                 : "the pair could not be read");
 
+    /// Both certificate thumbprints from the one line `ripcord service` prints on the other
+    /// host. Two lines of `ripcord.yaml` change and the previous file is kept as `.1`, so it
+    /// is undone by moving a file back: y/n, not the node name.
+    private ExitCode PairHosts(string[] args, TextWriter output, TextWriter error)
+    {
+        string? key = null;
+        string? local = null;
+        string? path = null;
+        bool dryRun = false;
+
+        for (int index = 0; index < args.Length; index++)
+        {
+            switch (args[index])
+            {
+                case "--dry-run":
+                    dryRun = true;
+                    break;
+
+                case "--local" when index + 1 < args.Length:
+                    local = args[++index];
+                    break;
+
+                case "--config" when !TryConsumeConfig(args, ref index, ref path, out string? configError):
+                    error.WriteLine($"ripcord: {configError}");
+                    return ExitCode.InvalidConfiguration;
+
+                case "--config":
+                    break;
+
+                case { } word when !word.StartsWith('-') && key is null:
+                    key = word;
+                    break;
+
+                default:
+                    error.WriteLine($"ripcord: unexpected argument '{args[index]}'.");
+                    return ExitCode.InvalidConfiguration;
+            }
+        }
+
+        if (key is null)
+        {
+            error.WriteLine("ripcord: pair needs the line 'ripcord service' prints on the other host.");
+            error.WriteLine("  ripcord pair <host>:<thumbprint> [--local <thumbprint>] [--dry-run]");
+            return ExitCode.InvalidConfiguration;
+        }
+
+        path ??= environment.DefaultConfigurationPath;
+
+        string? previous = ports.ConfigStore.ReadText(path);
+        ConfigurationDocument? document = previous is null ? null : ports.ConfigStore.Read(path).Document;
+
+        PairingPlan plan = ListenerPairing.Plan(
+            previous,
+            environment.MachineName,
+            document?.Peer?.Hostname,
+            document?.Listener?.LocalCertificateThumbprint,
+            HostCertificateReading.Read(ports.Certificates, environment.MachineName, ports.Clock.UtcNow),
+            key,
+            local);
+
+        if (plan.Refusal is { } refusal)
+        {
+            this.Refuse(error, "ripcord: nothing was changed.");
+            WriteWrapped(error, refusal);
+            return ExitCode.Refused;
+        }
+
+        string peerName = document?.Peer?.Hostname is { Length: > 0 } named ? named : "the other host";
+
+        output.WriteLine(this.Ink.Apply(Rendering.Ink.Bold("RIPCORD PAIR")));
+        output.WriteLine();
+        output.WriteLine($"  {path}");
+        output.WriteLine("  local_certificate_thumbprint");
+        output.WriteLine($"    {plan.Local}  this host");
+        output.WriteLine("  peer_certificate_thumbprint");
+        output.WriteLine($"    {plan.Peer}  {peerName}");
+        output.WriteLine();
+
+        if (!plan.Changes)
+        {
+            output.WriteLine("  Already set. Nothing was changed.");
+        }
+        else if (dryRun)
+        {
+            output.WriteLine("  Nothing was changed. Re-run without --dry-run to apply.");
+            return ExitCode.Success;
+        }
+        else
+        {
+            if (!this.Agreed(
+                output,
+                error,
+                $"This rewrites those two lines. The previous file is kept as {path}.1."))
+            {
+                return ExitCode.Refused;
+            }
+
+            ConfigurationWrite written = ports.ConfigStore.Write(path, plan.Yaml!, path + ".1");
+
+            if (written.FailureMessage is { } failure)
+            {
+                WriteWrapped(error, failure);
+                return ExitCode.LocalAccessFailure;
+            }
+
+            output.WriteLine(this.Ink.Apply(Rendering.Ink.Green($"  wrote {path}")));
+
+            if (written.Kept is { } kept)
+            {
+                output.WriteLine($"  the previous one is at {kept}");
+            }
+
+            output.WriteLine();
+        }
+
+        output.WriteLine($"  On {peerName}, if it is not done yet:");
+        output.WriteLine($"    ripcord pair {ListenerPairing.Key(environment.MachineName, plan.Local!)}");
+        output.WriteLine("  Then on both hosts:");
+        output.WriteLine("    ripcord service restart");
+
+        return ExitCode.Success;
+    }
+
     /// The listener service: what it is doing, and the things that change it.
     ///
     /// Bare, it reports and changes nothing — rule 3, and the question an operator asks first.
@@ -886,7 +1012,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         }
 
         ServiceReport report = new ServiceInspection(
-                ports.ConfigStore, ports.DeploymentExecutor, ports.LogReader)
+                ports.ConfigStore, ports.DeploymentExecutor, ports.LogReader, ports.Certificates)
             .Inspect(
                 new DeploymentRequest(
                     path, environment.MachineName, environment.BinaryPath, Remove: false),
@@ -2120,6 +2246,9 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         writer.WriteLine("                                     after editing ripcord.yaml: the");
         writer.WriteLine("                                     listener reads it only at start");
         writer.WriteLine("  ripcord service start | stop [--dry-run]");
+        writer.WriteLine("  ripcord pair <host>:<thumbprint> [--local <thumbprint>] [--dry-run]");
+        writer.WriteLine("                                     both certificate thumbprints,");
+        writer.WriteLine("                                     from 'ripcord service' there");
         writer.WriteLine("  ripcord test-failover (--vm <name> | --all) [--dry-run]");
         writer.WriteLine("                        [--unattended]");
         writer.WriteLine("                                     boot a replica in isolation, then destroy it");

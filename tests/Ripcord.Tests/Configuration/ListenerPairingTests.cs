@@ -1,0 +1,133 @@
+using Ripcord.Domain.Inventory;
+using Ripcord.Adapters.Yaml;
+using Ripcord.Domain.Configuration;
+using Ripcord.Domain.Deployment;
+
+namespace Ripcord.Tests.Configuration;
+
+/// `ripcord pair`: one line carried from the other host sets both thumbprints, and nothing
+/// else in the file moves.
+public class ListenerPairingTests
+{
+    private const string Me = "HV-REPLICA-01";
+
+    private const string Other = "HV-PRIMARY-01";
+
+    private const string Mine = "A1B2C3D4E5F60718293A4B5C6D7E8F9012345678";
+
+    private const string Theirs = "0F1E2D3C4B5A69788796A5B4C3D2E1F012345678";
+
+    private static readonly DateTimeOffset Now = new(2026, 9, 26, 8, 0, 0, TimeSpan.Zero);
+
+    private static HostCertificates Certificates(params string[] thumbprints) =>
+        HostCertificates.For(
+            [.. thumbprints.Select(thumbprint => new CertificateFact(thumbprint, $"CN={Me}", Now.AddYears(1)))],
+            Me,
+            Now);
+
+    private static PairingPlan Plan(
+        string? previous, string key, HostCertificates? mine = null, string? typedLocal = null) =>
+        ListenerPairing.Plan(previous, Me, Other, null, mine ?? Certificates(Mine), key, typedLocal);
+
+    /// The shipped sample, as `install.ps1` leaves it: placeholders in, a valid file out.
+    [Fact]
+    public void Over_the_sample_the_two_placeholders_are_replaced_and_the_file_validates()
+    {
+        string sample = Samples.Read("ripcord.dr.yaml");
+
+        PairingPlan plan = Plan(sample, ListenerPairing.Key(Other, Theirs));
+
+        Assert.Null(plan.Refusal);
+        Assert.True(plan.Changes);
+        Assert.Contains($"  local_certificate_thumbprint: \"{Mine}\"", plan.Yaml, StringComparison.Ordinal);
+        Assert.Contains($"  peer_certificate_thumbprint: \"{Theirs}\"", plan.Yaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("# Placeholders", plan.Yaml, StringComparison.Ordinal);
+
+        // Nothing but those lines changed.
+        string[] before = sample.Split('\n');
+        string[] after = plan.Yaml!.Split('\n');
+        Assert.Equal(before.Length - 1, after.Length);
+        Assert.Equal(3, before.Except(after).Count());
+
+        string path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".yaml");
+        File.WriteAllText(path, plan.Yaml);
+        Assert.Empty(ConfigurationValidator.Validate(new YamlConfigStore().Read(path).Document, Me).Errors);
+    }
+
+    [Fact]
+    public void Running_it_again_changes_nothing()
+    {
+        string once = Plan(Samples.Read("ripcord.dr.yaml"), ListenerPairing.Key(Other, Theirs)).Yaml!;
+
+        PairingPlan again = Plan(once, ListenerPairing.Key(Other, Theirs));
+
+        Assert.False(again.Changes);
+        Assert.Equal(once, again.Yaml);
+    }
+
+    /// A bare thumbprint works too, and the Windows forms of it are the same certificate.
+    [Theory]
+    [InlineData(Theirs)]
+    [InlineData("0f 1e 2d 3c 4b 5a 69 78 87 96 a5 b4 c3 d2 e1 f0 12 34 56 78")]
+    public void A_bare_thumbprint_is_taken(string key) =>
+        Assert.Equal(Theirs, Plan(Samples.Read("ripcord.dr.yaml"), key).Peer);
+
+    [Fact]
+    public void A_file_with_no_listener_gets_one_with_crlf_kept()
+    {
+        const string Previous = "schema_version: 1\r\nnode:\r\n  hostname: HV-REPLICA-01\r\n";
+
+        PairingPlan plan = Plan(Previous, ListenerPairing.Key(Other, Theirs));
+
+        Assert.StartsWith(Previous, plan.Yaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "listener:\r\n  enabled: true\r\n"
+                + $"  local_certificate_thumbprint: \"{Mine}\"\r\n"
+                + $"  peer_certificate_thumbprint: \"{Theirs}\"\r\n",
+            plan.Yaml,
+            StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData($"{Me}:{Theirs}", "own")]
+    [InlineData($"HV-ELSEWHERE:{Theirs}", "ripcord.yaml names HV-PRIMARY-01")]
+    [InlineData("HV-PRIMARY-01:not-a-thumbprint", "not a pairing key")]
+    [InlineData("AAAA1111BBBB2222CCCC3333DDDD4444EEEE5555", "placeholder")]
+    [InlineData(Mine, "this host's own certificate")]
+    public void A_key_from_the_wrong_place_is_refused(string key, string said)
+    {
+        PairingPlan plan = Plan(Samples.Read("ripcord.dr.yaml"), key);
+
+        Assert.Null(plan.Yaml);
+        Assert.Contains(said, plan.Refusal, StringComparison.Ordinal);
+    }
+
+    /// Two usable certificates and none configured is the operator's choice, not a sort's.
+    [Fact]
+    public void Two_certificates_ask_for_local_and_take_it()
+    {
+        const string Second = "1234567890ABCDEF1234567890ABCDEF12345678";
+        HostCertificates two = Certificates(Mine, Second);
+
+        Assert.Contains("--local", Plan(Samples.Read("ripcord.dr.yaml"), Theirs, two).Refusal, StringComparison.Ordinal);
+        Assert.Equal(Second, Plan(Samples.Read("ripcord.dr.yaml"), Theirs, two, Second).Local);
+    }
+
+    [Fact]
+    public void No_certificate_for_this_host_is_refused_by_subject() =>
+        Assert.Contains(
+            $"no certificate for CN={Me}",
+            Plan(Samples.Read("ripcord.dr.yaml"), Theirs, Certificates()).Refusal,
+            StringComparison.Ordinal);
+
+    [Fact]
+    public void No_file_yet_points_to_init() =>
+        Assert.Contains("ripcord init", Plan(null, Theirs).Refusal, StringComparison.Ordinal);
+
+    [Fact]
+    public void A_listener_written_on_one_line_is_left_to_the_operator() =>
+        Assert.Contains(
+            "on one line",
+            Plan("listener: { enabled: true }\n", Theirs).Refusal,
+            StringComparison.Ordinal);
+}

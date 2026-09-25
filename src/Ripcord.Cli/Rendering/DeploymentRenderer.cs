@@ -1,3 +1,5 @@
+using Ripcord.Domain.Inventory;
+using Ripcord.Domain.Configuration;
 using System.Globalization;
 using System.Text;
 using Ripcord.Application.Deployment;
@@ -217,7 +219,7 @@ public static class DeploymentRenderer
             return;
         }
 
-        foreach (HostCertificate certificate in certificates.Usable)
+        foreach (CertificateFact certificate in certificates.Usable)
         {
             bool inUse = string.Equals(certificate.Thumbprint, configured, StringComparison.OrdinalIgnoreCase);
 
@@ -226,11 +228,25 @@ public static class DeploymentRenderer
                 output,
                 "      ",
                 "      ",
-                $"{certificate.Subject}, expires {certificate.NotAfter:yyyy-MM-dd}");
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{certificate.CommonName}, expires {certificate.NotAfter:yyyy-MM-dd}"));
         }
 
-        output.AppendLine("    listener.local_certificate_thumbprint on this host,");
-        output.AppendLine("    listener.peer_certificate_thumbprint on the other one.");
+        // A renewal leaves ripcord.yaml on the old thumbprint, which the listener then cannot use.
+        if (configured is not null && !certificates.Lists(configured))
+        {
+            output.AppendLine("    None of these is the one in ripcord.yaml.");
+        }
+
+        // The configured one if it is listed, else the latest: the line is what gets pasted.
+        CertificateFact shown = certificates.Usable.FirstOrDefault(certificate =>
+                string.Equals(certificate.Thumbprint, configured, StringComparison.OrdinalIgnoreCase))
+            ?? certificates.Usable[0];
+
+        output.AppendLine("    On the other host, run:");
+        output.AppendLine(
+            $"      ripcord pair {ListenerPairing.Key(certificates.MachineName, shown.Thumbprint)}");
     }
 
     /// The build the process runs, which after `ripcord update` is not the one on disk.

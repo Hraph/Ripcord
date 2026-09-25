@@ -1,3 +1,6 @@
+using Ripcord.Ports.Hosts;
+using Ripcord.Domain.Inventory;
+using Ripcord.Adapters.Fake;
 using Ripcord.Application.Deployment;
 using Ripcord.Cli.Rendering;
 using Ripcord.Domain.Deployment;
@@ -32,7 +35,7 @@ public class ServiceInspectionTests
     [Fact]
     public void Invalid_configuration_still_reports_the_service()
     {
-        ServiceReport report = new ServiceInspection(
+        ServiceReport report = Inspection(
                 new MemoryConfigStore(ConfigurationRead.Failed("node", "missing")),
                 new Host(StoppedService),
                 new Logs())
@@ -47,7 +50,7 @@ public class ServiceInspectionTests
     [Fact]
     public void Unreadable_windows_is_a_line_not_a_crash()
     {
-        ServiceReport report = new ServiceInspection(Valid(), new Host(null), new Logs())
+        ServiceReport report = Inspection(Valid(), new Host(null), new Logs())
             .Inspect(Request(), Now, ThisBuild);
 
         Assert.Equal(ServiceRunState.Unknown, report.Service.State);
@@ -60,7 +63,7 @@ public class ServiceInspectionTests
     {
         Logs logs = new(@"C:\Program Files\Ripcord\logs\listener-2026-09-24.log");
 
-        ServiceReport report = new ServiceInspection(Valid(), new Host(StoppedService), logs)
+        ServiceReport report = Inspection(Valid(), new Host(StoppedService), logs)
             .Inspect(Request(), Now, ThisBuild);
 
         Assert.Equal(@"C:\Program Files\Ripcord\logs", report.LogsFolder);
@@ -81,7 +84,7 @@ public class ServiceInspectionTests
     public void Logs_access_is_blamed_only_for_the_folder_it_was_read_on(
         string serviceBinary, bool blamed)
     {
-        ServiceReport report = new ServiceInspection(
+        ServiceReport report = Inspection(
                 Valid(),
                 new Host(StoppedService with { CommandLine = $"\"{serviceBinary}\" serve" }),
                 new Logs())
@@ -98,7 +101,7 @@ public class ServiceInspectionTests
     {
         Host host = new(StoppedService);
 
-        new ServiceInspection(Valid(), host, new Logs()).Inspect(Request(), Now, ThisBuild);
+        Inspection(Valid(), host, new Logs()).Inspect(Request(), Now, ThisBuild);
 
         Assert.Equal(1, host.Readings);
         Assert.Equal([StoppedService], host.Given);
@@ -117,7 +120,7 @@ public class ServiceInspectionTests
             WrittenAt = secondsAgo is { } seconds ? Now.AddSeconds(-seconds) : null,
         };
 
-        ServiceReport report = new ServiceInspection(Valid(), host, new Logs()).Inspect(Request(), Now, ThisBuild);
+        ServiceReport report = Inspection(Valid(), host, new Logs()).Inspect(Request(), Now, ThisBuild);
 
         Assert.Equal(expected, report.Snapshot);
     }
@@ -138,7 +141,7 @@ public class ServiceInspectionTests
             [@"C:\Ripcord\logs\listener-process.txt"] = [recorded, "4812"],
         };
 
-        ServiceReport report = new ServiceInspection(Valid(), new Host(running), files)
+        ServiceReport report = Inspection(Valid(), new Host(running), files)
             .Inspect(Request(), Now, ThisBuild);
 
         Assert.Equal(new RunningBuild(recorded, null, outdated), report.Build);
@@ -162,7 +165,7 @@ public class ServiceInspectionTests
             [@"C:\Program Files\Ripcord\logs\listener-process.txt"] = ["0.6.0+0ld0000", "4812"],
         };
 
-        ServiceReport report = new ServiceInspection(Valid(), new Host(running), files)
+        ServiceReport report = Inspection(Valid(), new Host(running), files)
             .Inspect(Request(), Now, ThisBuild);
 
         Assert.Equal(new RunningBuild("0.6.0+0ld0000", null, false), report.Build);
@@ -174,7 +177,7 @@ public class ServiceInspectionTests
     {
         ObservedService running = StoppedService with { State = ServiceRunState.Running, ProcessId = 4812 };
 
-        ServiceReport report = new ServiceInspection(Valid(), new Host(running), new Files())
+        ServiceReport report = Inspection(Valid(), new Host(running), new Files())
             .Inspect(Request(), Now, ThisBuild);
 
         Assert.Contains(
@@ -188,28 +191,59 @@ public class ServiceInspectionTests
     [Fact]
     public void This_hosts_certificate_is_shown_to_paste_on_both_hosts()
     {
-        Host host = new(StoppedService)
-        {
-            Found =
-            [
-                new HostCertificate($"CN={ValidDocument.MachineName}", ValidDocument.LocalThumbprint, Now.AddYears(1)),
-                new HostCertificate("CN=someone-else", "0000000000000000000000000000000000000000", Now.AddYears(1)),
-            ],
-        };
+        FakeCertificateProvider store = new(
+            new CertificateFact(ValidDocument.LocalThumbprint, $"CN={ValidDocument.MachineName}", Now.AddYears(1)),
+            new CertificateFact("0000000000000000000000000000000000000000", "CN=someone-else", Now.AddYears(1)));
 
-        ServiceReport report = new ServiceInspection(Valid(), host, new Logs()).Inspect(Request(), Now, ThisBuild);
+        ServiceReport report = Inspection(Valid(), new Host(StoppedService), new Logs(), store)
+            .Inspect(Request(), Now, ThisBuild);
         string[] lines = DeploymentRenderer.RenderState(report, Palette.None).ReplaceLineEndings("\n").Split('\n');
 
         Assert.Contains($"    {ValidDocument.LocalThumbprint}  in ripcord.yaml", lines);
         Assert.DoesNotContain(lines, line => line.Contains("someone-else", StringComparison.Ordinal));
-        Assert.Contains("    listener.peer_certificate_thumbprint on the other one.", lines);
+        Assert.Contains($"      ripcord pair {ValidDocument.MachineName}:{ValidDocument.LocalThumbprint}", lines);
         Assert.All(lines, line => Assert.True(line.Length <= 75, line));
+    }
+
+    /// The case the block exists for: the file is refused on its placeholders.
+    [Fact]
+    public void The_certificate_is_shown_when_the_configuration_does_not_load()
+    {
+        ServiceReport report = Inspection(
+                new MemoryConfigStore(ConfigurationRead.Failed(
+                    "listener.local_certificate_thumbprint", "is the sample's placeholder")),
+                new Host(StoppedService),
+                new Logs(),
+                FakeCertificateProvider.Valid(ValidDocument.LocalThumbprint, $"CN={ValidDocument.MachineName}"))
+            .Inspect(Request(), Now, ThisBuild);
+        string rendered = DeploymentRenderer.RenderState(report, Palette.None);
+
+        Assert.Contains($"    {ValidDocument.LocalThumbprint}\n", rendered.ReplaceLineEndings("\n"), StringComparison.Ordinal);
+        Assert.DoesNotContain("in ripcord.yaml", rendered, StringComparison.Ordinal);
+        Assert.DoesNotContain("None of these", rendered, StringComparison.Ordinal);
+    }
+
+    /// A renewal leaves the old thumbprint in ripcord.yaml.
+    [Fact]
+    public void A_configured_thumbprint_not_among_them_is_said()
+    {
+        ServiceReport report = Inspection(
+                Valid(),
+                new Host(StoppedService),
+                new Logs(),
+                FakeCertificateProvider.Valid(ValidDocument.PeerThumbprint, $"CN={ValidDocument.MachineName}"))
+            .Inspect(Request(), Now, ThisBuild);
+
+        Assert.Contains(
+            "    None of these is the one in ripcord.yaml.",
+            DeploymentRenderer.RenderState(report, Palette.None),
+            StringComparison.Ordinal);
     }
 
     [Fact]
     public void No_certificate_for_this_host_is_said()
     {
-        ServiceReport report = new ServiceInspection(Valid(), new Host(StoppedService), new Logs())
+        ServiceReport report = Inspection(Valid(), new Host(StoppedService), new Logs())
             .Inspect(Request(), Now, ThisBuild);
 
         Assert.Contains(
@@ -221,7 +255,7 @@ public class ServiceInspectionTests
     [Fact]
     public void A_store_that_cannot_be_read_is_said_and_the_report_still_comes()
     {
-        ServiceReport report = new ServiceInspection(Valid(), new Host(StoppedService) { Found = null }, new Logs())
+        ServiceReport report = Inspection(Valid(), new Host(StoppedService), new Logs(), FakeCertificateProvider.Failing("Access is denied."))
             .Inspect(Request(), Now, ThisBuild);
 
         Assert.Equal("Access is denied.", report.Certificates!.Unreadable);
@@ -230,6 +264,13 @@ public class ServiceInspectionTests
             DeploymentRenderer.RenderState(report, Palette.None),
             StringComparison.Ordinal);
     }
+
+    private static ServiceInspection Inspection(
+        IConfigStore store,
+        IDeploymentExecutor host,
+        IDiagnosticLogReader logs,
+        ICertificateProvider? certificates = null) =>
+        new(store, host, logs, certificates ?? new FakeCertificateProvider());
 
     private sealed class Files : Dictionary<string, string[]>, IDiagnosticLogReader
     {
@@ -255,11 +296,6 @@ public class ServiceInspectionTests
                 SnapshotWrittenAt = this.WrittenAt,
             };
         }
-
-        public IReadOnlyList<HostCertificate>? Found { get; init; } = [];
-
-        public IReadOnlyList<HostCertificate> Certificates() =>
-            this.Found ?? throw new InvalidOperationException("Access is denied.");
 
         public ObservedService ObserveService()
         {

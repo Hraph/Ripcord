@@ -44,6 +44,28 @@ public sealed class MachineCertificateStore : ICertificateProvider
                 certificate.NotAfter);
     }
 
+    public IReadOnlyList<CertificateFact> WithPrivateKey()
+    {
+        using X509Store store = new(StoreName.My, StoreLocation.LocalMachine);
+        store.Open(OpenFlags.ReadOnly);
+
+        List<CertificateFact> found = [];
+
+        foreach (X509Certificate2 certificate in store.Certificates)
+        {
+            using (certificate)
+            {
+                if (certificate.HasPrivateKey)
+                {
+                    found.Add(new CertificateFact(
+                        certificate.Thumbprint, CertificateFacts.CommonName(certificate), certificate.NotAfter));
+                }
+            }
+        }
+
+        return found;
+    }
+
     private static X509Certificate2? Search(
         string thumbprint, Func<X509Certificate2, bool> accept)
     {
