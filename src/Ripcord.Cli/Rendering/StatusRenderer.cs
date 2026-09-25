@@ -209,7 +209,11 @@ public static class StatusRenderer
     {
         string indent = new(' ', Indent);
 
-        output.AppendLine($"{indent}{Ink.Red(Sentence(host.Reachability.Reason))}");
+        // A reason from TLS or Windows names a 40-character thumbprint and runs past 75 columns.
+        foreach (string line in Layout.Wrap(Sentence(host.Reachability.Reason), Width - Indent))
+        {
+            output.AppendLine($"{indent}{Ink.Red(line)}");
+        }
 
         output.AppendLine(host.Reachability.UnreachableSince is { } since
             ? $"{indent}Unreachable since: {TimestampOf(since)} "

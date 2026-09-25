@@ -417,6 +417,26 @@ public class StatusRendererTests
         Assert.Equal(StatusRenderer.Width, line.Length);
     }
 
+    /// The reason the peer channel failed can carry a thumbprint and a store name.
+    [Fact]
+    public void A_long_unreachable_reason_is_wrapped_to_the_console()
+    {
+        const string Reason =
+            "No certificate with thumbprint AAAA1111BBBB2222CCCC3333DDDD4444EEEE5555 and a "
+            + "private key in LocalMachine\\My";
+        PairView view = DegradedPair();
+        view = view with
+        {
+            Peer = HostState.Unreachable(view.Peer.HostName, HostReachability.Failed(Reason, Now)),
+        };
+
+        string[] lines = Render(view).Split('\n');
+
+        Assert.All(lines, line => Assert.True(line.Length <= StatusRenderer.Width, line));
+        Assert.Contains(lines, line => line.Contains("AAAA1111BBBB2222CCCC3333DDDD4444EEEE5555", StringComparison.Ordinal));
+        Assert.Contains(lines, line => line.TrimEnd().EndsWith("LocalMachine\\My.", StringComparison.Ordinal));
+    }
+
     private static string Render(PairView view) =>
         StatusRenderer.Render(view, TimeSpan.FromSeconds(120), Now);
 
