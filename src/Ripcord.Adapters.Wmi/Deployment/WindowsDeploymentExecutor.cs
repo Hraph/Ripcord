@@ -38,7 +38,9 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             ruleInstalled ? PortIn(ruleOutput) : null,
             ruleInstalled ? ValueAfter(ruleOutput, "RemoteIP") : null,
             SnapshotReadable(desired.SnapshotFolder),
-            imagePath is not null && ServiceIsStarted());
+            imagePath is not null && ServiceIsStarted(),
+            LogsWritable(desired.LogsFolder),
+            EventSourceRegistered());
     }
 
     public void Apply(DeploymentStep change, DesiredDeployment desired)
@@ -51,6 +53,11 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         if (change.Action == DeploymentAction.GrantSnapshotAccess)
         {
             Directory.CreateDirectory(desired.SnapshotFolder);
+        }
+
+        if (change.Action == DeploymentAction.GrantLogsAccess)
+        {
+            Directory.CreateDirectory(desired.LogsFolder);
         }
 
         foreach ((string file, string arguments) in CommandsFor(change.Action, desired))
@@ -131,7 +138,7 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
                 $"\"{desired.SnapshotFolder}\" /grant \"{DeploymentPlan.ServiceAccount}\":(OI)(CI)(R)"),
         ],
 
-        _ =>
+        DeploymentAction.RevokeSnapshotAccess =>
         [
             // `/t` because the grant was inheritable: it has already propagated to the
             // snapshot file, and removing it from the folder alone would leave the account
@@ -139,7 +146,43 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             ("icacls",
                 $"\"{desired.SnapshotFolder}\" /remove \"{DeploymentPlan.ServiceAccount}\" /t"),
         ],
+
+        // Modify on this folder only, never on the install folder or the binary beside it.
+        DeploymentAction.GrantLogsAccess =>
+        [
+            ("icacls",
+                $"\"{desired.LogsFolder}\" /grant \"{DeploymentPlan.ServiceAccount}\":(OI)(CI)(M)"),
+        ],
+
+        DeploymentAction.RevokeLogsAccess =>
+        [
+            ("icacls",
+                $"\"{desired.LogsFolder}\" /remove \"{DeploymentPlan.ServiceAccount}\" /t"),
+        ],
+
+        // What EventLog.CreateEventSource writes, as a command an operator could type. The
+        // message file is the framework's, present on every Windows Server.
+        DeploymentAction.RegisterEventSource =>
+        [
+            ("reg.exe",
+                $"add \"HKLM\\{EventSourceKey}\" /v EventMessageFile /t REG_EXPAND_SZ "
+                + $"/d \"{EventMessageFile}\" /f"),
+        ],
+
+        DeploymentAction.RemoveEventSource =>
+        [
+            ("reg.exe", $"delete \"HKLM\\{EventSourceKey}\" /f"),
+        ],
+
+        // A new action nobody mapped must fail loudly, not run some other step's command.
+        _ => throw new ArgumentOutOfRangeException(nameof(action), action, null),
     };
+
+    private const string EventSourceKey =
+        $@"SYSTEM\CurrentControlSet\Services\EventLog\Application\{DeploymentPlan.EventSource}";
+
+    private const string EventMessageFile =
+        @"%SystemRoot%\Microsoft.NET\Framework64\v4.0.30319\EventLogMessages.dll";
 
     private static string FirewallRule(string verb, DesiredDeployment desired) =>
         string.Create(
@@ -157,6 +200,20 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         Directory.Exists(snapshotFolder)
         && AccessControl.GrantsRead(
             Run("icacls", $"\"{snapshotFolder}\"").Output, DeploymentPlan.ServiceAccount);
+
+    /// Modify, not merely write: pruning an old log deletes it.
+    private static bool LogsWritable(string logsFolder) =>
+        Directory.Exists(logsFolder)
+        && AccessControl.GrantsModify(
+            Run("icacls", $"\"{logsFolder}\"").Output, DeploymentPlan.ServiceAccount);
+
+    private static bool EventSourceRegistered()
+    {
+        using Microsoft.Win32.RegistryKey? key =
+            Microsoft.Win32.Registry.LocalMachine.OpenSubKey(EventSourceKey);
+
+        return key is not null;
+    }
 
     /// Whether the service is running.
     ///
