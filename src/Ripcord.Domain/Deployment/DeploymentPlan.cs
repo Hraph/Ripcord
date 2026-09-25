@@ -1,3 +1,5 @@
+using Ripcord.Domain.Configuration;
+
 namespace Ripcord.Domain.Deployment;
 
 /// What the listener needs on this host, taken from the configuration.
@@ -24,6 +26,9 @@ public sealed record DesiredDeployment(
     /// exactly where the snapshot file has to be written. Every later publish then failed, and
     /// failed quietly, because the one caller catches that.
     public string SnapshotFolder => WindowsPath.FolderOf(SnapshotPath);
+
+    /// Empty when the path names no drive, which is then never reported missing.
+    public string SnapshotVolume => WindowsPath.RootOf(SnapshotPath);
 }
 
 /// What is on the host already. Filled in by the Windows adapter, which looks and reports;
@@ -45,7 +50,11 @@ public sealed record ObservedDeployment(
 
     /// The Application event log source the listener reports a failed start under. Without it
     /// registered, a virtual account cannot write there at all.
-    bool EventSourceRegistered = false)
+    bool EventSourceRegistered = false,
+
+    /// Whether the drive the snapshot is on exists here. The folder on it is created by the
+    /// grant, a volume cannot be.
+    bool SnapshotVolumePresent = true)
 {
     public static ObservedDeployment Nothing { get; } =
         new(false, null, false, null, null, false);
@@ -85,7 +94,9 @@ public sealed record DeploymentStep(
 
 /// The difference between what is on the host and what should be. Deployment and removal are
 /// the same list read in two directions, so an uninstaller cannot drift from its installer.
-public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps)
+/// `BlockedBy` is set when the configuration cannot be deployed on this host at all: the plan
+/// then holds no step, so nothing is half-applied.
+public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string? BlockedBy = null)
 {
     public const string ServiceName = "ripcord";
 
@@ -96,6 +107,8 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps)
     public const string EventSource = "ripcord";
 
     public bool ChangesAnything => Steps.Count > 0;
+
+    public bool IsBlocked => BlockedBy is not null;
 
     /// Putting an edited configuration into effect, which is not a deployment: nothing about
     /// the host changes, the listener simply reads the file again.
@@ -133,6 +146,13 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps)
     {
         ArgumentNullException.ThrowIfNull(desired);
         ArgumentNullException.ThrowIfNull(observed);
+
+        // Checked before any step: the grant is the third step, and failing there used to leave
+        // a service and an open port behind for a listener that could never serve.
+        if (!observed.SnapshotVolumePresent)
+        {
+            return new DeploymentPlan([], MissingVolume(desired));
+        }
 
         List<DeploymentStep> steps = [];
 
@@ -190,7 +210,8 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps)
             steps.Add(new DeploymentStep(
                 DeploymentAction.GrantSnapshotAccess,
                 $"Grant {ServiceAccount} read access to '{desired.SnapshotFolder}'",
-                "the service account cannot read the folder holding the snapshot it serves"));
+                $"that folder holds {SnapshotFileName(desired)}, "
+                + ListenerSettings.SnapshotMeaning));
         }
 
         if (!observed.LogsWritableByService)
@@ -286,6 +307,22 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps)
         action is DeploymentAction.StartService
             or DeploymentAction.RestartService
             or DeploymentAction.UpdateService;
+
+    private static string MissingVolume(DesiredDeployment desired) =>
+        ListenerSettings.IsLegacyDefault(desired.SnapshotPath)
+            ? $"listener.snapshot_path is {desired.SnapshotPath}, the old default, and this "
+                + $"host has no {desired.SnapshotVolume.TrimEnd('\\', '/')} volume. Remove the "
+                + "line: the snapshot then sits beside ripcord.yaml."
+            : $"listener.snapshot_path is on {desired.SnapshotVolume}, which this host does "
+                + "not have. Point it at a folder on a volume this host has, or remove the "
+                + "line to keep it beside ripcord.yaml.";
+
+    private static string SnapshotFileName(DesiredDeployment desired)
+    {
+        string folder = desired.SnapshotFolder;
+        return folder.Length == 0 ? desired.SnapshotPath : desired.SnapshotPath[folder.Length..]
+            .TrimStart('\\', '/');
+    }
 
     /// Windows paths and addresses are case-insensitive; a difference in case is not a change.
     private static bool SamePath(string? left, string? right) =>

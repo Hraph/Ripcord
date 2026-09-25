@@ -193,4 +193,26 @@ public class ListenerSettingsValidationTests
             ConfigurationValidator.Validate(document, ValidDocument.MachineName).Errors,
             error => error.Path == "listener.snapshot_path");
     }
+
+    /// Respected, not rewritten: an operator who set the old default on a host that has D:
+    /// keeps it. Whether the volume exists is a host fact `service install` checks.
+    [Fact]
+    public void An_explicit_snapshot_path_is_kept_as_written()
+    {
+        ConfigurationDocument document = ValidDocument.Create();
+        document.Listener!.SnapshotPath = @"D:\Ripcord\state.json";
+
+        ConfigurationValidation validation = ConfigurationValidator.Validate(
+            document, ValidDocument.MachineName, @"C:\Program Files\Ripcord\ripcord.yaml");
+
+        Assert.Equal(@"D:\Ripcord\state.json", validation.Configuration!.Listener.SnapshotPath);
+    }
+
+    [Theory]
+    [InlineData(@"D:\Ripcord\state.json", true)]
+    [InlineData("d:/ripcord/STATE.json", true)]
+    [InlineData(@"C:\Program Files\Ripcord\state.json", false)]
+    [InlineData(null, false)]
+    public void The_old_default_is_recognised_however_it_is_spelt(string? path, bool legacy) =>
+        Assert.Equal(legacy, ListenerSettings.IsLegacyDefault(path));
 }
