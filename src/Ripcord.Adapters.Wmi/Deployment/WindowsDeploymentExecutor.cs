@@ -54,7 +54,7 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
 
     /// The file holding the certificate's private key: a CNG key under `Crypto\Keys`, a
     /// legacy CSP one under `Crypto\RSA\MachineKeys`. Null when any link is missing.
-    /// Unverified on a host (V78).
+    /// Unverified on a host (V69).
     private static string? KeyFile(DesiredDeployment desired)
     {
         if (desired.CertificateThumbprint is not { } thumbprint)

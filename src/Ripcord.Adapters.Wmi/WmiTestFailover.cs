@@ -169,7 +169,7 @@ internal static class WmiTestFailover
         CimOperationOptions options)
     {
         // The switch's friendly name, as `Set-VMNetworkAdapter -TestReplicaSwitchName` takes
-        // it and as LastKnownSwitchName reads back — not its GUID (V76).
+        // it and as LastKnownSwitchName reads back — not its GUID (V67).
         string testSwitch = switchName is null
             ? string.Empty
             : switches.Values.FirstOrDefault(name =>

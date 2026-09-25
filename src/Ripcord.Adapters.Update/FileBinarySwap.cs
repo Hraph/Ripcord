@@ -36,7 +36,7 @@ public sealed class FileBinarySwap : IBinarySwap
     }
 
     /// A running image cannot be opened for writing: Windows answers a sharing violation.
-    /// Opened and closed at once, nothing written. Unverified on a host (V77).
+    /// Opened and closed at once, nothing written. Unverified on a host (V68).
     private static bool Running(string path)
     {
         try
