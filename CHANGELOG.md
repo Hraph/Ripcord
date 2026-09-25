@@ -27,6 +27,16 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
   runs the old build and ends with `ripcord service restart`. A listener started before this
   version has no record: `unknown` until it restarts.
 
+### Fixed
+
+- **A refusal no longer blames Hyper-V when Hyper-V was not involved.** Every failure line
+  began "cannot read the local Hyper-V state", including `check-update` refusing because
+  checking was off. Only a failed Hyper-V read says so now.
+- **`updates.check` and `updates.install` refusals say how to switch them on**:
+  `set updates.check: true in ripcord.yaml`, and likewise for install.
+- **Failure and refusal lines wrap at 75 columns**, so a reason from Windows or the network
+  no longer runs off a 1024×768 console.
+
 ## 0.6.0 — 2026-09-25
 
 ### Added
