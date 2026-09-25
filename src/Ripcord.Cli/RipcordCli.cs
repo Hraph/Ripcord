@@ -554,7 +554,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             return ExitCode.InvalidConfiguration;
         }
 
-        StatusQuery query = new(ports.ConfigStore, this.Pair());
+        StatusQuery query = new(ports.ConfigStore, this.Pair(), ports.DeploymentExecutor);
 
         StatusOutcome outcome = await query
             .ExecuteAsync(new StatusRequest(path, environment.MachineName), cancellationToken)
@@ -574,7 +574,8 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
                 rendered.Configuration.Peer.OfflineAfter,
                 ports.Clock.UtcNow,
                 this.KnownUpdate(),
-                this.Ink));
+                this.Ink,
+                rendered.Listener));
             return outcome.Code;
         }
 

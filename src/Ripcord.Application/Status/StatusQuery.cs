@@ -1,7 +1,10 @@
+using Ripcord.Application.Deployment;
 using Ripcord.Domain.Configuration;
+using Ripcord.Domain.Deployment;
 using Ripcord.Domain.Replication;
 using Ripcord.Domain;
 using Ripcord.Ports.Configuration;
+using Ripcord.Ports.Deployment;
 
 namespace Ripcord.Application.Status;
 
@@ -9,7 +12,9 @@ public sealed record StatusRequest(string ConfigurationPath, string MachineName)
 
 /// A successful read: the pair, and the configuration the rendering needs to interpret it.
 /// The two only ever exist together, so nothing downstream has to assert that they do.
-public sealed record RenderedStatus(PairView View, RipcordConfiguration Configuration);
+/// `Listener` is null when the other host can read this one as far as this side can tell.
+public sealed record RenderedStatus(
+    PairView View, RipcordConfiguration Configuration, ListenerAlert? Listener = null);
 
 /// Everything `ripcord status` produced: the exit code, and whichever of the pair, the
 /// configuration errors or the failure message explains it.
@@ -27,7 +32,8 @@ public sealed record StatusOutcome(
 
 /// Reads both sides of the pair. The configuration is validated first, so a run on the wrong
 /// host stops before it has read anything from Hyper-V.
-public sealed class StatusQuery(IConfigStore configStore, PairReader pairReader)
+public sealed class StatusQuery(
+    IConfigStore configStore, PairReader pairReader, IDeploymentExecutor executor)
 {
     public async Task<StatusOutcome> ExecuteAsync(
         StatusRequest request, CancellationToken cancellationToken)
@@ -55,7 +61,13 @@ public sealed class StatusQuery(IConfigStore configStore, PairReader pairReader)
 
         return new StatusOutcome(
             ExitCode.Success,
-            new RenderedStatus(view, configuration),
+            new RenderedStatus(
+                view,
+                configuration,
+                ListenerAvailability.Judge(
+                    configuration.Listener,
+                    configuration.Peer.Hostname,
+                    ServiceReading.Read(executor))),
             [],
             null,
             [.. ConfigurationNotes.Of(configuration), .. read.Notes]);

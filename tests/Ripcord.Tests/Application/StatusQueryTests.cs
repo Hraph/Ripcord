@@ -2,11 +2,13 @@ using Ripcord.Adapters.Fake;
 using Ripcord.Application.Status;
 using Ripcord.Application;
 using Ripcord.Domain.Configuration;
+using Ripcord.Domain.Deployment;
 using Ripcord.Domain.Inventory;
 using Ripcord.Domain.Replication;
 using Ripcord.Domain.TestFailover;
 using Ripcord.Domain;
 using Ripcord.Ports.Configuration;
+using Ripcord.Ports.Deployment;
 using Ripcord.Ports.Replication;
 using Ripcord.Domain.Pairing;
 using Ripcord.Ports;
@@ -146,7 +148,8 @@ public class StatusQueryTests
     {
         StatusQuery query = new(
             new StubConfigStore(ConfigurationRead.Failed("ripcord.yaml", "file not found")),
-            Pair(new FakeHypervProvider(FakeScenarios.Healthy(Now))));
+            Pair(new FakeHypervProvider(FakeScenarios.Healthy(Now))),
+            ListenerService.Running());
 
         StatusOutcome outcome = await query.ExecuteAsync(
             new StatusRequest("ripcord.yaml", FakeScenarios.LocalHostName), CancellationToken.None);
@@ -195,12 +198,41 @@ public class StatusQueryTests
         Assert.Equal(TimeSpan.FromSeconds(120), outcome.Configuration!.Peer.OfflineAfter);
     }
 
+    [Fact]
+    public async Task A_running_listener_adds_no_alert()
+    {
+        StatusOutcome outcome = await Run();
+
+        Assert.Null(outcome.Rendered!.Listener);
+    }
+
+    /// The other host shows this one SILENT; only this side can say the listener is down.
+    [Fact]
+    public async Task A_stopped_listener_is_reported_and_still_exits_zero()
+    {
+        StatusOutcome outcome = await Run(executor: ListenerService.In(ServiceRunState.Stopped));
+
+        Assert.Equal(ExitCode.Success, outcome.Code);
+        Assert.Equal("NOT RUNNING", outcome.Rendered!.Listener!.Headline);
+    }
+
+    [Fact]
+    public async Task A_service_that_cannot_be_read_degrades_to_unknown()
+    {
+        StatusOutcome outcome = await Run(executor: ListenerService.Failing("RPC unavailable"));
+
+        Assert.Equal(ExitCode.Success, outcome.Code);
+        Assert.Equal("UNKNOWN", outcome.Rendered!.Listener!.Headline);
+        Assert.Contains("RPC unavailable", outcome.Rendered.Listener.Reason, StringComparison.Ordinal);
+    }
+
     private static Task<StatusOutcome> Run(
         IHypervProvider? provider = null,
         string machineName = FakeScenarios.LocalHostName,
         IPeerChannel? peerChannel = null,
         ISnapshotStore? snapshotStore = null,
-        FakeHostSystemProvider? hostSystem = null)
+        FakeHostSystemProvider? hostSystem = null,
+        IDeploymentExecutor? executor = null)
     {
         StatusQuery query = new(
             new StubConfigStore(ConfigurationRead.Succeeded(ValidDocument())),
@@ -208,7 +240,8 @@ public class StatusQueryTests
                 provider ?? new FakeHypervProvider(FakeScenarios.Healthy(Now)),
                 hostSystem,
                 peerChannel,
-                snapshotStore));
+                snapshotStore),
+            executor ?? ListenerService.Running());
 
         return query.ExecuteAsync(
             new StatusRequest("ripcord.yaml", machineName), CancellationToken.None);
@@ -274,5 +307,27 @@ public class StatusQueryTests
             this.WasAsked = true;
             return Task.FromResult(local);
         }
+    }
+}
+
+/// The listener service in one state, or refusing to be read.
+internal sealed class ListenerService(ObservedService? service, string? failure = null)
+    : IDeploymentExecutor
+{
+    public static ListenerService Running() => In(ServiceRunState.Running);
+
+    public static ListenerService In(ServiceRunState state) =>
+        new(new ObservedService(true, "\"C:\\Ripcord\\ripcord.exe\" serve", state, "Auto", 0, 0));
+
+    public static ListenerService Failing(string reason) => new(null, reason);
+
+    public ObservedDeployment Observe(DesiredDeployment desired, ObservedService observed) =>
+        ObservedDeployment.Nothing;
+
+    public ObservedService ObserveService() =>
+        service ?? throw new InvalidOperationException(failure);
+
+    public void Apply(DeploymentStep change, DesiredDeployment desired)
+    {
     }
 }

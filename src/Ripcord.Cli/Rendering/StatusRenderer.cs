@@ -1,4 +1,5 @@
 using Ripcord.Domain;
+using Ripcord.Domain.Deployment;
 using Ripcord.Domain.Pairing;
 using Ripcord.Domain.Replication;
 using System.Text;
@@ -26,7 +27,8 @@ public static class StatusRenderer
         TimeSpan offlineAfter,
         DateTimeOffset now,
         string? updateNotice = null,
-        Palette? palette = null)
+        Palette? palette = null,
+        ListenerAlert? listener = null)
     {
         ArgumentNullException.ThrowIfNull(view);
 
@@ -39,8 +41,32 @@ public static class StatusRenderer
         AppendHost(output, "LOCAL", view.Local, offlineAfter, now);
         output.AppendLine();
         AppendHost(output, "PEER", view.Peer, offlineAfter, now, view.PeerCapturedAt);
+        AppendListener(output, listener);
 
         return Layout.Rendered(output, palette);
+    }
+
+    /// Last, after both hosts: it explains what the other host will show about this one,
+    /// which only this side can see.
+    private static void AppendListener(StringBuilder output, ListenerAlert? alert)
+    {
+        if (alert is null)
+        {
+            return;
+        }
+
+        string headline = alert.Critical ? Ink.Red(alert.Headline) : Ink.Amber(alert.Headline);
+
+        output.AppendLine();
+        output.AppendLine(
+            Ink.Bold(Pad("LISTENER", LabelColumn + 2)) + headline);
+
+        foreach (string line in Layout.Wrap(Sentence(alert.Reason), Width - Indent))
+        {
+            output.AppendLine(new string(' ', Indent) + line);
+        }
+
+        output.AppendLine($"{new string(' ', Indent)}Next: {alert.Next}");
     }
 
     /// Beside the version line, because that is what it is about, and below the banner

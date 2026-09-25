@@ -1,6 +1,7 @@
 using Ripcord.Cli.Rendering;
 using Ripcord.Cli;
 using Ripcord.Domain.Configuration;
+using Ripcord.Domain.Deployment;
 using Ripcord.Domain;
 using Ripcord.Domain.Replication;
 
@@ -37,6 +38,33 @@ public class StatusRendererTests
         Assert.Equal(
             expected.Replace("{version}", $"ripcord {BuildInfo.VersionWithCommit}", StringComparison.Ordinal),
             Render(DegradedPair()));
+    }
+
+    /// Last on the page, after both hosts: it explains what the other host shows about this one.
+    [Fact]
+    public void A_listener_alert_closes_the_page()
+    {
+        ListenerAlert alert = new(
+            "NOT RUNNING",
+            "the listener service is stopped, so HV-PRIMARY-01 cannot read this host",
+            "ripcord service",
+            Critical: true);
+
+        string rendered = StatusRenderer.Render(
+            DegradedPair(), TimeSpan.FromSeconds(120), Now, listener: alert);
+
+        Assert.EndsWith(
+            """
+            LISTENER  NOT RUNNING
+              The listener service is stopped, so HV-PRIMARY-01 cannot read this host.
+              Next: ripcord service
+
+            """,
+            rendered,
+            StringComparison.Ordinal);
+        Assert.All(
+            rendered.Split(Environment.NewLine),
+            line => Assert.True(line.Length <= StatusRenderer.Width, line));
     }
 
     /// The peer answers with a snapshot, never live. Saying how old it is beats the illusion
