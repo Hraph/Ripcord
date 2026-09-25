@@ -102,8 +102,8 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
     private void Refuse(TextWriter error, string line) =>
         error.WriteLine(this.ErrorInk.Apply(Rendering.Ink.Red(line)));
 
-    /// Typed in full, not "y": this creates a Windows service and opens an inbound port on a
-    /// host that may run a domain controller. A keystroke is not a decision.
+    /// Typed in full, not "y", for failover, failback and fence: they move or pin production
+    /// VMs, and a keystroke is not a decision. Everything else asks `Agreed`'s y/n.
     private const string ConfirmationPrompt = "Type the node name to confirm";
 
     public async Task<ExitCode> RunAsync(
@@ -1613,7 +1613,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
     /// typed node name stays for failover and fence, so it is never typed out of habit.
     private bool Agreed(TextWriter output, TextWriter error, string consequence)
     {
-        output.WriteLine($"  {consequence}");
+        WriteConsequence(output, consequence);
         output.Write(this.Ink.Apply(
             "  " + Rendering.Ink.Bold("Go ahead?")
             + Rendering.Ink.Faint("  y/n [n]")
@@ -1628,9 +1628,18 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         return false;
     }
 
+    // A failover naming several VMs runs well past 75 columns on one line.
+    private static void WriteConsequence(TextWriter output, string consequence)
+    {
+        foreach (string line in Rendering.Layout.Wrap(consequence, Rendering.Layout.Width - 2))
+        {
+            output.WriteLine($"  {line}");
+        }
+    }
+
     private bool Confirmed(TextWriter output, TextWriter error, string consequence)
     {
-        output.WriteLine($"  {consequence}");
+        WriteConsequence(output, consequence);
         output.Write($"  {ConfirmationPrompt} ({environment.MachineName}): ");
 
         string? typed = environment.ConfirmationReader?.ReadLine();
