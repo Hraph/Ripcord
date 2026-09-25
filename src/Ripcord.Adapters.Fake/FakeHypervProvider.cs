@@ -73,6 +73,10 @@ public sealed class FakeHypervProvider : IHypervProvider
 
     public Exception? CreateFailure { get; set; }
 
+    /// The create fails after Hyper-V made the test VM: the case where the sequence has no
+    /// name back and has to find what appeared.
+    public bool CreateFailsAfterCreating { get; set; }
+
     public Exception? StartVmFailure { get; set; }
 
     public Exception? StopFailure { get; set; }
@@ -112,19 +116,44 @@ public sealed class FakeHypervProvider : IHypervProvider
     {
         cancellationToken.ThrowIfCancellationRequested();
         this.Calls.Add($"create:{vmName}");
+
+        if (this.CreateFailure is not null && !this.CreateFailsAfterCreating)
+        {
+            return Task.FromException<TestVm>(this.CreateFailure);
+        }
+
+        TestVm created = this.TestVmFactory(vmName);
+        this.ExistingTestVms.Add(created);
+
         return this.CreateFailure is null
-            ? Task.FromResult(this.TestVmFactory(vmName))
+            ? Task.FromResult(created)
             : Task.FromException<TestVm>(this.CreateFailure);
     }
 
     /// Deliberately does not observe the token: it is the compensating action, and
     /// Compensation hands it one of its own precisely so a cancelled run still cleans up.
-    public Task StopTestFailoverAsync(string vmName, CancellationToken cancellationToken)
+    ///
+    /// Refuses a name that is not a test VM, as the real adapter does: destroying the
+    /// replicated VM by mistake destroys production.
+    public Task StopTestFailoverAsync(string testVmName, CancellationToken cancellationToken)
     {
-        this.Calls.Add($"stop:{vmName}");
-        return this.StopFailure is null
-            ? Task.CompletedTask
-            : Task.FromException(this.StopFailure);
+        this.Calls.Add($"stop:{testVmName}");
+
+        if (this.StopFailure is not null)
+        {
+            return Task.FromException(this.StopFailure);
+        }
+
+        int index = this.ExistingTestVms.FindIndex(vm => vm.Name == testVmName);
+
+        if (index < 0)
+        {
+            return Task.FromException(new InvalidOperationException(
+                $"'{testVmName}' is not a test VM, and only a test VM is destroyed"));
+        }
+
+        this.ExistingTestVms.RemoveAt(index);
+        return Task.CompletedTask;
     }
 
     public Task StartTestVmAsync(string testVmName, CancellationToken cancellationToken)

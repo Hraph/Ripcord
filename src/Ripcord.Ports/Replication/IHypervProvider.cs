@@ -35,8 +35,9 @@ public interface IHypervProvider
     /// rather than deriving its name is what keeps the `" - Test"` suffix out of the code.
     Task<TestVm> StartTestFailoverAsync(string vmName, CancellationToken cancellationToken);
 
-    /// Destroys the test VM. Named for the replicated VM, not for the test copy.
-    Task StopTestFailoverAsync(string vmName, CancellationToken cancellationToken);
+    /// Destroys the test VM, named as `StartTestFailoverAsync` or `GetTestVmsAsync` returned
+    /// it — never the replicated VM, which is production. Refuses a VM that is not a test copy.
+    Task StopTestFailoverAsync(string testVmName, CancellationToken cancellationToken);
 
     Task StartTestVmAsync(string testVmName, CancellationToken cancellationToken);
 

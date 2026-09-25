@@ -26,7 +26,7 @@ public abstract class ReadOnlyHypervProvider : IHypervProvider
         string vmName, CancellationToken cancellationToken) =>
         Refuse<TestVm>();
 
-    public Task StopTestFailoverAsync(string vmName, CancellationToken cancellationToken) =>
+    public Task StopTestFailoverAsync(string testVmName, CancellationToken cancellationToken) =>
         Refuse<object>();
 
     public Task StartTestVmAsync(string testVmName, CancellationToken cancellationToken) =>

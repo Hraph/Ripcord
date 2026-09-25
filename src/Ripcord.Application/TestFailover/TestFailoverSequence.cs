@@ -235,7 +235,9 @@ public sealed class TestFailoverSequence(
     private async Task<VmTestFailoverResult> RunOneAsync(
         string vmName, TestFailoverPlan plan, CancellationToken cancellationToken)
     {
-        bool created = false;
+        TestVm? testVm = null;
+        IReadOnlyList<string>? before = null;
+        bool creating = false;
 
         try
         {
@@ -243,11 +245,12 @@ public sealed class TestFailoverSequence(
                 .AttachTestNetworkAsync(vmName, plan.TestSwitch, cancellationToken)
                 .ConfigureAwait(false);
 
-            TestVm testVm = await provider
+            before = await this.TestVmNamesAsync(cancellationToken).ConfigureAwait(false);
+            creating = true;
+
+            testVm = await provider
                 .StartTestFailoverAsync(vmName, cancellationToken)
                 .ConfigureAwait(false);
-
-            created = true;
 
             IsolationAssessment isolation = Isolation.Of(
                 testVm.Adapters,
@@ -257,12 +260,19 @@ public sealed class TestFailoverSequence(
             if (!isolation.IsIsolated)
             {
                 return await this
-                    .CleanUpAsync(vmName, NotIsolated(vmName, isolation))
+                    .CleanUpAsync([testVm.Name], NotIsolated(vmName, isolation))
+                    .ConfigureAwait(false);
+            }
+
+            if (Isolation.OffTheTestSwitch(testVm.Adapters, plan.TestSwitch) is { Count: > 0 } off)
+            {
+                return await this
+                    .CleanUpAsync([testVm.Name], NotOnTheTestSwitch(vmName, off, plan.TestSwitch!))
                     .ConfigureAwait(false);
             }
 
             return await this
-                .CleanUpAsync(vmName, await this
+                .CleanUpAsync([testVm.Name], await this
                     .BootAsync(vmName, testVm, cancellationToken)
                     .ConfigureAwait(false))
                 .ConfigureAwait(false);
@@ -279,12 +289,54 @@ public sealed class TestFailoverSequence(
                 exception is OperationCanceledException ? null : exception.Message,
                 null);
 
-            // Attempted whenever the creation was attempted, because a create can fail after
-            // having created. A stop that reports "nothing to stop" is noise; a test VM left
-            // behind because nobody tried is a broken next run.
-            return created || exception is not OperationCanceledException
-                ? await this.CleanUpAsync(vmName, failure).ConfigureAwait(false)
+            if (testVm is not null)
+            {
+                return await this.CleanUpAsync([testVm.Name], failure).ConfigureAwait(false);
+            }
+
+            if (!creating)
+            {
+                return failure;
+            }
+
+            // A create can fail after having created. Whatever test VM appeared since the
+            // scan before it is this run's; the replica itself is never a candidate.
+            IReadOnlyList<string>? after =
+                await this.TestVmNamesAsync(CancellationToken.None).ConfigureAwait(false);
+
+            if (before is null || after is null)
+            {
+                return failure with
+                {
+                    FailureMessage = (failure.FailureMessage ?? "interrupted")
+                        + ". A test VM may be left behind: the next run lists it",
+                };
+            }
+
+            string[] appeared =
+                [.. after.Where(name => !before.Contains(name, StringComparer.OrdinalIgnoreCase))];
+
+            return appeared.Length > 0
+                ? await this.CleanUpAsync(appeared, failure).ConfigureAwait(false)
                 : failure;
+        }
+    }
+
+    /// Null when the host could not say: the caller then cannot tell a new test VM from an
+    /// old one, and must not guess.
+    private async Task<IReadOnlyList<string>?> TestVmNamesAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            IReadOnlyList<TestVm> testVms = await provider
+                .GetTestVmsAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            return [.. testVms.Select(vm => vm.Name)];
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return null;
         }
     }
 
@@ -351,13 +403,23 @@ public sealed class TestFailoverSequence(
     /// Step 6, and the reason `Compensation` exists. Discard policy: one bounded attempt,
     /// then a loud line in the report. The test VM is a copy — a second attempt at destroying
     /// one that refused to die is unlikely to fare better, and the honest move is to say so.
+    ///
+    /// Always by the test VM's own name: the replicated VM's would name production.
     private async Task<VmTestFailoverResult> CleanUpAsync(
-        string vmName, VmTestFailoverResult result) =>
+        IReadOnlyList<string> testVmNames, VmTestFailoverResult result) =>
         result with
         {
             Cleanup = await Compensation
                 .RunAsync(
-                    token => provider.StopTestFailoverAsync(vmName, token),
+                    async token =>
+                    {
+                        foreach (string testVmName in testVmNames)
+                        {
+                            await provider
+                                .StopTestFailoverAsync(testVmName, token)
+                                .ConfigureAwait(false);
+                        }
+                    },
                     timing.CleanupDeadline)
                 .ConfigureAwait(false),
         };
@@ -370,6 +432,17 @@ public sealed class TestFailoverSequence(
             null,
             isolation.Breaches,
             "the test VM is not isolated from the production network",
+            null);
+
+    private static VmTestFailoverResult NotOnTheTestSwitch(
+        string vmName, IReadOnlyList<string> adapters, string testSwitch) =>
+        new(
+            vmName,
+            TestFailoverStatus.Failed,
+            null,
+            [],
+            $"{string.Join(", ", adapters)} not on '{testSwitch}': the test VM would boot "
+                + "without the network test_failover_switch names",
             null);
 
     private static VmTestFailoverResult Planned(string vmName) =>

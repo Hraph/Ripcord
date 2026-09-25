@@ -35,7 +35,7 @@ public class TestFailoverSequenceTests
                 "switches",
                 "start:VM-DC-01 (test copy)",
                 "heartbeat:VM-DC-01 (test copy)",
-                "stop:VM-DC-01",
+                "stop:VM-DC-01 (test copy)",
             ],
             host.Calls.Where(call => call != "test-vms"));
     }
@@ -78,7 +78,7 @@ public class TestFailoverSequenceTests
         Assert.Equal(TestFailoverStatus.RefusedNotIsolated, result.Status);
         Assert.NotEmpty(result.Breaches);
         Assert.DoesNotContain(host.Calls, call => call.StartsWith("start:", StringComparison.Ordinal));
-        Assert.Contains("stop:VM-DC-01", host.Calls);
+        Assert.Contains("stop:VM-DC-01 (test copy)", host.Calls);
     }
 
     [Fact]
@@ -93,7 +93,7 @@ public class TestFailoverSequenceTests
 
         Assert.Equal(TestFailoverStatus.Failed, Assert.Single(report.Results).Status);
         Assert.Contains("not enough memory", Assert.Single(report.Results).FailureMessage);
-        Assert.Contains("stop:VM-DC-01", host.Calls);
+        Assert.Contains("stop:VM-DC-01 (test copy)", host.Calls);
     }
 
     /// The earliest two steps, which nothing exercised. Attaching the isolated network and
@@ -112,6 +112,67 @@ public class TestFailoverSequenceTests
         Assert.Equal(TestFailoverStatus.Failed, Assert.Single(report.Results).Status);
         Assert.Contains("recovery point", Assert.Single(report.Results).FailureMessage);
         Assert.DoesNotContain("start:VM-DC-01", host.Calls);
+        Assert.DoesNotContain(host.Calls, call => call.StartsWith("stop:", StringComparison.Ordinal));
+    }
+
+    /// The create made the test VM and then failed, so no name came back. What appeared since
+    /// the scan before it is destroyed, and the replicated VM never is.
+    [Fact]
+    public async Task A_create_that_fails_after_creating_destroys_what_appeared()
+    {
+        FakeHypervProvider host = new(FakeScenarios.Healthy(Start))
+        {
+            CreateFailure = new InvalidOperationException("Hyper-V did not name it"),
+            CreateFailsAfterCreating = true,
+        };
+        host.ExistingTestVms.Add(new TestVm("VM-LEGACY-01 (test copy)", Start.AddDays(-3), []));
+
+        TestFailoverReport report = await Run(host, "VM-DC-01");
+
+        VmTestFailoverResult result = Assert.Single(report.Results);
+        Assert.Equal(TestFailoverStatus.Failed, result.Status);
+        Assert.True(result.Cleanup?.Succeeded);
+        Assert.Equal(
+            ["stop:VM-DC-01 (test copy)"],
+            host.Calls.Where(call => call.StartsWith("stop:", StringComparison.Ordinal)));
+    }
+
+    /// Isolated, but on no switch while one was declared: the test would boot with no network,
+    /// which is not what the configuration set up. Refused, and the copy destroyed.
+    [Fact]
+    public async Task A_test_vm_off_the_declared_test_switch_is_not_started()
+    {
+        FakeHypervProvider host = new(FakeScenarios.Healthy(Start))
+        {
+            TestVmFactory = name => new TestVm(
+                name + " (test copy)",
+                null,
+                [new VirtualAdapter("Network Adapter", null, false, "00-15-5D-01-02-01", false, null)]),
+        };
+
+        TestFailoverReport report = await Run(host, "VM-DC-01");
+
+        VmTestFailoverResult result = Assert.Single(report.Results);
+        Assert.Equal(TestFailoverStatus.Failed, result.Status);
+        Assert.Contains("not on 'vSwitch-ISOLATED'", result.FailureMessage);
+        Assert.DoesNotContain(host.Calls, call => call.StartsWith("start:", StringComparison.Ordinal));
+        Assert.Contains("stop:VM-DC-01 (test copy)", host.Calls);
+    }
+
+    /// Every stop names a test VM: the fake refuses any other name, as the adapter does.
+    [Fact]
+    public async Task No_path_ever_asks_to_destroy_the_replicated_vm()
+    {
+        FakeHypervProvider host = new(FakeScenarios.Healthy(Start))
+        {
+            StartVmFailure = new InvalidOperationException("not enough memory on the host"),
+        };
+
+        TestFailoverReport report = await Run(host, "VM-DC-01", "VM-LEGACY-01");
+
+        Assert.All(report.Results, result => Assert.True(result.Cleanup?.Succeeded));
+        Assert.DoesNotContain("stop:VM-DC-01", host.Calls);
+        Assert.DoesNotContain("stop:VM-LEGACY-01", host.Calls);
     }
 
     [Fact]
@@ -161,7 +222,7 @@ public class TestFailoverSequenceTests
         TestFailoverReport report = await Run(host, "VM-DC-01");
 
         Assert.Equal(TestFailoverStatus.NoHeartbeat, Assert.Single(report.Results).Status);
-        Assert.Contains("stop:VM-DC-01", host.Calls);
+        Assert.Contains("stop:VM-DC-01 (test copy)", host.Calls);
     }
 
     /// A guest that cannot answer at all — an incompatible integration services version, or a
@@ -232,7 +293,7 @@ public class TestFailoverSequenceTests
 
         Assert.Equal(TestFailoverStatus.BootedWithoutHeartbeat, result.Status);
         Assert.Contains("could not be read", result.FailureMessage);
-        Assert.Contains("stop:VM-DC-01", host.Calls);
+        Assert.Contains("stop:VM-DC-01 (test copy)", host.Calls);
     }
 
     /// It takes three polls to come up, which is an ordinary boot rather than a failure.
@@ -267,7 +328,7 @@ public class TestFailoverSequenceTests
         TestFailoverReport report = await Sequence(host).RunAsync(
             Plan(["VM-DC-01"]), cancellation.Token);
 
-        Assert.Contains("stop:VM-DC-01", host.Calls);
+        Assert.Contains("stop:VM-DC-01 (test copy)", host.Calls);
         Assert.Equal(ExitCode.Refused, report.Code);
     }
 
@@ -350,7 +411,7 @@ public class TestFailoverSequenceTests
         List<string> calls = [.. host.Calls];
 
         Assert.True(
-            calls.IndexOf("stop:VM-DC-01") < calls.IndexOf("create:VM-LEGACY-01"),
+            calls.IndexOf("stop:VM-DC-01 (test copy)") < calls.IndexOf("create:VM-LEGACY-01"),
             "the second test VM was created before the first was destroyed");
     }
 
