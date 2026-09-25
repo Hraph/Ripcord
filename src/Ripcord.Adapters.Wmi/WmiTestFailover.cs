@@ -334,8 +334,12 @@ internal static class WmiTestFailover
     {
         using CimMethodParametersCollection parameters =
         [
+            // Declared `string[]` EmbeddedInstance: the text, not the instance (V38, V66).
             CimMethodParameter.Create(
-                "ResourceSettings", new[] { allocation }, CimType.InstanceArray, CimFlags.In),
+                "ResourceSettings",
+                new[] { CimEmbeddedInstance.Text(allocation) },
+                CimType.StringArray,
+                CimFlags.In),
         ];
 
         using CimInstance service = VirtualSystemManagementService(session, options);

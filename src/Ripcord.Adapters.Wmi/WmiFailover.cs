@@ -165,11 +165,9 @@ internal static class WmiFailover
     /// changed and nothing else touched.
     ///
     /// **Unverified on this hardware (V43).** The MOF declares `SystemSettings` as a string —
-    /// "a string representation of an instance of the Msvm_VirtualSystemSettingData class" —
-    /// and how MI marshals a `CimInstance` into that is exactly the ambiguity V38 records for
-    /// `GetReplicationStatisticsEx`. `CimType.Instance` is used here for the same reason and
-    /// with the same caveat: it is the reading the rest of this adapter takes, so if the lab
-    /// disproves it, it is disproved in one place rather than two.
+    /// "a string representation of an instance of the Msvm_VirtualSystemSettingData class".
+    /// The field test refuted passing the instance itself for the same kind of parameter
+    /// (V38), so it goes across as its embedded-instance text.
     ///
     /// Whatever it turns out to be, the failure is loud: `ModifySystemSettings` returns a
     /// non-zero code and `WmiJob.Complete` throws, so the fence reports that it did not fence.
@@ -193,7 +191,10 @@ internal static class WmiFailover
         using CimMethodParametersCollection parameters =
         [
             CimMethodParameter.Create(
-                "SystemSettings", settings, CimType.Instance, CimFlags.In),
+                "SystemSettings",
+                CimEmbeddedInstance.Text(settings),
+                CimType.String,
+                CimFlags.In),
         ];
 
         using CimInstance service = session.QueryInstances(
