@@ -28,17 +28,7 @@ public sealed class ServiceInspection(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        ObservedService service;
-
-        try
-        {
-            service = executor.ObserveService();
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            service = new ObservedService(
-                true, null, ServiceRunState.Unknown, null, null, null, exception.Message);
-        }
+        ObservedService service = ServiceReading.Read(executor);
 
         DeploymentOutcome deployment =
             new ListenerDeployment(configStore, executor).Plan(request, service);
