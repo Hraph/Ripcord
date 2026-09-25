@@ -432,6 +432,64 @@ public class RipcordCliTests
         Assert.DoesNotContain("intermediate state", run.Output, StringComparison.Ordinal);
     }
 
+    /// The field failure: `sc start` came back with 1053. The console has no room for the
+    /// reason, so it names the read-only command that shows it.
+    [Fact]
+    public async Task Service_install_whose_start_fails_points_to_ripcord_service()
+    {
+        FakeDeploymentExecutor executor = new(failOnStep: 5);
+
+        CliRun run = await Run(
+            ["service", "install"], deploymentExecutor: executor, typed: FakeScenarios.LocalHostName);
+
+        Assert.Equal(DeploymentAction.RegisterEventSource, executor.Applied[^1]);
+        Assert.Contains(
+            "Run 'ripcord service' to see why it did not start.", run.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Service_install_whose_firewall_step_fails_does_not_blame_the_start()
+    {
+        FakeDeploymentExecutor executor = new(failOnStep: 1);
+
+        CliRun run = await Run(
+            ["service", "install"], deploymentExecutor: executor, typed: FakeScenarios.LocalHostName);
+
+        Assert.DoesNotContain("see why it did not start", run.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Service_says_when_the_service_account_cannot_write_its_logs()
+    {
+        CliRun run = await Run(
+            ["service"],
+            deploymentExecutor: new FakeDeploymentExecutor(
+                Deployed() with { LogsWritableByService = false }));
+
+        Assert.Contains(
+            @"logs       NOT writable by NT SERVICE\ripcord", run.Output, StringComparison.Ordinal);
+        Assert.Contains("ripcord service install --dry-run", run.Output, StringComparison.Ordinal);
+    }
+
+    /// Rule 4: the two new deployment steps are in the dry run, and the dry run changes
+    /// nothing.
+    [Fact]
+    public async Task Service_install_dry_run_lists_the_logs_grant_and_the_event_source()
+    {
+        FakeDeploymentExecutor executor = new();
+
+        CliRun run = await Run(["service", "install", "--dry-run"], deploymentExecutor: executor);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Contains(
+            @"grant NT SERVICE\ripcord modify access", run.Output, StringComparison.Ordinal);
+        Assert.Contains(
+            "Register the 'ripcord' source in the Application event log",
+            run.Output,
+            StringComparison.Ordinal);
+        Assert.Empty(executor.Applied);
+    }
+
     /// The one move that follows every configuration edit. The listener reads `ripcord.yaml`
     /// once, when it starts, so an edited file changes nothing until this has run.
     [Fact]

@@ -32,7 +32,7 @@ public static class DeploymentRenderer
 
         if (observed is not null)
         {
-            AppendObserved(output, observed);
+            AppendObserved(output, observed, desired);
         }
 
         if (!plan.ChangesAnything)
@@ -76,7 +76,7 @@ public static class DeploymentRenderer
         output.AppendLine(Ink.Bold("RIPCORD LISTENER"));
         output.AppendLine();
 
-        AppendObserved(output, observed);
+        AppendObserved(output, observed, desired);
 
         output.AppendLine(plan is null || !plan.ChangesAnything
             ? "  It matches the configuration."
@@ -92,7 +92,8 @@ public static class DeploymentRenderer
     /// network fault rather than as a service somebody has to start. The command line is
     /// printed with it because a second copy of the binary in another directory is how a pair
     /// ends up running two versions.
-    private static void AppendObserved(StringBuilder output, ObservedDeployment observed)
+    private static void AppendObserved(
+        StringBuilder output, ObservedDeployment observed, DesiredDeployment desired)
     {
         output.AppendLine("  ON THIS HOST");
 
@@ -109,6 +110,12 @@ public static class DeploymentRenderer
         output.AppendLine(observed.SnapshotReadableByService
             ? $"    snapshot   readable by {DeploymentPlan.ServiceAccount}"
             : $"    snapshot   not readable by {DeploymentPlan.ServiceAccount}");
+
+        // The folder on its own line: an install under Program Files overflows 75 columns.
+        output.AppendLine(observed.LogsWritableByService
+            ? $"    logs       writable by {DeploymentPlan.ServiceAccount}"
+            : $"    logs       NOT writable by {DeploymentPlan.ServiceAccount}");
+        output.AppendLine($"               {desired.LogsFolder}");
 
         output.AppendLine();
     }
@@ -139,6 +146,14 @@ public static class DeploymentRenderer
             // Failing on the first step changed nothing, and telling an operator the host is
             // half-deployed when it is untouched sends them looking for damage that is not
             // there.
+            // The step came back but the service did not stay up, or did not answer: the reason
+            // is in its log or the event log, which `ripcord service` points at.
+            if (DeploymentPlan.StartsTheService(failed.Action))
+            {
+                output.AppendLine("  Run 'ripcord service' to see why it did not start.");
+                output.AppendLine();
+            }
+
             if (applied.Count == 0)
             {
                 output.AppendLine(
