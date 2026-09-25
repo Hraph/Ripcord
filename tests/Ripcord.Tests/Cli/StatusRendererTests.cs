@@ -63,7 +63,7 @@ public class StatusRendererTests
             rendered,
             StringComparison.Ordinal);
         Assert.All(
-            rendered.Split(Environment.NewLine),
+            rendered.Split('\n'),
             line => Assert.True(line.Length <= StatusRenderer.Width, line));
     }
 

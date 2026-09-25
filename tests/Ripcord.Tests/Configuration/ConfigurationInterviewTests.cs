@@ -210,7 +210,7 @@ public class ConfigurationInterviewTests
         Assert.DoesNotContain("# updates:", rewritten, StringComparison.Ordinal);
         Assert.DoesNotContain("#   install: true", rewritten, StringComparison.Ordinal);
         Assert.DoesNotContain("Two switches, because they buy different things", rewritten, StringComparison.Ordinal);
-        Assert.Single(rewritten.Split('\n'), line => line == "updates:");
+        Assert.Single(rewritten.ReplaceLineEndings("\n").Split('\n'), line => line == "updates:");
 
         foreach (string example in new[] { "# alerting:", "# dashboard:", "# diagnostics:" })
         {
@@ -818,7 +818,7 @@ public class ConfigurationInterviewTests
 
         string original = ConfigurationTemplate.Render(
             Answer(["primary", "HV-PRIMARY-01", "192.0.2.10", "1", "", "P1", "y", "y", ""], seed))
-            + "  # install: false  # until the next change window\n";
+            + "  # install: false  # until the next change window" + Environment.NewLine;
         ConfigurationDocument? again = new YamlConfigStore().Read(WrittenTo(original)).Document;
 
         Assert.Equal(
