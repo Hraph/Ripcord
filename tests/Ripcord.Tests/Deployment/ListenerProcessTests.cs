@@ -10,8 +10,10 @@ public class ListenerProcessTests
 
     private const string New = "0.7.0+def5678";
 
+    private const string Binary = @"C:\Program Files\Ripcord\ripcord.exe";
+
     private static readonly ObservedService Running = new(
-        true, "\"C:\\Program Files\\Ripcord\\ripcord.exe\" serve", ServiceRunState.Running, "Auto", 0, 0,
+        true, $"\"{Binary}\" serve", ServiceRunState.Running, "Auto", 0, 0,
         ProcessId: 4812);
 
     [Fact]
@@ -34,12 +36,12 @@ public class ListenerProcessTests
     [Fact]
     public void A_service_that_is_not_running_has_no_build_to_report() =>
         Assert.Null(RunningBuild.Judge(
-            Running with { State = ServiceRunState.Stopped }, new ListenerProcess(Old, 4812), New));
+            Running with { State = ServiceRunState.Stopped }, new ListenerProcess(Old, 4812), New, Binary));
 
     [Fact]
     public void The_same_build_as_this_binary_is_current()
     {
-        RunningBuild build = RunningBuild.Judge(Running, new ListenerProcess(New, 4812), New)!;
+        RunningBuild build = RunningBuild.Judge(Running, new ListenerProcess(New, 4812), New, Binary)!;
 
         Assert.Equal(New, build.Build);
         Assert.False(build.Outdated);
@@ -48,7 +50,7 @@ public class ListenerProcessTests
     [Fact]
     public void The_old_build_still_running_after_an_update_is_outdated()
     {
-        RunningBuild build = RunningBuild.Judge(Running, new ListenerProcess(Old, 4812), New)!;
+        RunningBuild build = RunningBuild.Judge(Running, new ListenerProcess(Old, 4812), New, Binary)!;
 
         Assert.Equal(Old, build.Build);
         Assert.True(build.Outdated);
@@ -58,17 +60,28 @@ public class ListenerProcessTests
     [Fact]
     public void A_record_from_another_process_is_not_believed()
     {
-        RunningBuild build = RunningBuild.Judge(Running, new ListenerProcess(New, 1111), New)!;
+        RunningBuild build = RunningBuild.Judge(Running, new ListenerProcess(New, 1111), New, Binary)!;
 
         Assert.Null(build.Build);
         Assert.False(build.Outdated);
         Assert.Equal("not recorded by the process running now", build.Unknown);
     }
 
+    /// Restarting the service cannot bring another copy of the binary to this build.
+    [Fact]
+    public void A_service_running_another_copy_is_not_outdated()
+    {
+        RunningBuild build = RunningBuild.Judge(
+            Running, new ListenerProcess(Old, 4812), New, @"C:\Temp\ripcord.exe")!;
+
+        Assert.Equal(Old, build.Build);
+        Assert.False(build.Outdated);
+    }
+
     [Fact]
     public void No_record_is_unknown_rather_than_current()
     {
-        RunningBuild build = RunningBuild.Judge(Running, null, New)!;
+        RunningBuild build = RunningBuild.Judge(Running, null, New, Binary)!;
 
         Assert.Null(build.Build);
         Assert.NotNull(build.Unknown);
@@ -78,7 +91,7 @@ public class ListenerProcessTests
     public void No_process_id_from_windows_is_unknown()
     {
         RunningBuild build = RunningBuild.Judge(
-            Running with { ProcessId = null }, new ListenerProcess(New, 4812), New)!;
+            Running with { ProcessId = null }, new ListenerProcess(New, 4812), New, Binary)!;
 
         Assert.Null(build.Build);
         Assert.Equal("Windows did not give its process id", build.Unknown);
@@ -89,7 +102,7 @@ public class ListenerProcessTests
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
             Running, logsWritable: true, log: null,
-            build: RunningBuild.Judge(Running, new ListenerProcess(Old, 4812), New));
+            build: RunningBuild.Judge(Running, new ListenerProcess(Old, 4812), New, Binary));
 
         Assert.Contains(Old, verdict.Why, StringComparison.Ordinal);
         Assert.Equal(["ripcord service restart"], verdict.Next);
@@ -100,8 +113,8 @@ public class ListenerProcessTests
         Assert.All(
             new[]
             {
-                RunningBuild.Judge(Running, new ListenerProcess(New, 4812), New),
-                RunningBuild.Judge(Running, null, New),
+                RunningBuild.Judge(Running, new ListenerProcess(New, 4812), New, Binary),
+                RunningBuild.Judge(Running, null, New, Binary),
             },
             build => Assert.Equal(
                 ServiceVerdict.None,

@@ -60,7 +60,7 @@ public sealed class ServiceInspection(
                 ? ListenerProcess.Parse(record.Lines)
                 : null;
 
-        RunningBuild? build = RunningBuild.Judge(service, recorded, thisBuild);
+        RunningBuild? build = RunningBuild.Judge(service, recorded, thisBuild, request.BinaryPath);
 
         return new ServiceReport(
             service,

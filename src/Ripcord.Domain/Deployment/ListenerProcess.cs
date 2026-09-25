@@ -34,9 +34,12 @@ public sealed record RunningBuild(string? Build, string? Unknown, bool Outdated)
 {
     /// Only for a running service, and only from a record whose process id is the one Windows
     /// gives: a record left by an earlier run names a build that is no longer running.
-    public static RunningBuild? Judge(ObservedService service, ListenerProcess? recorded, string thisBuild)
+    /// Outdated only when the service runs this binary: a restart cannot change another copy.
+    public static RunningBuild? Judge(
+        ObservedService service, ListenerProcess? recorded, string thisBuild, string thisBinary)
     {
         ArgumentNullException.ThrowIfNull(service);
+        ArgumentNullException.ThrowIfNull(thisBinary);
 
         if (service.State != ServiceRunState.Running)
         {
@@ -45,7 +48,7 @@ public sealed record RunningBuild(string? Build, string? Unknown, bool Outdated)
 
         if (recorded is null)
         {
-            return new RunningBuild(null, "not recorded: this listener predates the record", false);
+            return new RunningBuild(null, "not recorded: an older build, or its log says why", false);
         }
 
         if (service.ProcessId is not { } running)
@@ -59,6 +62,9 @@ public sealed record RunningBuild(string? Build, string? Unknown, bool Outdated)
         }
 
         return new RunningBuild(
-            recorded.Build, null, !string.Equals(recorded.Build, thisBuild, StringComparison.Ordinal));
+            recorded.Build,
+            null,
+            !string.Equals(recorded.Build, thisBuild, StringComparison.Ordinal)
+            && string.Equals(service.BinaryPath, thisBinary.Trim(), StringComparison.OrdinalIgnoreCase));
     }
 }

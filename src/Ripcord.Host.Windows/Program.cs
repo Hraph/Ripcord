@@ -323,7 +323,9 @@ internal static class Program
                         Path.GetDirectoryName(setup.Diagnostics.CurrentFile)!, ListenerProcess.FileName),
                     new ListenerProcess(BuildInfo.VersionWithCommit, Environment.ProcessId).Text());
             }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            // Outside the verb's try: anything escaping here would stop the listener.
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                or ArgumentException or NotSupportedException or System.Security.SecurityException)
             {
                 _ = setup.Diagnostics.TryWrite(new DiagnosticEntry(
                     "service", $"the process record was not written: {exception.Message}", []));

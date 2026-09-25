@@ -129,10 +129,13 @@ public class ServiceInspectionTests
     [InlineData(ThisBuild, false)]
     public void A_running_service_reports_the_build_its_process_recorded(string recorded, bool outdated)
     {
-        ObservedService running = StoppedService with { State = ServiceRunState.Running, ProcessId = 4812 };
+        ObservedService running = StoppedService with
+        {
+            CommandLine = $"\"{ThisBinary}\" serve", State = ServiceRunState.Running, ProcessId = 4812,
+        };
         Files files = new()
         {
-            [@"C:\Program Files\Ripcord\logs\listener-process.txt"] = [recorded, "4812"],
+            [@"C:\Ripcord\logs\listener-process.txt"] = [recorded, "4812"],
         };
 
         ServiceReport report = new ServiceInspection(Valid(), new Host(running), files)
@@ -147,6 +150,23 @@ public class ServiceInspectionTests
         Assert.Equal(outdated, rendered.Contains("NOT the build of this ripcord.exe", StringComparison.Ordinal));
         Assert.Equal(outdated, report.Verdict.Next.Contains("ripcord service restart"));
         Assert.All(lines, line => Assert.True(line.Length <= 75, line));
+    }
+
+    /// Restarting a service that runs another copy of the binary would not bring it to this build.
+    [Fact]
+    public void A_service_running_another_copy_is_not_told_to_restart()
+    {
+        ObservedService running = StoppedService with { State = ServiceRunState.Running, ProcessId = 4812 };
+        Files files = new()
+        {
+            [@"C:\Program Files\Ripcord\logs\listener-process.txt"] = ["0.6.0+0ld0000", "4812"],
+        };
+
+        ServiceReport report = new ServiceInspection(Valid(), new Host(running), files)
+            .Inspect(Request(), Now, ThisBuild);
+
+        Assert.Equal(new RunningBuild("0.6.0+0ld0000", null, false), report.Build);
+        Assert.DoesNotContain("ripcord service restart", report.Verdict.Next);
     }
 
     [Fact]

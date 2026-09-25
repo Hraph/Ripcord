@@ -53,7 +53,8 @@ path; the copy by hand is still supported and is what a host with no outbound ac
 5. Replace `ripcord.exe`. The configuration lives beside the binary and is not touched —
    updating Ripcord is replacing one file.
 6. `Start-Service ripcord`
-7. `ripcord version` — confirm the new version and commit hash.
+7. `ripcord version` — confirm the new version and commit hash. `ripcord service` — its
+   `version` row is the build the listener process runs, and must be the same.
 8. Move to the other host and repeat from step 3.
 
 Then, on either host:

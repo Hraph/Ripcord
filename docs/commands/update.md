@@ -27,6 +27,8 @@ The new version runs from the next service start, not from the command that inst
 `ripcord.exe.old`, and Windows renames a running binary but will not delete or replace it.
 The next `update` or `rollback` finds it still running and refuses before anything is fetched
 or moved, naming `ripcord service restart`.
+`ripcord service` shows which build the listener process runs, in its `version` row, and
+ends with `ripcord service restart` while that is not the build installed.
 
 ## The consequence it prints every time
 
