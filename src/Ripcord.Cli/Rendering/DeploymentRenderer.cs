@@ -300,6 +300,19 @@ public static class DeploymentRenderer
             ? $"               readable by {DeploymentPlan.ServiceAccount}"
             : $"               NOT readable by {DeploymentPlan.ServiceAccount}");
 
+        // The key the handshake signs with. Machine keys are readable by SYSTEM and
+        // Administrators only, so the service account needs its own grant.
+        if (desired.CertificateThumbprint is { } thumbprint)
+        {
+            output.AppendLine(observed.KeyReadableByService switch
+            {
+                true => $"    key        readable by {DeploymentPlan.ServiceAccount}",
+                false => $"    key        NOT readable by {DeploymentPlan.ServiceAccount}",
+                null => "    key        NOT found in LocalMachine\\My for certificate",
+            });
+            output.AppendLine($"               {thumbprint}");
+        }
+
         // The folder on its own line: an install under Program Files overflows 75 columns.
         output.AppendLine(observed.LogsWritableByService
             ? $"    logs       writable by {DeploymentPlan.ServiceAccount}"

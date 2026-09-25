@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
@@ -73,6 +74,7 @@ public sealed class SnapshotListener(
 
         // Fail closed: if the validation callback never runs, nothing is served.
         PeerVerdict observed = PeerVerdict.NoCertificate;
+        bool validated = false;
 
         X509Certificate2 certificate;
 
@@ -97,7 +99,15 @@ public sealed class SnapshotListener(
             client.GetStream(),
             leaveInnerStreamOpen: false,
             userCertificateValidationCallback: PeerHandshake.Validator(
-                rules, trust, remote, clock.UtcNow, result => observed = result));
+                rules,
+                trust,
+                remote,
+                clock.UtcNow,
+                result =>
+                {
+                    observed = result;
+                    validated = true;
+                }));
 
         try
         {
@@ -122,7 +132,15 @@ public sealed class SnapshotListener(
         {
             // A caller that connected and then said nothing is refused like any other: the
             // deadline is this host's answer, not an error to report upwards.
-            return new ServedConnection(observed, remote, Served: false);
+            //
+            // Schannel refusing this host's own credentials fails before the caller's
+            // certificate is looked at, and is not the caller's fault.
+            return new ServedConnection(
+                !validated && IsLocalCredentialFailure(exception)
+                    ? PeerVerdict.LocalKeyUnusable
+                    : observed,
+                remote,
+                Served: false);
         }
 
         // Checked again rather than inferred from the handshake not throwing. Under TLS 1.3
@@ -170,6 +188,12 @@ public sealed class SnapshotListener(
         this.listener?.Dispose();
         return ValueTask.CompletedTask;
     }
+
+    /// SEC_E_UNKNOWN_CREDENTIALS and SEC_E_NO_CREDENTIALS: Schannel could not acquire this
+    /// host's own credentials, which is what an unreadable private key looks like.
+    private static bool IsLocalCredentialFailure(Exception exception) =>
+        exception is AuthenticationException { InnerException: Win32Exception win32 }
+        && win32.NativeErrorCode is unchecked((int)0x8009030D) or unchecked((int)0x8009030E);
 }
 
 /// The service loop: accept, serve, hang up, repeat. One connection at a time, and a refused

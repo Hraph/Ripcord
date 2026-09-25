@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using Microsoft.Management.Infrastructure;
 using Microsoft.Management.Infrastructure.Options;
 using Ripcord.Domain.Deployment;
@@ -44,7 +46,77 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             LogsWritable(desired.LogsFolder),
             EventSourceRegistered(),
             desired.SnapshotVolume.Length == 0 || Directory.Exists(desired.SnapshotVolume),
-            SnapshotWrittenAt(desired));
+            SnapshotWrittenAt(desired),
+            KeyFile(desired) is { } key
+                ? AccessControl.GrantsRead(Run("icacls", $"\"{key}\"").Output, DeploymentPlan.ServiceAccount)
+                : null);
+    }
+
+    /// The file holding the certificate's private key: a CNG key under `Crypto\Keys`, a
+    /// legacy CSP one under `Crypto\RSA\MachineKeys`. Null when any link is missing.
+    /// Unverified on a host (V78).
+    private static string? KeyFile(DesiredDeployment desired)
+    {
+        if (desired.CertificateThumbprint is not { } thumbprint)
+        {
+            return null;
+        }
+
+        try
+        {
+            using X509Store store = new(StoreName.My, StoreLocation.LocalMachine);
+            store.Open(OpenFlags.ReadOnly);
+
+            X509Certificate2Collection found =
+                store.Certificates.Find(X509FindType.FindByThumbprint, thumbprint, validOnly: false);
+
+            try
+            {
+                return found.Count == 0 ? null : KeyFileOf(found[0]);
+            }
+            finally
+            {
+                foreach (X509Certificate2 certificate in found)
+                {
+                    certificate.Dispose();
+                }
+            }
+        }
+        catch (CryptographicException)
+        {
+            return null;
+        }
+    }
+
+    private static string? KeyFileOf(X509Certificate2 certificate)
+    {
+        using AsymmetricAlgorithm? key =
+            (AsymmetricAlgorithm?)certificate.GetRSAPrivateKey() ?? certificate.GetECDsaPrivateKey();
+
+        string? unique = key switch
+        {
+            RSACng rsa => rsa.Key.UniqueName,
+            ECDsaCng ecdsa => ecdsa.Key.UniqueName,
+            RSACryptoServiceProvider csp => csp.CspKeyContainerInfo.UniqueKeyContainerName,
+            _ => null,
+        };
+
+        if (unique is null)
+        {
+            return null;
+        }
+
+        string crypto = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "Microsoft",
+            "Crypto");
+
+        return new[]
+            {
+                Path.Combine(crypto, "Keys", unique),
+                Path.Combine(crypto, "RSA", "MachineKeys", unique),
+            }
+            .FirstOrDefault(File.Exists);
     }
 
     /// Only a path with a folder is looked at: a bare file name would be read against this
@@ -139,7 +211,12 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             Directory.CreateDirectory(desired.LogsFolder);
         }
 
-        foreach ((string file, string arguments) in CommandsFor(change.Action, desired))
+        foreach ((string file, string arguments) in change.Action switch
+        {
+            DeploymentAction.GrantKeyAccess or DeploymentAction.RevokeKeyAccess =>
+                KeyCommands(change.Action, desired),
+            _ => CommandsFor(change.Action, desired),
+        })
         {
             (int code, string output) = Run(file, arguments);
 
@@ -282,6 +359,20 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         // A new action nobody mapped must fail loudly, not run some other step's command.
         _ => throw new ArgumentOutOfRangeException(nameof(action), action, null),
     };
+
+    /// Read only, on the key file only: the account signs with the key, it never replaces it.
+    private static IEnumerable<(string File, string Arguments)> KeyCommands(
+        DeploymentAction action, DesiredDeployment desired)
+    {
+        string key = KeyFile(desired)
+            ?? throw new InvalidOperationException(
+                $"the private key of certificate {desired.CertificateThumbprint} was not found "
+                + @"in LocalMachine\My");
+
+        return action == DeploymentAction.GrantKeyAccess
+            ? [("icacls", $"\"{key}\" /grant \"{DeploymentPlan.ServiceAccount}\":(R)")]
+            : [("icacls", $"\"{key}\" /remove \"{DeploymentPlan.ServiceAccount}\"")];
+    }
 
     private const string EventSourceKey =
         $@"SYSTEM\CurrentControlSet\Services\EventLog\Application\{DeploymentPlan.EventSource}";

@@ -394,9 +394,9 @@ public class RipcordCliTests
 
         Assert.Equal(ExitCode.Success, run.Code);
         Assert.Equal(
-            [DeploymentAction.RemoveEventSource, DeploymentAction.RevokeLogsAccess,
-             DeploymentAction.RevokeSnapshotAccess, DeploymentAction.RemoveFirewallRule,
-             DeploymentAction.RemoveService],
+            [DeploymentAction.RemoveEventSource, DeploymentAction.RevokeKeyAccess,
+             DeploymentAction.RevokeLogsAccess, DeploymentAction.RevokeSnapshotAccess,
+             DeploymentAction.RemoveFirewallRule, DeploymentAction.RemoveService],
             executor.Applied);
     }
 
@@ -976,6 +976,19 @@ public class RipcordCliTests
     }
 
     [Fact]
+    public async Task Service_says_when_the_service_account_cannot_read_the_private_key()
+    {
+        CliRun run = await Run(
+            ["service"],
+            deploymentExecutor: new FakeDeploymentExecutor(
+                Deployed() with { KeyReadableByService = false }));
+
+        Assert.Contains(
+            @"key        NOT readable by NT SERVICE\ripcord", run.Output, StringComparison.Ordinal);
+        Assert.Contains("1 step(s) would change it", run.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Service_says_when_the_snapshot_was_never_written_and_names_status()
     {
         CliRun run = await Run(["service"], deploymentExecutor: new FakeDeploymentExecutor(Deployed()));
@@ -1008,7 +1021,8 @@ public class RipcordCliTests
         SnapshotReadableByService: true,
         ServiceRunning: true,
         LogsWritableByService: true,
-        EventSourceRegistered: true);
+        EventSourceRegistered: true,
+        KeyReadableByService: true);
 
     private const string DefaultConfigPath = "/opt/ripcord/ripcord.yaml";
 
