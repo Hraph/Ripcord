@@ -912,6 +912,12 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         output.Write(
             DeploymentRenderer.Render(plan, desired, options.Remove, outcome.Observed, palette: this.Ink));
 
+        // Before the dry-run check and the prompt: a plan that cannot be applied asks nothing.
+        if (plan.IsBlocked)
+        {
+            return ExitCode.InvalidConfiguration;
+        }
+
         if (!plan.ChangesAnything)
         {
             return ExitCode.Success;

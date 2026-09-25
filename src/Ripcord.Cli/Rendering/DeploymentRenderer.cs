@@ -35,6 +35,12 @@ public static class DeploymentRenderer
             AppendObserved(output, observed, desired);
         }
 
+        if (plan.IsBlocked)
+        {
+            AppendBlocked(output, plan);
+            return Layout.Rendered(output, palette);
+        }
+
         if (!plan.ChangesAnything)
         {
             output.AppendLine(removing
@@ -47,9 +53,12 @@ public static class DeploymentRenderer
 
         foreach (DeploymentStep step in plan.Steps)
         {
-            output.AppendLine(string.Create(
-                CultureInfo.InvariantCulture, $"  {number}. {step.Description}"));
-            output.AppendLine($"     because {step.Reason}");
+            AppendWrapped(
+                output,
+                string.Create(CultureInfo.InvariantCulture, $"  {number}. "),
+                "     ",
+                step.Description);
+            AppendWrapped(output, "     because ", "             ", step.Reason);
             output.AppendLine();
             number++;
         }
@@ -77,6 +86,12 @@ public static class DeploymentRenderer
         output.AppendLine();
 
         AppendObserved(output, observed, desired);
+
+        if (plan is { IsBlocked: true })
+        {
+            AppendBlocked(output, plan);
+            return Layout.Rendered(output, palette);
+        }
 
         output.AppendLine(plan is null || !plan.ChangesAnything
             ? "  It matches the configuration."
@@ -107,9 +122,12 @@ public static class DeploymentRenderer
                 + $"from {observed.FirewallRemoteAddress}"
             : "    firewall   no rule");
 
+        // Named and explained: an operator granting access to a file has to know what it is.
+        AppendWrapped(output, "    snapshot   ", "               ", desired.SnapshotPath);
+        output.AppendLine("               written by 'ripcord status', served to the peer");
         output.AppendLine(observed.SnapshotReadableByService
-            ? $"    snapshot   readable by {DeploymentPlan.ServiceAccount}"
-            : $"    snapshot   not readable by {DeploymentPlan.ServiceAccount}");
+            ? $"               readable by {DeploymentPlan.ServiceAccount}"
+            : $"               NOT readable by {DeploymentPlan.ServiceAccount}");
 
         // The folder on its own line: an install under Program Files overflows 75 columns.
         output.AppendLine(observed.LogsWritableByService
@@ -118,6 +136,26 @@ public static class DeploymentRenderer
         output.AppendLine($"               {desired.LogsFolder}");
 
         output.AppendLine();
+    }
+
+    private static void AppendBlocked(StringBuilder output, DeploymentPlan plan)
+    {
+        output.AppendLine("  Cannot be installed as configured:");
+        AppendWrapped(output, "    ", "    ", plan.BlockedBy!);
+    }
+
+    /// Descriptions and reasons carry paths, and a path under Program Files overflows 75
+    /// columns on its own.
+    private static void AppendWrapped(
+        StringBuilder output, string first, string rest, string text)
+    {
+        string prefix = first;
+
+        foreach (string line in Layout.Wrap(text, Layout.Width - first.Length))
+        {
+            output.AppendLine(prefix + line);
+            prefix = rest;
+        }
     }
 
     /// What was actually done, including the step that failed. A half-applied plan has to be

@@ -685,6 +685,64 @@ public class RipcordCliTests
         Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
     }
 
+    [Fact]
+    public async Task Service_names_the_snapshot_and_says_what_it_is()
+    {
+        CliRun run = await Run(["service"], deploymentExecutor: new FakeDeploymentExecutor(Deployed()));
+
+        Assert.Contains(@"snapshot   D:\Ripcord\state.json", run.Output, StringComparison.Ordinal);
+        Assert.Contains(
+            "written by 'ripcord status', served to the peer", run.Output, StringComparison.Ordinal);
+        Assert.Contains(@"readable by NT SERVICE\ripcord", run.Output, StringComparison.Ordinal);
+    }
+
+    /// The grant used to fail third, after the service and the port were created. Refused
+    /// before the prompt, so nothing is asked and nothing changes.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Service_install_is_refused_before_any_prompt_when_the_snapshot_volume_is_absent(
+        bool dryRun)
+    {
+        FakeDeploymentExecutor executor = new(
+            ObservedDeployment.Nothing with { SnapshotVolumePresent = false });
+
+        CliRun run = await Run(
+            dryRun ? ["service", "install", "--dry-run"] : ["service", "install"],
+            deploymentExecutor: executor,
+            typed: FakeScenarios.LocalHostName);
+
+        Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
+        Assert.Empty(executor.Applied);
+        Assert.Contains("Cannot be installed as configured", run.Output, StringComparison.Ordinal);
+        Assert.Contains("the old default", run.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("This creates a Windows service", run.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Service_on_its_own_says_why_it_cannot_be_installed()
+    {
+        CliRun run = await Run(
+            ["service"],
+            deploymentExecutor: new FakeDeploymentExecutor(
+                ObservedDeployment.Nothing with { SnapshotVolumePresent = false }));
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Contains("Cannot be installed as configured", run.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("step(s) would change it", run.Output, StringComparison.Ordinal);
+    }
+
+    /// Rule 6: a 1024x768 KVM console.
+    [Theory]
+    [InlineData("service")]
+    [InlineData("service install --dry-run")]
+    public async Task Service_output_fits_75_columns(string command)
+    {
+        CliRun run = await Run(command.Split(' '));
+
+        Assert.All(run.Output.Split('\n'), line => Assert.True(line.Length <= 75, line));
+    }
+
     private static ObservedDeployment Deployed() => new(
         ServiceInstalled: true,
         ServiceBinaryPath: BinaryPath,
