@@ -77,6 +77,20 @@ public class FailoverSequenceTests
         Assert.Contains("was not off after", report.Steps[0].FailureMessage, StringComparison.Ordinal);
     }
 
+    /// The guest was asked to go down, so production may be off by now: the operator is told
+    /// how to bring it back or carry on, not that nothing had been done.
+    [Fact]
+    public async Task A_shutdown_not_confirmed_hands_the_operator_the_way_back()
+    {
+        FakeHypervProvider provider = Provider(VmPowerState.Running);
+        provider.ShutdownCompletesAfter = null;
+
+        FailoverRunReport report = await Run(provider, Primary, Fresh());
+
+        Assert.DoesNotContain("before anything else", report.Continuation, StringComparison.Ordinal);
+        Assert.Contains($"Start-VM -Name '{Vm}'", report.ManualRecovery, StringComparison.Ordinal);
+    }
+
     /// Run on the replica before the primary's half has happened, nothing is touched: the next
     /// step belongs to the other host, and exit 4 says nothing changed.
     [Fact]

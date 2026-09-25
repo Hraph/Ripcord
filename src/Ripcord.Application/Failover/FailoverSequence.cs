@@ -376,6 +376,20 @@ public sealed class FailoverSequence(
                 operation, fenceOnReturn);
         }
 
+        // Asked is not refused: the guest may be going down, or already off.
+        if (failed.Action == FailoverAction.ShutDownVm)
+        {
+            return new FailoverRunReport(
+                request.VmName,
+                results,
+                ExitCode.IntermediateState,
+                $"'{request.VmName}' may be shutting down or already off",
+                operation,
+                fenceOnReturn,
+                null,
+                ShutdownUnconfirmed(request.VmName));
+        }
+
         if (Undo(performed) is not { } undo)
         {
             // Nothing this invocation did needs undoing, but a mutating call was attempted and
@@ -472,6 +486,12 @@ public sealed class FailoverSequence(
         $"'{vmName}' is failed over to this host but did not start, and the failover was "
             + "deliberately not cancelled — cancelling it would discard the recovery point and "
             + $"leave production down. Start it here: Start-VM -Name '{vmName}'";
+
+    /// Not restarted by Ripcord: a start can be refused while the guest is still going down.
+    private static string ShutdownUnconfirmed(string vmName) =>
+        $"Ripcord asked '{vmName}' to shut down and could not confirm it went off. Look at "
+            + $"it on this host (Get-VM -Name '{vmName}'). Once it is off, run this command "
+            + $"again to carry on, or go back: Start-VM -Name '{vmName}'";
 
     /// Printed when the restore has run out of attempts. Production is down at this point, so
     /// the operator needs the command itself rather than a description of the problem.

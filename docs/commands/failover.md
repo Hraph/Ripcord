@@ -25,7 +25,9 @@ boots with no network has failed over into an outage.
 
 The shutdown is done when the VM reads *Off*, not when the guest accepted the request: Hyper-V
 refuses the prepare on a VM that is still running. It is polled every five seconds for up to
-ten minutes; a guest still on after that fails step 1, and nothing is prepared.
+ten minutes; a guest still on after that fails step 1, and nothing is prepared. Ripcord does
+not start it again, since Hyper-V can refuse a start while the guest is going down: the report
+says to look at it, then either re-run the command once it is off or start it by hand.
 
 ## `--scenario unplanned` — three steps, all here
 
