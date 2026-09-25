@@ -142,6 +142,18 @@ public sealed class UpdatePlanTests
         Assert.Empty(plan.Warnings);
     }
 
+    /// The listener still runs the binary the last update set aside: discarding it would fail
+    /// after the download, with a bare access-denied. Refused first, with the way out.
+    [Fact]
+    public void A_set_aside_binary_still_running_refuses_and_names_the_restart()
+    {
+        UpdatePlan plan = UpdatePlan.For(
+            Subject(UpdateStatus.Between("0.1.0", "0.2.0")) with { PreviousInUse = true });
+
+        Assert.Empty(plan.Steps);
+        Assert.Contains("ripcord service restart", plan.Halt, StringComparison.Ordinal);
+    }
+
     private static int Position(UpdatePlan plan, UpdateAction action) =>
         plan.Steps.ToList().FindIndex(step => step.Action == action);
 

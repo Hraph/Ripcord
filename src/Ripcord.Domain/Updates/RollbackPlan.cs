@@ -15,7 +15,10 @@ public sealed record RollbackSubject(
     string RunningVersion,
     VersionSkew Skew,
     OperatingMode Mode,
-    string PeerHostName);
+    string PeerHostName,
+
+    /// The binary set aside is still running, and the exchange writes over it.
+    bool PreviousInUse = false);
 
 public sealed record RollbackStep(int Number, string Description, string Reason);
 
@@ -62,6 +65,11 @@ public sealed record RollbackPlan(
             return Halted(
                 "there is no binary set aside on this host, so there is nothing to go back "
                 + "to; one is kept by `ripcord update` and by nothing else");
+        }
+
+        if (subject.PreviousInUse)
+        {
+            return Halted(UpdatePlan.PreviousStillRunning);
         }
 
         // Not refused, said. The version is read off the file and a file that does not carry

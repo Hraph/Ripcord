@@ -111,6 +111,15 @@ public class RollbackPlanTests
             RollbackPlan.For(Subject(interrupted: true, hasPrevious: false)).Halt,
             StringComparison.Ordinal);
 
+    [Fact]
+    public void A_set_aside_binary_still_running_refuses_the_exchange_that_writes_over_it()
+    {
+        RollbackPlan plan = RollbackPlan.For(Subject() with { PreviousInUse = true });
+
+        Assert.Empty(plan.Steps);
+        Assert.Equal(UpdatePlan.PreviousStillRunning, plan.Halt);
+    }
+
     private static RollbackSubject Subject(
         bool hasPrevious = true,
         string? previousVersion = "0.2.1",

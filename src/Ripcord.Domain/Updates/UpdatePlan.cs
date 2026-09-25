@@ -24,7 +24,10 @@ public sealed record UpdateSubject(
     bool InstallAllowed,
     VersionSkew Skew,
     OperatingMode Mode,
-    string PeerHostName);
+    string PeerHostName,
+
+    /// The binary an earlier update set aside is still running, so it cannot be discarded.
+    bool PreviousInUse = false);
 
 /// What `ripcord update` would do, decided before anything is fetched — the same separation
 /// `ripcord service install` makes between `Plan` and `Apply`, for the same reason: the plan is what
@@ -67,8 +70,22 @@ public sealed record UpdatePlan(
             return new UpdatePlan([], subject.Status, [], null);
         }
 
+        // Refused before the download: the step that discards it would fail with a bare
+        // access-denied after the new release was fetched and verified.
+        if (subject.PreviousInUse)
+        {
+            return Halted(subject.Status, PreviousStillRunning);
+        }
+
         return new UpdatePlan(Sequence(), subject.Status, Consequences(subject), null);
     }
+
+    /// Shared with `RollbackPlan`, which writes over the same file.
+    /// The command first, so no console width splits it.
+    public const string PreviousStillRunning =
+        "run 'ripcord service restart' first, then this again. The binary the last update "
+        + "set aside (ripcord.exe.old) is still running - the listener service, not "
+        + "restarted since that update - and Windows will not replace a running binary";
 
     private static IReadOnlyList<UpdateStep> Sequence() =>
     [
