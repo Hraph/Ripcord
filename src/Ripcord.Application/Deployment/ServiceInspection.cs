@@ -68,7 +68,8 @@ public sealed class ServiceInspection(
                 LogsWritable(deployment, logsFolder),
                 log,
                 listenerDisabled: deployment.Desired is { ListenerEnabled: false }),
-            deployment is { Desired: { } desired, Observed: { } observed }
+            // A disabled listener serves nothing, so its snapshot's age means nothing here.
+            deployment is { Desired: { ListenerEnabled: true } desired, Observed: { } observed }
                 ? SnapshotFreshness.Judge(observed.SnapshotWrittenAt, now, desired.SnapshotStaleAfter)
                 : null,
             now - deployment.Observed?.SnapshotWrittenAt);

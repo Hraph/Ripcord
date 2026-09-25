@@ -905,6 +905,7 @@ public class RipcordCliTests
             StringComparison.Ordinal);
         Assert.Contains("    ripcord service remove", run.Output, StringComparison.Ordinal);
         Assert.Empty(run.Error);
+        Assert.DoesNotContain("served no current snapshot", run.Output, StringComparison.Ordinal);
     }
 
     [Fact]
