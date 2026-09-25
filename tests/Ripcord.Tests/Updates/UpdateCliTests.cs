@@ -64,6 +64,20 @@ public sealed class UpdateCliTests
             swap.Moves);
     }
 
+    /// The listener still runs the binary the last update set aside, which Windows will not
+    /// delete. Refused before anything is fetched or moved, naming the restart.
+    [Fact]
+    public async Task An_update_while_the_set_aside_binary_runs_is_refused_before_anything_moves()
+    {
+        Swap swap = new() { PreviousInUse = true };
+
+        CliRun run = await Run(["update"], swap: swap, typed: Machine);
+
+        Assert.NotEqual(ExitCode.Success, run.Code);
+        Assert.Empty(swap.Moves);
+        Assert.Contains("ripcord service restart", run.Output, StringComparison.Ordinal);
+    }
+
     /// The binary that is running is still the old one. Saying so is the difference between a
     /// confusing `ripcord version` and a support call.
     [Fact]
@@ -245,7 +259,10 @@ public sealed class UpdateCliTests
     {
         public List<UpdateAction> Moves { get; } = [];
 
-        public StagedBinaries Observe(string binaryPath) => new(false, false);
+        public bool PreviousInUse { get; init; }
+
+        public StagedBinaries Observe(string binaryPath) =>
+            new(false, this.PreviousInUse, PreviousInUse: this.PreviousInUse);
 
         public void Apply(UpdateStep move, StagedRelease release, CancellationToken cancellationToken) =>
             this.Moves.Add(move.Action);

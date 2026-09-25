@@ -81,7 +81,8 @@ public sealed class RollbackQuery(
             request.LocalBuild.Version,
             skew,
             mode,
-            configuration.Peer.Hostname));
+            configuration.Peer.Hostname,
+            staged.PreviousInUse));
 
         return new RollbackOutcome(
             plan.Halt is null ? ExitCode.Success : ExitCode.InvalidConfiguration,

@@ -11,7 +11,12 @@ using Ripcord.Ports;
 namespace Ripcord.Application.Updates;
 
 public sealed record UpdatePlanRequest(
-    string ConfigurationPath, string MachineName, BuildIdentity LocalBuild);
+    string ConfigurationPath,
+    string MachineName,
+    BuildIdentity LocalBuild,
+
+    /// Where this binary is, to look at what an earlier update left beside it.
+    string? BinaryPath = null);
 
 /// The plan, and everything needed to print it. `Version` is the tag the release was published
 /// under, carried because the download addresses it by name and nothing else knows it.
@@ -29,7 +34,11 @@ public sealed record UpdatePlanOutcome(
 /// living here — so a host whose Hyper-V cannot be reached still gets a plan, with the
 /// consequences it could not compute said out loud rather than omitted.
 public sealed class UpdatePlanQuery(
-    IConfigStore configStore, IReleaseFeed feed, PairReader pairReader, IClock clock)
+    IConfigStore configStore,
+    IReleaseFeed feed,
+    PairReader pairReader,
+    IClock clock,
+    IBinarySwap? swap = null)
 {
     public async Task<UpdatePlanOutcome> ExecuteAsync(
         UpdatePlanRequest request, CancellationToken cancellationToken)
@@ -73,7 +82,8 @@ public sealed class UpdatePlanQuery(
             configuration.Updates.Install,
             skew,
             mode,
-            configuration.Peer.Hostname));
+            configuration.Peer.Hostname,
+            this.PreviousInUse(request.BinaryPath)));
 
         return new UpdatePlanOutcome(
             Code(plan, status), plan, configuration, lookup.Version, [], null, notes);
@@ -107,6 +117,25 @@ public sealed class UpdatePlanQuery(
             VersionSkew.Between(localBuild, view.PeerBuild),
             CheckSubject.From(view, configuration, clock.UtcNow).Mode,
             notes);
+    }
+
+    /// Unread is not in use: the discard step then reports what stopped it.
+    private bool PreviousInUse(string? binaryPath)
+    {
+        if (swap is null || binaryPath is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return swap.Observe(binaryPath).PreviousInUse;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _ = exception;
+            return false;
+        }
     }
 
     /// A halt is not one exit code: "this host may not install" is a configuration answer and

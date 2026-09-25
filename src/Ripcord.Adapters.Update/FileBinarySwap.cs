@@ -31,7 +31,28 @@ public sealed class FileBinarySwap : IBinarySwap
             previous.Exists,
             previous.Exists ? VersionOf(previous.FullName) : null,
             previous.Exists ? new DateTimeOffset(previous.LastWriteTimeUtc, TimeSpan.Zero) : null,
-            File.Exists(Interrupted(binaryPath)));
+            File.Exists(Interrupted(binaryPath)),
+            previous.Exists && Running(previous.FullName));
+    }
+
+    /// A running image cannot be opened for writing: Windows answers a sharing violation.
+    /// Opened and closed at once, nothing written. Unverified on a host (V77).
+    private static bool Running(string path)
+    {
+        try
+        {
+            using FileStream probe = new(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            return false;
+        }
+        catch (IOException)
+        {
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // A permission, not a process: the discard reports it.
+            return false;
+        }
     }
 
     /// Read off the file, not remembered anywhere. A host whose binary was replaced by hand

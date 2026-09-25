@@ -1902,14 +1902,15 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         }
 
         UpdatePlanQuery query = new(
-            ports.ConfigStore, ports.ReleaseFeed, this.Pair(), ports.Clock);
+            ports.ConfigStore, ports.ReleaseFeed, this.Pair(), ports.Clock, ports.BinarySwap);
 
         UpdatePlanOutcome outcome = await query
             .ExecuteAsync(
                 new UpdatePlanRequest(
                     options.ConfigurationPath ?? environment.DefaultConfigurationPath,
                     environment.MachineName,
-                    this.LocalBuild),
+                    this.LocalBuild,
+                    environment.BinaryPath),
                 cancellationToken)
             .ConfigureAwait(false);
 

@@ -67,7 +67,11 @@ public sealed record StagedBinaries(
     DateTimeOffset? PreviousSetAsideAt = null,
     /// A file left by an exchange that did not finish. It holds a binary this host was
     /// running, so the next exchange refuses rather than writing over it.
-    bool HasInterruptedSwap = false);
+    bool HasInterruptedSwap = false,
+
+    /// The set-aside binary is still running — the listener, not restarted since the update
+    /// that set it aside. Windows renames a running binary but will not delete it.
+    bool PreviousInUse = false);
 
 /// The verified bytes, and where they are going. Reaching the swap at all means the signature
 /// has already been checked.
