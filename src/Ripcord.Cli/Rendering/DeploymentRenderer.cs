@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Ripcord.Application.Deployment;
 using Ripcord.Domain.Deployment;
 
 namespace Ripcord.Cli.Rendering;
@@ -66,47 +67,184 @@ public static class DeploymentRenderer
         return Layout.Rendered(output, palette);
     }
 
-    /// The service on its own: what is there, and one line about what is not.
+    /// The service on its own: what is there, and when it is not running, why.
     ///
     /// `ripcord service` is read-only and is the question an operator asks first. It says what
     /// would change only by naming the command that would show it — a plan printed by a
     /// command that changes nothing reads like a command that is about to.
-    public static string RenderState(
-        ObservedDeployment observed,
-        DesiredDeployment desired,
-        DeploymentPlan? plan,
-        Palette? palette = null)
+    public static string RenderState(ServiceReport report, Palette? palette = null)
     {
-        ArgumentNullException.ThrowIfNull(observed);
-        ArgumentNullException.ThrowIfNull(desired);
+        ArgumentNullException.ThrowIfNull(report);
 
         StringBuilder output = new();
 
         output.AppendLine(Ink.Bold("RIPCORD LISTENER"));
         output.AppendLine();
+        output.AppendLine("  ON THIS HOST");
 
-        AppendObserved(output, observed, desired);
+        ObservedService service = report.Service;
+        DeploymentOutcome deployment = report.Deployment;
 
-        if (plan is { IsBlocked: true })
+        AppendService(output, service);
+
+        if (deployment is { Observed: { } observed, Desired: { } desired })
         {
-            AppendBlocked(output, plan);
-            return Layout.Rendered(output, palette);
+            AppendAccess(output, observed, desired);
+        }
+        else
+        {
+            AppendWrapped(
+                output,
+                "    ",
+                "    ",
+                deployment.FailureMessage is null
+                    ? "Firewall, snapshot and logs access are not shown: the configuration "
+                        + "cannot be used (below)."
+                    : "Firewall, snapshot and logs access could not be read (below).");
         }
 
-        output.AppendLine(plan is null || !plan.ChangesAnything
-            ? "  It matches the configuration."
-            : $"  {plan.Steps.Count} step(s) would change it: ripcord service install --dry-run");
+        AppendLog(output, report, shownFolder: deployment.Desired?.LogsFolder);
+        output.AppendLine();
+
+        if (service.Installed && report.Verdict.Why is { } why)
+        {
+            output.AppendLine("  Why it is not running:");
+            AppendWrapped(output, "    ", "    ", why);
+
+            // Commands on lines of their own, never wrapped: they are typed from the screen.
+            if (report.Verdict.Next.Count > 0)
+            {
+                output.AppendLine("  Then run:");
+
+                foreach (string next in report.Verdict.Next)
+                {
+                    output.AppendLine($"    {next}");
+                }
+            }
+
+            output.AppendLine();
+        }
+
+        if (deployment.Plan is { IsBlocked: true } blocked)
+        {
+            AppendBlocked(output, blocked);
+        }
+        else if (deployment.Plan is { } plan)
+        {
+            output.AppendLine(plan.ChangesAnything
+                ? $"  {plan.Steps.Count} step(s) would change it: ripcord service install --dry-run"
+                : "  It matches the configuration.");
+        }
 
         return Layout.Rendered(output, palette);
     }
+
+    /// What Windows reports, raw: the command it runs is printed as registered, because a
+    /// second copy of the binary in another directory is how a pair ends up running two
+    /// versions.
+    private static void AppendService(StringBuilder output, ObservedService service)
+    {
+        if (!service.Installed)
+        {
+            output.AppendLine("    service    not installed");
+            return;
+        }
+
+        string state = service.State switch
+        {
+            ServiceRunState.Running => "running",
+            ServiceRunState.Stopped => "STOPPED",
+            ServiceRunState.StartPending => "starting",
+            ServiceRunState.StopPending => "stopping",
+            ServiceRunState.Paused => "PAUSED",
+            _ => "state unknown",
+        };
+
+        output.AppendLine(service.StartMode is { } mode
+            ? $"    service    {Layout.Pad(state, 13)}start mode {mode}"
+            : $"    service    {state}");
+
+        if (service.CommandLine is { } commandLine)
+        {
+            AppendWrapped(output, "    command    ", "               ", commandLine);
+        }
+
+        if (service.State != ServiceRunState.Running && service.LastExit is { } exit)
+        {
+            AppendWrapped(
+                output, "    last exit  ", "               ", ServiceDiagnosis.WindowsMeaning(exit));
+        }
+    }
+
+    /// Which file was read, and its last lines. The date is dropped from each line: the file
+    /// is one day's, and the columns are better spent on what the line says.
+    private static void AppendLog(StringBuilder output, ServiceReport report, string? shownFolder)
+    {
+        // The file name alone when the logs row above already names its folder: a full path
+        // under Program Files does not fit on one line.
+        bool folderShown = string.Equals(
+            shownFolder, report.LogsFolder, StringComparison.OrdinalIgnoreCase);
+
+        if (report.Log is not { } log)
+        {
+            output.AppendLine(folderShown
+                ? "    log        none today or yesterday"
+                : "    log        none today or yesterday in");
+
+            if (!folderShown)
+            {
+                output.AppendLine($"               {report.LogsFolder}");
+            }
+
+            return;
+        }
+
+        output.AppendLine($"    log        {LogFileName(log.Path)}");
+
+        if (!folderShown)
+        {
+            output.AppendLine($"               in {report.LogsFolder}");
+        }
+
+        if (log.Unreadable is { } reason)
+        {
+            AppendWrapped(output, "               NOT readable: ", "               ", reason);
+            return;
+        }
+
+        IReadOnlyList<string> shown = [.. log.Lines.TakeLast(ListenerLog.ShownLines)];
+
+        if (shown.Count == 0)
+        {
+            output.AppendLine("               empty");
+            return;
+        }
+
+        output.AppendLine();
+        output.AppendLine(string.Create(
+            CultureInfo.InvariantCulture, $"  LAST {shown.Count} LINES OF THE LOG"));
+
+        foreach (string line in shown)
+        {
+            output.AppendLine("    " + Layout.Truncate(WithoutDate(line), Layout.Width - 4));
+        }
+    }
+
+    private static string LogFileName(string path) =>
+        path[(path.LastIndexOfAny(['\\', '/']) + 1)..];
+
+    private static string WithoutDate(string line) =>
+        line.Length > 11 && line[10] == ' '
+            && DateOnly.TryParseExact(
+                line[..10], "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _)
+            ? line[11..]
+            : line;
 
     /// What is on the host now, before what would change about it.
     ///
     /// Installed and running are two facts, not one: a service that is registered and stopped
     /// serves nothing, and the other host then reports this pair offline — which reads as a
-    /// network fault rather than as a service somebody has to start. The command line is
-    /// printed with it because a second copy of the binary in another directory is how a pair
-    /// ends up running two versions.
+    /// network fault rather than as a service somebody has to start.
     private static void AppendObserved(
         StringBuilder output, ObservedDeployment observed, DesiredDeployment desired)
     {
@@ -117,6 +255,13 @@ public static class DeploymentRenderer
                 + $"     {observed.ServiceBinaryPath} serve"
             : "    service    not installed");
 
+        AppendAccess(output, observed, desired);
+        output.AppendLine();
+    }
+
+    private static void AppendAccess(
+        StringBuilder output, ObservedDeployment observed, DesiredDeployment desired)
+    {
         output.AppendLine(observed.FirewallRuleInstalled
             ? $"    firewall   inbound TCP {observed.FirewallPort} "
                 + $"from {observed.FirewallRemoteAddress}"
@@ -134,8 +279,6 @@ public static class DeploymentRenderer
             ? $"    logs       writable by {DeploymentPlan.ServiceAccount}"
             : $"    logs       NOT writable by {DeploymentPlan.ServiceAccount}");
         output.AppendLine($"               {desired.LogsFolder}");
-
-        output.AppendLine();
     }
 
     private static void AppendBlocked(StringBuilder output, DeploymentPlan plan)

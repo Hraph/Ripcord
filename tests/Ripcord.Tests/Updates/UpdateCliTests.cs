@@ -222,7 +222,8 @@ public sealed class UpdateCliTests
                 notices ?? new MemoryUpdateNoticeStore(),
                 swap ?? new Swap(),
                 new FixedClock(Now),
-                new SilentDiagnosticLog()),
+                new SilentDiagnosticLog(),
+                new NoLogs()),
             new CliEnvironment(
                 Machine,
                 "ripcord.yaml",

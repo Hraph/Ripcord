@@ -251,7 +251,8 @@ public class TestFailoverCliTests
                 new MemoryUpdateNoticeStore(),
                 new NoBinarySwap(),
                 new FixedClock(Now),
-                new SilentDiagnosticLog()),
+                new SilentDiagnosticLog(),
+                new NoLogs()),
             new CliEnvironment(
                 machineName,
                 @"C:\ProgramData\Ripcord\ripcord.yaml",

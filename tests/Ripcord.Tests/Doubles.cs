@@ -48,6 +48,8 @@ public sealed class NoOpDeploymentExecutor : IDeploymentExecutor
 {
     public ObservedDeployment Observe(DesiredDeployment desired) => ObservedDeployment.Nothing;
 
+    public ObservedService ObserveService() => ObservedService.Absent;
+
     public void Apply(DeploymentStep change, DesiredDeployment desired)
     {
     }
@@ -137,6 +139,12 @@ public sealed class RecordingDiagnosticLog : IDiagnosticLog
     public void SendTo(DiagnosticDestination destination) => this.Destination = destination;
 }
 
+/// A logs folder with nothing in it.
+public sealed class NoLogs : IDiagnosticLogReader
+{
+    public LogReading? Tail(string path, int maxLines) => null;
+}
+
 public sealed class SilentDiagnosticLog : IDiagnosticLog
 {
     public void Write(DiagnosticEntry entry)
@@ -209,6 +217,8 @@ public sealed class UntouchedHost : IDeploymentExecutor
     public ObservedDeployment Observe(DesiredDeployment desired) =>
         new(false, null, false, null, null, false, false);
 
+    public ObservedService ObserveService() => ObservedService.Absent;
+
     public void Apply(DeploymentStep change, DesiredDeployment desired)
     {
     }
@@ -243,5 +253,6 @@ public static class TestPorts
             new MemoryUpdateNoticeStore(),
             new NoBinarySwap(),
             new FixedClock(Now),
-            new SilentDiagnosticLog());
+            new SilentDiagnosticLog(),
+            new NoLogs());
 }

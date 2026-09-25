@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using Microsoft.Management.Infrastructure;
+using Microsoft.Management.Infrastructure.Options;
 using Ripcord.Domain.Deployment;
 using Ripcord.Ports.Deployment;
 
@@ -16,14 +17,13 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
 {
     private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(30);
 
+    private static readonly TimeSpan CimTimeout = TimeSpan.FromSeconds(15);
+
     public ObservedDeployment Observe(DesiredDeployment desired)
     {
         ArgumentNullException.ThrowIfNull(desired);
 
-        // The service comes from the registry, not from `sc qc`: that command's labels are
-        // localised, and on a French Windows every run would report a different binary path
-        // and reconfigure the service pointlessly.
-        string? imagePath = ServiceImagePath();
+        ObservedService service = this.ObserveService();
 
         (int ruleCode, string ruleOutput) = Run(
             "netsh",
@@ -31,18 +31,84 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
 
         bool ruleInstalled = ruleCode == 0;
 
+        // Unreadable is reported as not running: the opposite default would leave a stopped
+        // listener alone and call the deployment correct. The cost is one redundant `sc start`,
+        // which `ServiceCommand` reads as the state the step was asking for.
         return new ObservedDeployment(
-            imagePath is not null,
-            BinaryIn(imagePath),
+            service.Installed,
+            service.BinaryPath,
             ruleInstalled,
             ruleInstalled ? PortIn(ruleOutput) : null,
             ruleInstalled ? ValueAfter(ruleOutput, "RemoteIP") : null,
             SnapshotReadable(desired.SnapshotFolder),
-            imagePath is not null && ServiceIsStarted(),
+            service.State == ServiceRunState.Running,
             LogsWritable(desired.LogsFolder),
             EventSourceRegistered(),
             desired.SnapshotVolume.Length == 0 || Directory.Exists(desired.SnapshotVolume));
     }
+
+    /// `Win32_Service` rather than `sc query`: `sc` prints its labels and state words in the
+    /// host's language, and a French Windows would answer something unreadable for ever.
+    /// `State` and `StartMode` are invariant strings (V59).
+    ///
+    /// The registry says whether it is installed and what it runs when CIM cannot be read, so
+    /// an unreadable WMI still shows the service rather than "not installed".
+    public ObservedService ObserveService()
+    {
+        string? imagePath = ServiceImagePath();
+
+        try
+        {
+            using CimSession session = CimSession.Create(computerName: null);
+            using CimOperationOptions options = new() { Timeout = CimTimeout };
+
+            CimInstance? service = session
+                .QueryInstances(
+                    @"root\cimv2",
+                    "WQL",
+                    "SELECT State, StartMode, ExitCode, ServiceSpecificExitCode, PathName "
+                    + $"FROM Win32_Service WHERE Name = '{DeploymentPlan.ServiceName}'",
+                    options)
+                .FirstOrDefault();
+
+            using (service)
+            {
+                if (service is null)
+                {
+                    return imagePath is null
+                        ? ObservedService.Absent
+                        : Unread(imagePath, "Win32_Service does not list it");
+                }
+
+                return new ObservedService(
+                    true,
+                    Text(service, "PathName") ?? imagePath,
+                    ObservedService.ParseState(Text(service, "State")),
+                    Text(service, "StartMode"),
+                    Code(service, "ExitCode"),
+                    Code(service, "ServiceSpecificExitCode"));
+            }
+        }
+        catch (CimException exception)
+        {
+            return imagePath is null ? ObservedService.Absent : Unread(imagePath, exception.Message);
+        }
+    }
+
+    private static ObservedService Unread(string imagePath, string reason) =>
+        new(true, imagePath, ServiceRunState.Unknown, null, null, null, reason);
+
+    private static string? Text(CimInstance instance, string name) =>
+        instance.CimInstanceProperties[name]?.Value as string;
+
+    /// UInt32 in the MOF; Ripcord's codes carry the customer bit, which still fits an int.
+    private static int? Code(CimInstance instance, string name) =>
+        instance.CimInstanceProperties[name]?.Value switch
+        {
+            uint code => unchecked((int)code),
+            int code => code,
+            _ => null,
+        };
 
     public void Apply(DeploymentStep change, DesiredDeployment desired)
     {
@@ -216,67 +282,13 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         return key is not null;
     }
 
-    /// Whether the service is running.
-    ///
-    /// `Win32_Service.Started` — a boolean — rather than `sc query`'s state, for the same
-    /// reason the image path comes from the registry: `sc` prints its labels and its state
-    /// words in the host's language, and a French Windows would answer something this code
-    /// would read as "not running" for ever.
-    ///
-    /// Unreadable is reported as not running: the opposite default would leave a stopped
-    /// listener alone and call the deployment correct. The cost is one redundant `sc start`,
-    /// which `sc` reports as a failure (1056) and `ServiceCommand` reads as the state the step
-    /// was asking for — so a transient failure to read this does not turn a healthy host into
-    /// a deployment that reports itself broken.
-    private static bool ServiceIsStarted()
-    {
-        try
-        {
-            using CimSession session = CimSession.Create(computerName: null);
-
-            CimInstance? service = session
-                .QueryInstances(
-                    @"root\cimv2",
-                    "WQL",
-                    $"SELECT Started FROM Win32_Service WHERE Name = '{DeploymentPlan.ServiceName}'")
-                .FirstOrDefault();
-
-            using (service)
-            {
-                return service?.CimInstanceProperties["Started"]?.Value is true;
-            }
-        }
-        catch (CimException)
-        {
-            return false;
-        }
-    }
-
-    /// `netsh`'s field labels are localised too, so an unparseable rule is reported as not
-    /// matching rather than as matching. That costs one redundant rule rewrite per run on a
-    /// non-English host; reporting it as correct could leave a rule open to the wrong address.
-    /// See V23.
+    /// From the registry, not from `sc qc`, whose labels are localised.
     private static string? ServiceImagePath()
     {
         using Microsoft.Win32.RegistryKey? key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
             $@"SYSTEM\CurrentControlSet\Services\{DeploymentPlan.ServiceName}");
 
         return key?.GetValue("ImagePath") as string;
-    }
-
-    /// The registry holds `"<path>" serve`; the plan compares binaries.
-    private static string? BinaryIn(string? imagePath)
-    {
-        if (string.IsNullOrWhiteSpace(imagePath))
-        {
-            return null;
-        }
-
-        string trimmed = imagePath.Trim();
-
-        return trimmed.StartsWith('"') && trimmed.IndexOf('"', 1) is int end and > 0
-            ? trimmed[1..end]
-            : trimmed.Split(' ')[0];
     }
 
     /// Both streams are drained concurrently against the deadline. Reading one to the end
@@ -315,6 +327,10 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         }
     }
 
+    /// `netsh`'s field labels are localised too, so an unparseable rule is reported as not
+    /// matching rather than as matching. That costs one redundant rule rewrite per run on a
+    /// non-English host; reporting it as correct could leave a rule open to the wrong address.
+    /// See V23.
     private static string? ValueAfter(string output, string label)
     {
         foreach (string line in output.Split('\n'))

@@ -8,5 +8,9 @@ public interface IDeploymentExecutor
 {
     ObservedDeployment Observe(DesiredDeployment desired);
 
+    /// The service alone, which needs no configuration: `ripcord service` still shows it when
+    /// `ripcord.yaml` does not load, the likeliest reason a listener stopped.
+    ObservedService ObserveService();
+
     void Apply(DeploymentStep change, DesiredDeployment desired);
 }

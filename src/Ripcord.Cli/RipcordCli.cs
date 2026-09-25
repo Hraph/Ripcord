@@ -80,7 +80,8 @@ public sealed record RipcordPorts(
     IUpdateNoticeStore UpdateNotices,
     IBinarySwap BinarySwap,
     IClock Clock,
-    IDiagnosticLog Diagnostics);
+    IDiagnosticLog Diagnostics,
+    IDiagnosticLogReader LogReader);
 
 /// Argument parsing and console rendering. No decision lives here: the exit code comes from
 /// the use case, the layout from StatusRenderer.
@@ -129,14 +130,14 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             ExitCode code = await this.DispatchAsync(args, output, error, cancellationToken)
                 .ConfigureAwait(false);
 
-            ports.Diagnostics.Write(DiagnosticEntry.Of(operation, $"exit {(int)code}: {code}"));
+            ports.Diagnostics.Write(CommandEntries.Exited(operation, code));
 
             return code;
         }
         catch (OperationCanceledException)
         {
             // Ctrl+C. A stack trace is not an answer, and the read had not changed anything.
-            ports.Diagnostics.Write(DiagnosticEntry.Of(operation, "cancelled"));
+            ports.Diagnostics.Write(CommandEntries.Cancelled(operation));
             error.WriteLine("ripcord: cancelled.");
             return ExitCode.LocalAccessFailure;
         }
@@ -145,8 +146,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             // Recorded and rethrown: the line is what tells whoever looks why, and the caller
             // decides what the failure is — a crash by hand, an exit code set for Windows by
             // the listener service.
-            ports.Diagnostics.Write(DiagnosticEntry.Of(
-                operation, "the command stopped on an unhandled error", exception.ToString()));
+            ports.Diagnostics.Write(CommandEntries.Crashed(operation, exception.ToString()));
 
             throw;
         }
@@ -781,7 +781,9 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         return verb switch
         {
+            // One report under two spellings: `status` is what an operator types by habit.
             "" => this.ServiceState(args, output, error),
+            "status" => this.ServiceState(args[1..], output, error),
             "install" => this.Deploy(args[1..], output, error, removing: false),
             "remove" => this.Deploy(args[1..], output, error, removing: true),
             "restart" => this.Restart(args[1..], output, error),
@@ -793,14 +795,18 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
     {
         error.WriteLine(
             $"ripcord: 'service {verb}' is not a thing to do to the service. "
-            + "It is 'install', 'remove' or 'restart', and none of them is needed to look.");
+            + "It is 'install', 'remove' or 'restart'. To look, run 'ripcord service' "
+            + "on its own.");
 
         return ExitCode.InvalidConfiguration;
     }
 
     /// Read-only, and the reason this command is a noun. Installed and running are two facts,
     /// and an operator asking "is the listener up" must not have to read a deployment plan
-    /// backwards to find out.
+    /// backwards to find out — nor, when it is down, go hunting for why.
+    ///
+    /// The service is shown even when `ripcord.yaml` does not load: that is the likeliest
+    /// reason it stopped. The exit code is still the configuration's.
     private ExitCode ServiceState(string[] args, TextWriter output, TextWriter error)
     {
         if (!TryReadConfigurationPath(args, out string path, out string? optionError))
@@ -809,18 +815,20 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             return ExitCode.InvalidConfiguration;
         }
 
-        ListenerDeployment deployment = new(ports.ConfigStore, ports.DeploymentExecutor);
+        ServiceReport report = new ServiceInspection(
+                ports.ConfigStore, ports.DeploymentExecutor, ports.LogReader)
+            .Inspect(
+                new DeploymentRequest(
+                    path, environment.MachineName, environment.BinaryPath, Remove: false),
+                ports.Clock.UtcNow);
 
-        DeploymentOutcome outcome = deployment.Plan(new DeploymentRequest(
-            path, environment.MachineName, environment.BinaryPath, Remove: false));
+        output.Write(DeploymentRenderer.RenderState(report, this.Ink));
 
-        if (outcome.Observed is not { } observed || outcome.Desired is not { } desired)
+        if (report.Deployment.Observed is null)
         {
-            this.WriteDeploymentFailure(error, outcome);
-            return outcome.Code;
+            this.WriteDeploymentFailure(error, report.Deployment);
+            return report.Deployment.Code;
         }
-
-        output.Write(DeploymentRenderer.RenderState(observed, desired, outcome.Plan, this.Ink));
 
         return ExitCode.Success;
     }
@@ -1935,8 +1943,8 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         writer.WriteLine("  ripcord check [--config <path>]    would a failover work right now");
         writer.WriteLine("                [--notify [--dry-run]]");
         writer.WriteLine("                                     notify on a new critical finding");
-        writer.WriteLine("  ripcord service                    is the listener installed and");
-        writer.WriteLine("                                     running, and from where");
+        writer.WriteLine("  ripcord service [status]           is the listener running, and if");
+        writer.WriteLine("                                     not, why: last exit, its log");
         writer.WriteLine("  ripcord service install [--dry-run]");
         writer.WriteLine("  ripcord service remove [--dry-run]");
         writer.WriteLine("  ripcord service restart [--dry-run]");

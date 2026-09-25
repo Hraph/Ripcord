@@ -165,7 +165,8 @@ internal static class Program
                     Path.Combine(AppContext.BaseDirectory, "update-notice.json")),
                 new FileBinarySwap(),
                 clock,
-                diagnostics),
+                diagnostics,
+                new FileDiagnosticLogReader()),
             new CliEnvironment(
                 Environment.MachineName,
                 defaultConfigPath,

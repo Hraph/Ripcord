@@ -471,6 +471,121 @@ public class RipcordCliTests
         Assert.Contains("ripcord service install --dry-run", run.Output, StringComparison.Ordinal);
     }
 
+    /// `status` is the word an operator types by habit: it is the same report, not a second one.
+    [Fact]
+    public async Task Service_status_is_the_same_report_as_bare_service()
+    {
+        FakeDeploymentExecutor executor = new(Deployed());
+
+        CliRun bare = await Run(["service"], deploymentExecutor: executor);
+        CliRun status = await Run(["service", "status"], deploymentExecutor: executor);
+
+        Assert.Equal(ExitCode.Success, status.Code);
+        Assert.Equal(bare.Output, status.Output);
+        Assert.Empty(executor.Applied);
+    }
+
+    [Fact]
+    public async Task A_word_that_is_not_a_service_verb_points_to_bare_service()
+    {
+        CliRun run = await Run(["service", "state"]);
+
+        Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
+        Assert.Contains("run 'ripcord service' on its own", run.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Service_on_a_stopped_listener_prints_the_last_exit_the_log_and_why()
+    {
+        StubLogReader logs = new(
+        [
+            .. ListenerStartup.Banner("0.4.1", "ripcord.yaml").Render(Now),
+            .. CommandEntries.Exited("serve", ExitCode.InvalidConfiguration).Render(Now),
+        ]);
+
+        CliRun run = await Run(
+            ["service", "status"],
+            deploymentExecutor: new FakeDeploymentExecutor(
+                Deployed() with { ServiceRunning = false },
+                service: new ObservedService(
+                    true,
+                    $"\"{BinaryPath}\" serve",
+                    ServiceRunState.Stopped,
+                    "Auto",
+                    ServiceExitCode.ToWindows(ExitCode.InvalidConfiguration),
+                    0)),
+            logReader: logs);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Contains("service    STOPPED      start mode Auto", run.Output, StringComparison.Ordinal);
+        Assert.Contains($"command    \"{BinaryPath}\" serve", run.Output, StringComparison.Ordinal);
+        Assert.Contains(
+            "last exit  0x20000002, Ripcord exit 2: the configuration did not load",
+            run.Output,
+            StringComparison.Ordinal);
+        Assert.Contains("LAST 3 LINES OF THE LOG", run.Output, StringComparison.Ordinal);
+        Assert.Contains("14:00:00.000Z serve: exit 2: InvalidConfiguration", run.Output, StringComparison.Ordinal);
+        Assert.Contains(
+            "Why it is not running:\n    it stopped with exit 2: the configuration did not load\n"
+            + "  Then run:\n    ripcord check\n",
+            run.Output,
+            StringComparison.Ordinal);
+
+        // The service's own folder, today's file first.
+        Assert.EndsWith("listener-2026-09-12.log", logs.Asked[0], StringComparison.Ordinal);
+    }
+
+    /// The likeliest reason the listener stopped is a configuration that does not load. The
+    /// service is still shown, and the exit code is still the configuration's.
+    [Fact]
+    public async Task Service_with_an_unusable_configuration_still_shows_the_service()
+    {
+        CliRun run = await Run(
+            ["service"],
+            configStore: new MemoryConfigStore(
+                ConfigurationRead.Failed("listener.port", "not a number")),
+            deploymentExecutor: new FakeDeploymentExecutor(
+                service: new ObservedService(
+                    true, $"\"{BinaryPath}\" serve", ServiceRunState.Stopped, "Auto", 0, 0)));
+
+        Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
+        Assert.Contains("service    STOPPED", run.Output, StringComparison.Ordinal);
+        Assert.Contains("Firewall, snapshot and logs access are not shown", run.Output, StringComparison.Ordinal);
+        Assert.Contains("Why it is not running:\n    no log today or yesterday", run.Output, StringComparison.Ordinal);
+        Assert.Contains("Get-WinEvent -ProviderName ripcord", run.Output, StringComparison.Ordinal);
+        Assert.Contains("listener.port: not a number", run.Error, StringComparison.Ordinal);
+    }
+
+    /// Read on a 1024x768 KVM, with a long install path and a long log line.
+    [Fact]
+    public async Task Service_on_a_stopped_listener_with_long_lines_fits_75_columns()
+    {
+        StubLogReader logs = new(
+        [
+            .. ListenerStartup.Banner("0.4.1", "ripcord.yaml").Render(Now),
+            DiagnosticEntry.Of("serve", new string('x', 200)).Render(Now)[0],
+            .. CommandEntries.Exited("serve", ExitCode.LocalAccessFailure).Render(Now),
+        ]);
+
+        CliRun run = await Run(
+            ["service"],
+            deploymentExecutor: new FakeDeploymentExecutor(
+                Deployed() with { ServiceRunning = false },
+                service: new ObservedService(
+                    true,
+                    "\"C:\\Program Files\\Ripcord Disaster Recovery\\bin\\ripcord.exe\" serve",
+                    ServiceRunState.Stopped,
+                    "Auto",
+                    ServiceExitCode.ToWindows(ExitCode.LocalAccessFailure),
+                    0)),
+            logReader: logs);
+
+        string[] lines = run.Output.Split('\n');
+
+        Assert.True(lines.Length > 20, run.Output);
+        Assert.All(lines, line => Assert.True(line.Length <= 75, line));
+    }
+
     /// Rule 4: the two new deployment steps are in the dry run, and the dry run changes
     /// nothing.
     [Fact]
@@ -1016,6 +1131,7 @@ public class RipcordCliTests
         IUpdateNoticeStore? updateNotices = null,
         IBinarySwap? binarySwap = null,
         IDiagnosticLog? diagnostics = null,
+        IDiagnosticLogReader? logReader = null,
         CancellationToken cancellationToken = default)
     {
         StringWriter output = new();
@@ -1041,7 +1157,8 @@ public class RipcordCliTests
                 updateNotices ?? new MemoryUpdateNoticeStore(),
                 binarySwap ?? new NoBinarySwap(),
                 new FixedClock(Now),
-                diagnostics ?? new SilentDiagnosticLog()),
+                diagnostics ?? new SilentDiagnosticLog(),
+                logReader ?? new NoLogs()),
             new CliEnvironment(
                 machineName, DefaultConfigPath, BinaryPath, new StringReader(typed ?? "")));
 
@@ -1051,6 +1168,18 @@ public class RipcordCliTests
     }
 
     private sealed record CliRun(ExitCode Code, string Output, string Error);
+
+    /// Holds one day's listener log, whatever file is asked for, and records which were.
+    private sealed class StubLogReader(IReadOnlyList<string> lines) : IDiagnosticLogReader
+    {
+        public List<string> Asked { get; } = [];
+
+        public LogReading? Tail(string path, int maxLines)
+        {
+            this.Asked.Add(path);
+            return new LogReading(path, [.. lines.TakeLast(maxLines)], null);
+        }
+    }
 
     private sealed class UnreadableHypervProvider : ReadOnlyHypervProvider
     {
@@ -1067,7 +1196,9 @@ public class RipcordCliTests
 
     /// Reports a bare host, and records what it was asked to change.
     private sealed class FakeDeploymentExecutor(
-        ObservedDeployment? observed = null, int failOnStep = -1) : IDeploymentExecutor
+        ObservedDeployment? observed = null,
+        int failOnStep = -1,
+        ObservedService? service = null) : IDeploymentExecutor
     {
         private readonly List<DeploymentAction> applied = [];
 
@@ -1075,6 +1206,18 @@ public class RipcordCliTests
 
         public ObservedDeployment Observe(DesiredDeployment desired) =>
             observed ?? ObservedDeployment.Nothing;
+
+        /// Agrees with `Observe` unless a test says otherwise.
+        public ObservedService ObserveService() =>
+            service ?? (observed is { ServiceInstalled: true } deployed
+                ? new ObservedService(
+                    true,
+                    $"\"{deployed.ServiceBinaryPath}\" serve",
+                    deployed.ServiceRunning ? ServiceRunState.Running : ServiceRunState.Stopped,
+                    "Auto",
+                    0,
+                    0)
+                : ObservedService.Absent);
 
         public void Apply(DeploymentStep change, DesiredDeployment desired)
         {
