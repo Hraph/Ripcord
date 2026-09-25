@@ -34,21 +34,6 @@ public class ServiceCommandTests
             DeploymentAction.StopService, ServiceCommand.AlreadyRunning));
     }
 
-    /// Only a running service has anything to stop, and only a stopped one anything to start.
-    [Theory]
-    [InlineData(true, true, DeploymentAction.StopService, null)]
-    [InlineData(true, false, null, DeploymentAction.StartService)]
-    [InlineData(false, false, null, null)]
-    public void Stop_and_start_plan_only_what_the_state_leaves_to_do(
-        bool installed, bool running, DeploymentAction? stop, DeploymentAction? start)
-    {
-        ObservedDeployment observed =
-            ObservedDeployment.Nothing with { ServiceInstalled = installed, ServiceRunning = running };
-
-        Assert.Equal(stop, DeploymentPlan.ToStop(observed).Steps.SingleOrDefault()?.Action);
-        Assert.Equal(start, DeploymentPlan.ToStart(observed).Steps.SingleOrDefault()?.Action);
-    }
-
     /// A start that failed for any other reason is a failure. The tolerated codes are two
     /// numbers, not a mood.
     [Theory]

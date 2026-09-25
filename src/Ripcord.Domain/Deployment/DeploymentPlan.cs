@@ -178,16 +178,6 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
             : new DeploymentPlan([]);
     }
 
-    /// Only a service that is installed and not running has anything to start.
-    public static DeploymentPlan ToStart(ObservedDeployment observed)
-    {
-        ArgumentNullException.ThrowIfNull(observed);
-
-        return observed is { ServiceInstalled: true, ServiceRunning: false }
-            ? ToRestart(observed)
-            : new DeploymentPlan([]);
-    }
-
     /// Re-running a correct deployment yields an empty plan: an installer that reinstalls
     /// every time is one nobody dares run twice. A wrong binary path, port or peer address is
     /// an update rather than a teardown, which is what makes this a migration too.
