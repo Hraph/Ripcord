@@ -131,14 +131,16 @@ public static class ServiceDiagnosis
         };
     }
 
-    private static ServiceVerdict Unknown(string? reason) => reason switch
+    private static ServiceVerdict Unknown(string? reason) => new(Undescribed(reason), []);
+
+    /// Shared with `ripcord status`, so both commands say the same thing about the same read.
+    public static string Undescribed(string? reason) => reason switch
     {
-        ObservedService.AccessDenied => new ServiceVerdict(
+        ObservedService.AccessDenied =>
             "Windows did not say whether it runs: access is denied. Run this again from an "
                 + "elevated console.",
-            []),
-        { } other => new ServiceVerdict($"Windows did not say whether it runs: {other}", []),
-        null => new ServiceVerdict("Windows did not say whether it runs", []),
+        { } other => $"Windows did not say whether it runs: {other}",
+        null => "Windows did not say whether it runs",
     };
 
     /// Windows holds the latest stop; the log only the last run that got as far as its

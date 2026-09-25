@@ -65,6 +65,18 @@ public sealed class ListenerAvailabilityTests
         Assert.False(alert.Critical);
     }
 
+    /// Same words as `ripcord service`, including what to do about a denied read.
+    [Fact]
+    public void An_unreadable_service_says_what_ripcord_service_says()
+    {
+        ObservedService unreadable = new(
+            true, null, ServiceRunState.Unknown, null, null, null, ObservedService.AccessDenied);
+
+        Assert.Equal(
+            ServiceDiagnosis.Diagnose(unreadable, null, null).Why,
+            Judge(Enabled, unreadable)!.Reason);
+    }
+
     [Fact]
     public void A_disabled_listener_says_the_channel_is_off_whatever_the_service()
     {

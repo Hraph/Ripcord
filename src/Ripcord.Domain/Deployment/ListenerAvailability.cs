@@ -25,15 +25,6 @@ public static class ListenerAvailability
                 Critical: false);
         }
 
-        if (service.Unreadable is { } reason)
-        {
-            return new ListenerAlert(
-                "UNKNOWN",
-                $"the listener service could not be read: {reason}",
-                "ripcord service",
-                Critical: false);
-        }
-
         if (!service.Installed)
         {
             return new ListenerAlert(
@@ -48,7 +39,7 @@ public static class ListenerAvailability
             ServiceRunState.Running or ServiceRunState.StartPending => null,
             ServiceRunState.Unknown => new ListenerAlert(
                 "UNKNOWN",
-                "Windows did not say whether the listener service is running",
+                ServiceDiagnosis.Undescribed(service.Unreadable),
                 "ripcord service",
                 Critical: false),
             _ => new ListenerAlert(
