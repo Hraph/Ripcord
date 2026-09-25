@@ -9,6 +9,16 @@ half-updated pair depends on.
 
 A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binary.
 
+## Unreleased
+
+### Added
+
+- **`ripcord service` shows the build the running listener runs**, from a record the listener
+  writes when it starts (`logs\listener-process.txt`), believed only when its process id is
+  the one Windows gives. After `ripcord update` without a restart it says the process still
+  runs the old build and ends with `ripcord service restart`. A listener started before this
+  version has no record: `unknown` until it restarts.
+
 ## 0.6.0 — 2026-09-25
 
 ### Added

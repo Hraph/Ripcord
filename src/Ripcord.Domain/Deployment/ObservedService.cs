@@ -26,7 +26,10 @@ public sealed record ObservedService(
     int? ServiceSpecificExitCode,
 
     /// Why the state could not be read, when it could not.
-    string? Unreadable = null)
+    string? Unreadable = null,
+
+    /// The running process. Windows reports 0 for a service with none, read as null.
+    int? ProcessId = null)
 {
     public static ObservedService Absent { get; } =
         new(false, null, ServiceRunState.Stopped, null, null, null);

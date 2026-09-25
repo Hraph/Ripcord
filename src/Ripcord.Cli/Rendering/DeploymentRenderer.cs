@@ -86,6 +86,7 @@ public static class DeploymentRenderer
         DeploymentOutcome deployment = report.Deployment;
 
         AppendService(output, service);
+        AppendBuild(output, report.Build);
 
         if (deployment is { Observed: { } observed, Desired: { } desired })
         {
@@ -182,6 +183,24 @@ public static class DeploymentRenderer
         {
             AppendWrapped(
                 output, "    last exit  ", "               ", ServiceDiagnosis.WindowsMeaning(exit));
+        }
+    }
+
+    /// The build the process runs, which after `ripcord update` is not the one on disk.
+    private static void AppendBuild(StringBuilder output, RunningBuild? build)
+    {
+        switch (build)
+        {
+            case { Build: { } running, Outdated: true }:
+                output.AppendLine($"    version    {running}");
+                output.AppendLine("               NOT the build of this ripcord.exe: restart it");
+                break;
+            case { Build: { } running }:
+                output.AppendLine($"    version    {running}");
+                break;
+            case { Unknown: { } reason }:
+                AppendWrapped(output, "    version    ", "               ", $"unknown, {reason}");
+                break;
         }
     }
 

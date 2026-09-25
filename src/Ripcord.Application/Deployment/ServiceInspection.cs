@@ -1,3 +1,4 @@
+using Ripcord.Domain;
 using Ripcord.Domain.Deployment;
 using Ripcord.Domain.Diagnostics;
 using Ripcord.Ports.Configuration;
@@ -17,14 +18,18 @@ public sealed record ServiceReport(
 
     /// Null when the configuration did not load or the host could not be read.
     SnapshotAge? Snapshot = null,
-    TimeSpan? SnapshotWrittenAgo = null);
+    TimeSpan? SnapshotWrittenAgo = null,
+
+    /// Null unless the service is running.
+    RunningBuild? Build = null);
 
 /// Read-only: the service as Windows sees it, the deployment as the configuration wants it,
 /// the end of the listener's log, and one line on why a stopped listener stopped.
 public sealed class ServiceInspection(
     IConfigStore configStore, IDeploymentExecutor executor, IDiagnosticLogReader logReader)
 {
-    public ServiceReport Inspect(DeploymentRequest request, DateTimeOffset now)
+    /// `thisBuild` is the build of the binary running this command, which is the one on disk.
+    public ServiceReport Inspect(DeploymentRequest request, DateTimeOffset now, string thisBuild)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -48,6 +53,15 @@ public sealed class ServiceInspection(
             }
         }
 
+        ListenerProcess? recorded =
+            service.State == ServiceRunState.Running
+            && logReader.Tail(WindowsPath.Join(logsFolder, ListenerProcess.FileName), 4) is
+                { Unreadable: null } record
+                ? ListenerProcess.Parse(record.Lines)
+                : null;
+
+        RunningBuild? build = RunningBuild.Judge(service, recorded, thisBuild);
+
         return new ServiceReport(
             service,
             deployment,
@@ -57,12 +71,14 @@ public sealed class ServiceInspection(
                 service,
                 LogsWritable(deployment, logsFolder),
                 log,
-                listenerDisabled: deployment.Desired is { ListenerEnabled: false }),
+                listenerDisabled: deployment.Desired is { ListenerEnabled: false },
+                build),
             // A disabled listener serves nothing, so its snapshot's age means nothing here.
             deployment is { Desired: { ListenerEnabled: true } desired, Observed: { } observed }
                 ? SnapshotFreshness.Judge(observed.SnapshotWrittenAt, now, desired.SnapshotStaleAfter)
                 : null,
-            now - deployment.Observed?.SnapshotWrittenAt);
+            now - deployment.Observed?.SnapshotWrittenAt,
+            build);
     }
 
     /// Only known for the folder the configuration's deployment looked at.

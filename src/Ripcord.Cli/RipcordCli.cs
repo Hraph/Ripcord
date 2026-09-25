@@ -883,7 +883,8 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             .Inspect(
                 new DeploymentRequest(
                     path, environment.MachineName, environment.BinaryPath, Remove: false),
-                ports.Clock.UtcNow);
+                ports.Clock.UtcNow,
+                BuildInfo.VersionWithCommit);
 
         output.Write(DeploymentRenderer.RenderState(report, this.Ink));
 

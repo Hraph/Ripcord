@@ -145,7 +145,7 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
                 .QueryInstances(
                     @"root\cimv2",
                     "WQL",
-                    "SELECT State, StartMode, ExitCode, ServiceSpecificExitCode, PathName "
+                    "SELECT State, StartMode, ExitCode, ServiceSpecificExitCode, PathName, ProcessId "
                     + $"FROM Win32_Service WHERE Name = '{DeploymentPlan.ServiceName}'",
                     options)
                 .FirstOrDefault();
@@ -165,7 +165,8 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
                     ObservedService.ParseState(Text(service, "State")),
                     Text(service, "StartMode"),
                     Code(service, "ExitCode"),
-                    Code(service, "ServiceSpecificExitCode"));
+                    Code(service, "ServiceSpecificExitCode"),
+                    ProcessId: Code(service, "ProcessId") is int id and > 0 ? id : null);
             }
         }
         catch (CimException exception)

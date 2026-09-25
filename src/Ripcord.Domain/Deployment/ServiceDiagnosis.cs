@@ -108,7 +108,8 @@ public static class ServiceDiagnosis
         LogReading? log,
 
         /// `listener.enabled: false` in the configuration this run read.
-        bool listenerDisabled = false)
+        bool listenerDisabled = false,
+        RunningBuild? build = null)
     {
         ArgumentNullException.ThrowIfNull(service);
 
@@ -119,7 +120,7 @@ public static class ServiceDiagnosis
 
         return service.State switch
         {
-            ServiceRunState.Running => ServiceVerdict.None,
+            ServiceRunState.Running => Running(build),
             ServiceRunState.StartPending =>
                 new ServiceVerdict("Windows is starting it: look again in a few seconds", []),
             ServiceRunState.StopPending =>
@@ -130,6 +131,14 @@ public static class ServiceDiagnosis
             _ => Unknown(service.Unreadable),
         };
     }
+
+    /// `ripcord update` replaces the file, not the process: the old build serves until then.
+    private static ServiceVerdict Running(RunningBuild? build) =>
+        build is { Outdated: true, Build: { } running }
+            ? new ServiceVerdict(
+                $"it still runs {running}, not the build on disk: restart it to run the one installed",
+                [Restart])
+            : ServiceVerdict.None;
 
     private static ServiceVerdict Unknown(string? reason) => new(Undescribed(reason), []);
 

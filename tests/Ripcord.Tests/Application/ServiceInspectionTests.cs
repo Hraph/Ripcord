@@ -1,4 +1,5 @@
 using Ripcord.Application.Deployment;
+using Ripcord.Cli.Rendering;
 using Ripcord.Domain.Deployment;
 using Ripcord.Domain.Diagnostics;
 using Ripcord.Ports.Configuration;
@@ -14,6 +15,8 @@ public class ServiceInspectionTests
     private const string ThisBinary = @"C:\Ripcord\ripcord.exe";
 
     private const string ServiceBinary = @"C:\Program Files\Ripcord\ripcord.exe";
+
+    private const string ThisBuild = "0.7.0+abc1234";
 
     private static readonly DateTimeOffset Now = new(2026, 9, 25, 0, 30, 0, TimeSpan.Zero);
 
@@ -33,7 +36,7 @@ public class ServiceInspectionTests
                 new MemoryConfigStore(ConfigurationRead.Failed("node", "missing")),
                 new Host(StoppedService),
                 new Logs())
-            .Inspect(Request(), Now);
+            .Inspect(Request(), Now, ThisBuild);
 
         Assert.Equal(StoppedService, report.Service);
         Assert.Null(report.Deployment.Observed);
@@ -45,7 +48,7 @@ public class ServiceInspectionTests
     public void Unreadable_windows_is_a_line_not_a_crash()
     {
         ServiceReport report = new ServiceInspection(Valid(), new Host(null), new Logs())
-            .Inspect(Request(), Now);
+            .Inspect(Request(), Now, ThisBuild);
 
         Assert.Equal(ServiceRunState.Unknown, report.Service.State);
         Assert.Equal("Windows did not say whether it runs: WMI refused", report.Verdict.Why);
@@ -58,7 +61,7 @@ public class ServiceInspectionTests
         Logs logs = new(@"C:\Program Files\Ripcord\logs\listener-2026-09-24.log");
 
         ServiceReport report = new ServiceInspection(Valid(), new Host(StoppedService), logs)
-            .Inspect(Request(), Now);
+            .Inspect(Request(), Now, ThisBuild);
 
         Assert.Equal(@"C:\Program Files\Ripcord\logs", report.LogsFolder);
         Assert.Equal(
@@ -82,7 +85,7 @@ public class ServiceInspectionTests
                 Valid(),
                 new Host(StoppedService with { CommandLine = $"\"{serviceBinary}\" serve" }),
                 new Logs())
-            .Inspect(Request(), Now);
+            .Inspect(Request(), Now, ThisBuild);
 
         Assert.Equal(
             blamed,
@@ -95,7 +98,7 @@ public class ServiceInspectionTests
     {
         Host host = new(StoppedService);
 
-        new ServiceInspection(Valid(), host, new Logs()).Inspect(Request(), Now);
+        new ServiceInspection(Valid(), host, new Logs()).Inspect(Request(), Now, ThisBuild);
 
         Assert.Equal(1, host.Readings);
         Assert.Equal([StoppedService], host.Given);
@@ -114,9 +117,57 @@ public class ServiceInspectionTests
             WrittenAt = secondsAgo is { } seconds ? Now.AddSeconds(-seconds) : null,
         };
 
-        ServiceReport report = new ServiceInspection(Valid(), host, new Logs()).Inspect(Request(), Now);
+        ServiceReport report = new ServiceInspection(Valid(), host, new Logs()).Inspect(Request(), Now, ThisBuild);
 
         Assert.Equal(expected, report.Snapshot);
+    }
+
+    /// After `ripcord update`, the file on disk is the new build and the process the old one.
+    /// The report names the process's build, and says so when it is not this binary's.
+    [Theory]
+    [InlineData("0.6.0+0ld0000", true)]
+    [InlineData(ThisBuild, false)]
+    public void A_running_service_reports_the_build_its_process_recorded(string recorded, bool outdated)
+    {
+        ObservedService running = StoppedService with { State = ServiceRunState.Running, ProcessId = 4812 };
+        Files files = new()
+        {
+            [@"C:\Program Files\Ripcord\logs\listener-process.txt"] = [recorded, "4812"],
+        };
+
+        ServiceReport report = new ServiceInspection(Valid(), new Host(running), files)
+            .Inspect(Request(), Now, ThisBuild);
+
+        Assert.Equal(new RunningBuild(recorded, null, outdated), report.Build);
+
+        string rendered = DeploymentRenderer.RenderState(report, Palette.None);
+        string[] lines = rendered.ReplaceLineEndings("\n").Split('\n');
+
+        Assert.Contains($"    version    {recorded}", lines);
+        Assert.Equal(outdated, rendered.Contains("NOT the build of this ripcord.exe", StringComparison.Ordinal));
+        Assert.Equal(outdated, report.Verdict.Next.Contains("ripcord service restart"));
+        Assert.All(lines, line => Assert.True(line.Length <= 75, line));
+    }
+
+    [Fact]
+    public void A_running_service_with_no_record_says_its_build_is_unknown()
+    {
+        ObservedService running = StoppedService with { State = ServiceRunState.Running, ProcessId = 4812 };
+
+        ServiceReport report = new ServiceInspection(Valid(), new Host(running), new Files())
+            .Inspect(Request(), Now, ThisBuild);
+
+        Assert.Contains(
+            "    version    unknown, not recorded",
+            DeploymentRenderer.RenderState(report, Palette.None),
+            StringComparison.Ordinal);
+        Assert.Equal(ServiceVerdict.None, report.Verdict);
+    }
+
+    private sealed class Files : Dictionary<string, string[]>, IDiagnosticLogReader
+    {
+        public LogReading? Tail(string path, int maxLines) =>
+            this.TryGetValue(path, out string[]? lines) ? new LogReading(path, lines, null) : null;
     }
 
     /// Logs not writable by the service; ObserveService throws when given nothing.

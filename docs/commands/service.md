@@ -24,6 +24,7 @@ RIPCORD LISTENER
   ON THIS HOST
     service    running      start mode Auto
     command    "C:\Program Files\Ripcord\ripcord.exe" serve
+    version    0.7.0+def5678
     firewall   inbound TCP 7443 from 192.0.2.11
     snapshot   C:\Program Files\Ripcord\state.json
                written by 'ripcord status', served to the peer
@@ -71,6 +72,7 @@ running two versions.
 |---|---|
 | `service` | running, `STOPPED`, starting, stopping, `PAUSED`, or `state unknown` when Windows could not be read — never guessed as stopped. Then the start mode. |
 | `command` | what Windows runs. The service always reads `ripcord.yaml` beside that binary. |
+| `version` | only when it is running: the build the **process** runs, as it recorded itself in `logs\listener-process.txt` when it started. After `ripcord update` the binary on disk is the new one while the process is still the old one; the row then adds `NOT the build of this ripcord.exe` and the report ends with `ripcord service restart`. `unknown` when there is no record, or the record's process id is not the one Windows gives for the service — a record left by an earlier run is never believed. |
 | `last exit` | only when it is not running: the code Windows recorded, and what it means. |
 | `firewall`, `snapshot`, `logs` | what the configuration needs, and whether the host has it. Left out when `ripcord.yaml` does not load. |
 | `key` | whether the service account can read the private key of `listener.local_certificate_thumbprint`, or that no key was found for it in `LocalMachine\My`. Machine keys are readable by SYSTEM and Administrators only. |

@@ -289,6 +289,8 @@ internal static class Program
                 return;
             }
 
+            this.RecordProcess();
+
             // What the verb would have printed on a console becomes lines of the same log.
             using DiagnosticTextWriter writer = new(setup.Diagnostics, "serve");
 
@@ -307,6 +309,24 @@ internal static class Program
                 // written the exception to the log.
                 Stopped(logger, "The Ripcord listener stopped on an error.", exception);
                 this.Stop(ExitCode.LocalAccessFailure, stoppingToken);
+            }
+        }
+
+        /// Read back by `ripcord service`: after an update, the build on disk is not the build
+        /// running. Failing to write it stops nothing, and is logged.
+        private void RecordProcess()
+        {
+            try
+            {
+                File.WriteAllText(
+                    Path.Combine(
+                        Path.GetDirectoryName(setup.Diagnostics.CurrentFile)!, ListenerProcess.FileName),
+                    new ListenerProcess(BuildInfo.VersionWithCommit, Environment.ProcessId).Text());
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                _ = setup.Diagnostics.TryWrite(new DiagnosticEntry(
+                    "service", $"the process record was not written: {exception.Message}", []));
             }
         }
 
