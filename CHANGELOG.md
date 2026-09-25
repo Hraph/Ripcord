@@ -17,6 +17,9 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
   the service is not installed, not running, or could not be read,
   with the command to run next. Over there this host only shows `SILENT`, which reads as a
   network fault. The exit code is unchanged.
+- **`ripcord init` asks whether to check GitHub for a newer release**, last, defaulting to
+  no, and writes `updates.check` either way. `updates.install` is still never asked: a re-run
+  keeps it, unless the check is answered no — install cannot be on without it.
 - **`ripcord service` says why a stopped listener stopped**: the command Windows runs, its
   start mode, the exit code Windows recorded (`0x2000000N` is Ripcord's exit N) with what it
   means, the day's `logs\listener-YYYY-MM-DD.log` and its last 20 lines, and one line on the

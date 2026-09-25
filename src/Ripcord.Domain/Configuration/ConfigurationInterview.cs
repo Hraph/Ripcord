@@ -119,6 +119,8 @@ public sealed class ConfigurationInterview
         public const string Priorities = "FAILOVER ORDER";
 
         public const string Thresholds = "THRESHOLDS";
+
+        public const string Updates = "UPDATES";
     }
 
     // Each line is at most 73 columns: the renderer indents by 2 on a 75-column console.
@@ -136,6 +138,17 @@ public sealed class ConfigurationInterview
             "'y' makes 'check' remind you on every run of the USN rollback risk. It",
             "does not change the order: a domain controller should be P1.",
         ];
+
+        public static readonly string[] UpdateCheck =
+        [
+            "'y' lets 'ripcord check-update' ask api.github.com whether a newer",
+            "release exists. It needs outbound access, which these hosts are meant",
+            "not to have: answer 'n' unless this one has it. Installing is a separate",
+            "switch, updates.install, set by hand in the file.",
+        ];
+
+        public static readonly string[] InstallGoesWithCheck =
+            ["'n' also turns off updates.install, which cannot be on without it."];
     }
 
     private readonly InterviewFacts facts;
@@ -303,6 +316,16 @@ public sealed class ConfigurationInterview
             steps.AddRange(this.SixQuestions());
         }
 
+        steps.Add(new InterviewQuestion(
+            "updates.check",
+            "Check GitHub for a newer release",
+            this.seed?.Updates?.Check == true ? "y" : "n",
+            ["y", "n"],
+            this.seed?.Updates?.Install == true
+                ? [.. Explanations.UpdateCheck, .. Explanations.InstallGoesWithCheck]
+                : Explanations.UpdateCheck,
+            Groups.Updates));
+
         return new InterviewPlan(steps, steps.TrueForAll(step => !this.Unanswered(step)));
     }
 
@@ -344,7 +367,7 @@ public sealed class ConfigurationInterview
             "peer.address" => this.Store(question, Address(given), $"'{given}' is not an IP address written in full."),
             "switch" => this.Store(question, this.Switch(given), $"there is no switch {given} in the list."),
             "vms" => this.Vms(question, given),
-            "defaults" => this.Store(question, YesNo(given), "answer yes or no."),
+            "defaults" or "updates.check" => this.Store(question, YesNo(given), "answer yes or no."),
             _ => this.Store(question, Bounded(given, question.Key), $"{given} is out of range for this."),
         };
     }
@@ -671,6 +694,7 @@ public sealed class ConfigurationInterview
             int.Parse(this.Answered("replication.lag"), CultureInfo.InvariantCulture),
             this.Answered("storage.data_volume"),
             int.Parse(this.Answered("storage.free_space"), CultureInfo.InvariantCulture),
+            Yes(this.answers["updates.check"]),
             [.. this.ChosenVms().Select(this.DraftVmOf)],
             this.Carried());
     }
@@ -701,7 +725,8 @@ public sealed class ConfigurationInterview
     /// covers are the file's, not the interview's, and a rewrite has to give them back.
     ///
     /// The unattended authorisation is kept only for VMs still declared: the validator refuses
-    /// an entry naming any other.
+    /// an entry naming any other. `updates.install` is kept only while the check stays on, for
+    /// the same reason.
     private CarriedSettings Carried()
     {
         if (this.seed is null)
@@ -719,7 +744,8 @@ public sealed class ConfigurationInterview
                 ? [.. unattended.Where(name => name is not null
                     && chosen.Contains(name.Trim(), StringComparer.OrdinalIgnoreCase))]
                 : null,
-            this.seed.Storage?.CheckBitlockerAutounlock);
+            this.seed.Storage?.CheckBitlockerAutounlock,
+            this.seed.Updates?.Install == true && Yes(this.answers["updates.check"]));
     }
 
     private sealed record InterviewPlan(IReadOnlyList<InterviewQuestion> Steps, bool Complete);

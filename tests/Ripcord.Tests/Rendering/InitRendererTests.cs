@@ -173,7 +173,7 @@ public class InitRendererTests
                 "vSwitch-LAN", Ripcord.Domain.Inventory.SwitchConnectivity.External)],
             [new InterviewVm("VM-DC-01", true, true), new InterviewVm("VM-APP-01", true, true)]);
         ConfigurationInterview interview = ConfigurationInterview.Start(facts);
-        string[] typed = ["dr", "HV-PRIMARY-01", "192.0.2.10", "1", "all", "P1", "y", "P2", "n", "y"];
+        string[] typed = ["dr", "HV-PRIMARY-01", "192.0.2.10", "1", "all", "P1", "y", "P2", "n", "y", "n"];
         int asked = 0;
 
         foreach (string answer in typed)

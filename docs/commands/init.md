@@ -9,7 +9,7 @@ ripcord init [--config <path>] [--role primary|dr] [--dry-run]
 
 ## What it asks
 
-Six questions, plus two per VM. On a re-run everything has a default and Enter accepts it; on
+Seven questions, plus two per VM. On a re-run everything has a default and Enter accepts it; on
 a first run the role, the other host and each VM's priority must be typed.
 
 | | |
@@ -20,6 +20,7 @@ a first run the role, the other host and each VM's priority must be typed.
 | which VMs | **chosen from the VMs Hyper-V reports on this host**, with whether each replicates and whether it is running. Answer with numbers from the list or names, separated by commas, or `all` on its own. A number within the list is read as that number first, so a VM named `2019` on a smaller host is still picked by name. `all` is the default on a first run; on a re-run the default is the numbers of the file's VMs still on this host, in the file's order (e.g. `3,1`), and that order is the start order within a priority. A test-failover copy is not offered. On a host with no VM it says so, writes `vms: []` and asks nothing per VM |
 | per VM | `P1` or `P2`, and whether it is a domain controller. **P1 fails over first** — a sweep moves every P1 before any P2 and stops at the first VM that fails, and `failover --priority P1` moves that tier alone. `check` makes sure the DR host can start every P1 at once, against its RAM minus the memory reserve (one of the six figures). `check` also reads the pair as failed over only when a P1 runs as primary on the DR host, so at least one VM should be P1. Give P1 to the domain controller and what users cannot work without; P2 to everything that can wait. Answering `y` for a domain controller only makes `check` remind you of the USN rollback risk on every run — it changes no order and adds no guard, so a domain controller should also be P1. Both are explained once, above the first VM |
 | six figures | memory reserve, offline-after, frequency, lag multiplier, volume, free-space warning — shown together and accepted in one answer, or unrolled into six prompts |
+| update check | whether [`check-update`](check-update.md) may ask GitHub for a newer release. **No** unless the file already said yes: it needs outbound access, which these hosts are meant not to have. `updates.install` is never asked — a re-run keeps it, except when this is answered no, since install cannot be on without it |
 
 An answer the file would not take is refused with the reason and asked again. An address that
 is not an address, a peer named as this host, a number not in the list: none of them reaches
@@ -27,7 +28,7 @@ the file.
 
 ## What it writes
 
-`schema_version`, `node`, `peer`, `replication`, `storage` and `vms` — and the result
+`schema_version`, `node`, `peer`, `replication`, `storage`, `vms` and `updates` — and the result
 **validates**. `ripcord status` works straight afterwards. This is the difference from the
 template `install.ps1` used to leave behind, which was refused by name until somebody filled
 in four blanks.

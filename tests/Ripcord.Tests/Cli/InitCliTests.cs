@@ -28,6 +28,7 @@ public class InitCliTests
         "P2", "n",
         "P2", "n",
         "y",
+        "n",
         "y",
     ];
 
@@ -198,7 +199,7 @@ public class InitCliTests
         MemoryConfigStore store = new(ConfigurationRead.Absent(ConfigPath, "there is no file"));
 
         CliRun run = await Run(
-            ["dr", "HV-PRIMARY-01", "192.0.2.10", FakeScenarios.ProductionSwitch, "", "y", "y"],
+            ["dr", "HV-PRIMARY-01", "192.0.2.10", FakeScenarios.ProductionSwitch, "", "y", "n", "y"],
             store,
             NoVm());
 
@@ -217,7 +218,7 @@ public class InitCliTests
         MemoryConfigStore store = new(Yaml.Read(sample), sample);
 
         CliRun run = await Run(
-            ["", "", "", "", "VM-SR-01", "P1", "n", "y", "n"],
+            ["", "", "", "", "VM-SR-01", "P1", "n", "y", "", "n"],
             store,
             FakeHypervProvider.FailingLocally("WMI is down"));
 
@@ -237,7 +238,7 @@ public class InitCliTests
         MemoryConfigStore store = new(Yaml.Read(Sample()), Sample());
 
         CliRun run = await Run(
-            [.. Enumerable.Repeat("", 10), "y"], store, WithoutBackupVm());
+            [.. Enumerable.Repeat("", 11), "y"], store, WithoutBackupVm());
 
         Assert.Contains("  - VM-BACKUP-01", run.Output, StringComparison.Ordinal);
         Assert.Contains(
@@ -269,7 +270,7 @@ public class InitCliTests
         Assert.Contains("{ rule:", previous, StringComparison.Ordinal);
         MemoryConfigStore store = new(Yaml.Read(previous), previous);
 
-        CliRun run = await Run([.. Enumerable.Repeat("", 11)], store, WithoutBackupVm());
+        CliRun run = await Run([.. Enumerable.Repeat("", 12)], store, WithoutBackupVm());
 
         Assert.Equal(ExitCode.Refused, run.Code);
         Assert.Null(store.Written);
@@ -288,7 +289,7 @@ public class InitCliTests
     {
         MemoryConfigStore store = new(Yaml.Read(Sample()), Sample());
 
-        CliRun run = await Run([.. Enumerable.Repeat("", 13), "y"], store);
+        CliRun run = await Run([.. Enumerable.Repeat("", 14), "y"], store);
 
         Assert.Equal(ExitCode.Success, run.Code);
         string written = store.Written!.ReplaceLineEndings("\n");
@@ -314,7 +315,7 @@ public class InitCliTests
     {
         MemoryConfigStore store = new(Yaml.Read(Sample()), Sample());
 
-        CliRun run = await Run([.. Enumerable.Repeat("", 13), "y"], store);
+        CliRun run = await Run([.. Enumerable.Repeat("", 14), "y"], store);
 
         Assert.Contains(
             "Next:  ripcord status, then ripcord service restart", run.Output, StringComparison.Ordinal);
@@ -372,7 +373,7 @@ public class InitCliTests
 
         CliRun run = await Run(
             ["dr", "HV-PRIMARY-01", "192.0.2.10", FakeScenarios.ProductionSwitch,
-             .. Enumerable.Repeat("", 6), "y"],
+             .. Enumerable.Repeat("", 7), "y"],
             store);
 
         Assert.Equal(ExitCode.Success, run.Code);

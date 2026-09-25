@@ -87,7 +87,8 @@ expiry: without one, an acknowledgement is a rule deleted by the back door.
 
 **`alerting`** — see [alerting](alerting.md). Off by default.
 
-**`updates`** — `check` and `install`, two switches. See
+**`updates`** — `check` and `install`, two switches. `ripcord init` asks for `check` and
+writes it; `install` is set by hand. See
 [`check-update`](commands/check-update.md) and [`update`](commands/update.md).
 
 **`dashboard`** — see [`dashboard`](commands/dashboard.md). Off by default, no address key.

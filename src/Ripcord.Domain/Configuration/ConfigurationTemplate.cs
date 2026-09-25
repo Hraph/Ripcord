@@ -12,7 +12,7 @@ public static class ConfigurationTemplate
     /// The sections the interview asks about, and therefore the ones rewritten. Everything
     /// else in the previous file is carried across untouched.
     public static readonly string[] Owned =
-        ["schema_version", "node", "peer", "replication", "storage", "vms"];
+        ["schema_version", "node", "peer", "replication", "storage", "vms", "updates"];
 
     public static string Render(ConfigurationDraft draft, string? previous = null)
     {
@@ -107,6 +107,20 @@ public static class ConfigurationTemplate
                 text.AppendLine($"    failover: {policy}");
             }
         }
+
+        text.AppendLine();
+        text.AppendLine("updates:");
+        text.AppendLine("  # Whether `ripcord check-update` may ask GitHub for a newer release.");
+        text.AppendLine("  # It needs outbound access, which these hosts are meant not to have.");
+        text.AppendLine($"  check: {Flag(draft.CheckUpdates)}");
+
+        if (draft.Carried.InstallUpdates)
+        {
+            text.AppendLine("  # Whether `ripcord update` may replace this binary. Never asked.");
+            text.AppendLine("  install: true");
+        }
+
+        Trailer(text, before, "updates");
 
         foreach (YamlSection section in YamlSections.Except(before, Owned))
         {

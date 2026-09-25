@@ -2,7 +2,7 @@ namespace Ripcord.Domain.Configuration;
 
 /// A `ripcord.yaml` split into its top-level sections, as the original lines.
 ///
-/// This exists so that re-running `ripcord init` cannot lose anything. The interview owns six
+/// This exists so that re-running `ripcord init` cannot lose anything. The interview owns seven
 /// sections; everything else in the file — `listener`, `alerting`, `dashboard`, `diagnostics`,
 /// and any key a later version adds that this binary has never heard of — is carried across as
 /// **text**, byte for byte.

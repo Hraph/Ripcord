@@ -4,9 +4,10 @@ namespace Ripcord.Domain.Configuration;
 
 /// Everything the interview collected, before it is a file.
 ///
-/// Only the sections `ripcord init` owns. The listener, alerting, updates and the dashboard are
-/// absent from this type on purpose: each of them means "off" when the key is missing, and a
-/// host being set up has nothing to say about any of them yet.
+/// Only the sections `ripcord init` owns. The listener, alerting and the dashboard are absent
+/// from this type on purpose: each of them means "off" when the key is missing, and a host being
+/// set up has nothing to say about any of them yet. Whether it may look for a newer release is
+/// the exception — whether the host has outbound access is known on the day it is set up.
 ///
 /// `Carried` is the rest of those sections — the fields inside `replication`, `storage` and
 /// each VM that the interview never asks about. They are here rather than left out because a
@@ -25,6 +26,7 @@ public sealed record ConfigurationDraft(
     int LagMultiplier,
     string DataVolume,
     int FreeSpaceWarningGb,
+    bool CheckUpdates,
     IReadOnlyList<DraftVm> Vms,
     CarriedSettings Carried)
 {
@@ -41,6 +43,7 @@ public sealed record ConfigurationDraft(
         && this.LagMultiplier == other.LagMultiplier
         && this.DataVolume == other.DataVolume
         && this.FreeSpaceWarningGb == other.FreeSpaceWarningGb
+        && this.CheckUpdates == other.CheckUpdates
         && this.Carried == other.Carried
         && Structural.Same(this.Vms, other.Vms);
 
@@ -73,7 +76,8 @@ public sealed record CarriedSettings(
     string? TestFailoverSwitch = null,
     int? TestFailoverOrphanAfterHours = null,
     IReadOnlyList<string>? UnattendedTestFailoverVms = null,
-    bool? CheckBitlockerAutounlock = DraftDefaults.CheckBitlockerAutounlock)
+    bool? CheckBitlockerAutounlock = DraftDefaults.CheckBitlockerAutounlock,
+    bool InstallUpdates = false)
 {
     public static readonly CarriedSettings None = new();
 
@@ -83,6 +87,7 @@ public sealed record CarriedSettings(
         && this.TestFailoverSwitch == other.TestFailoverSwitch
         && this.TestFailoverOrphanAfterHours == other.TestFailoverOrphanAfterHours
         && this.CheckBitlockerAutounlock == other.CheckBitlockerAutounlock
+        && this.InstallUpdates == other.InstallUpdates
         && Structural.Same(this.UnattendedTestFailoverVms, other.UnattendedTestFailoverVms);
 
     public override int GetHashCode() =>

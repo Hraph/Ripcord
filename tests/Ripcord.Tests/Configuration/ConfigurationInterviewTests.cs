@@ -30,7 +30,7 @@ public class ConfigurationInterviewTests
         ]);
 
     /// A first run on a host being set up: the role, the other host, the switch by number, two
-    /// VMs by number, their priorities, and the six figures accepted as shown.
+    /// VMs by number, their priorities, the six figures accepted as shown, and no update check.
     private static readonly string[] FirstRun =
     [
         "dr",
@@ -41,6 +41,7 @@ public class ConfigurationInterviewTests
         "P1", "y",
         "P2", "n",
         "y",
+        "n",
     ];
 
     /// The assertion the whole design exists for.
@@ -301,7 +302,7 @@ public class ConfigurationInterviewTests
     public void A_host_whose_hyper_v_cannot_be_read_is_completed_by_typing()
     {
         ConfigurationDraft draft = Answer(
-            ["primary", "HV-PRIMARY-01", "192.0.2.10", "vSwitch-LAN", "VM-DC-01", "P1", "y", "y"],
+            ["primary", "HV-PRIMARY-01", "192.0.2.10", "vSwitch-LAN", "VM-DC-01", "P1", "y", "y", "n"],
             facts: InterviewFacts.Unread(Machine));
 
         Assert.Equal("vSwitch-LAN", draft.SwitchName);
@@ -313,7 +314,7 @@ public class ConfigurationInterviewTests
         Assert.Equal(
             ["VM-DC-01", "VM-APP-01", "VM-BACKUP-01"],
             Answer(["dr", "HV-PRIMARY-01", "192.0.2.10", "1", "all",
-                    "P1", "y", "P2", "n", "P2", "n", "y"])
+                    "P1", "y", "P2", "n", "P2", "n", "y", "n"])
                 .Vms.Select(vm => vm.Name));
 
     /// Declining the grouped question unrolls it, and every one of the six is then bounded the
@@ -323,7 +324,7 @@ public class ConfigurationInterviewTests
     {
         ConfigurationInterview interview = ConfigurationInterview.Start(Host);
 
-        foreach (string answer in FirstRun[..^1])
+        foreach (string answer in FirstRun[..^2])
         {
             interview = interview.Answer(answer);
         }
@@ -335,7 +336,7 @@ public class ConfigurationInterviewTests
 
         Assert.Equal("0 is out of range for this.", interview.Answer("0").Rejection);
 
-        ConfigurationDraft draft = Drain(interview, ["8", "60", "15", "5", "e", "500"]);
+        ConfigurationDraft draft = Drain(interview, ["8", "60", "15", "5", "e", "500", "n"]);
 
         Assert.Equal(8, draft.HostMemoryReserveGb);
         Assert.Equal(60, draft.PeerOfflineAfterSec);
@@ -401,7 +402,7 @@ public class ConfigurationInterviewTests
         Assert.Equal("1", vms.Default);
 
         ConfigurationDraft draft = Answer(
-            ["primary", "HV-PRIMARY-01", "192.0.2.10", "1", "", "P1", "y", "y"], seed, facts);
+            ["primary", "HV-PRIMARY-01", "192.0.2.10", "1", "", "P1", "y", "y", "n"], seed, facts);
 
         Assert.Equal("VM-DC-01", Assert.Single(draft.Vms).Name);
     }
@@ -421,7 +422,7 @@ public class ConfigurationInterviewTests
 
         InterviewQuestion vms = QuestionOf("vms", facts, seed);
         string rewritten = ConfigurationTemplate.Render(
-            Answer(["", "", "", "", "", "P1", "", "P2", "", ""], seed, facts), sample);
+            Answer(["", "", "", "", "", "P1", "", "P2", "", "", ""], seed, facts), sample);
 
         Assert.Equal("all", vms.Default);
         Assert.Equal(["SR-DC  (replicated, running)", "SR-APP  (replicated, running)"], vms.Choices);
@@ -447,7 +448,7 @@ public class ConfigurationInterviewTests
         ConfigurationInterview interview = ConfigurationInterview.Start(facts);
         List<InterviewQuestion> asked = [];
 
-        foreach (string answer in new[] { "primary", "HV-PRIMARY-01", "192.0.2.10", "1", "", "y" })
+        foreach (string answer in new[] { "primary", "HV-PRIMARY-01", "192.0.2.10", "1", "", "y", "n" })
         {
             asked.Add(interview.Question!);
             interview = interview.Answer(answer);
@@ -512,7 +513,7 @@ public class ConfigurationInterviewTests
         ConfigurationDocument? seed = new YamlConfigStore().Read(WrittenTo(sample)).Document;
 
         ConfigurationDraft draft = Answer(
-            ["", "", "", "", "VM-BACKUP-01", "", "", ""], seed, InterviewFacts.Unread("HV-PRIMARY-01"));
+            ["", "", "", "", "VM-BACKUP-01", "", "", "", ""], seed, InterviewFacts.Unread("HV-PRIMARY-01"));
 
         DraftVm vm = Assert.Single(draft.Vms);
         Assert.Equal("manual", vm.Failover);
@@ -529,7 +530,7 @@ public class ConfigurationInterviewTests
         };
 
         ConfigurationDraft draft = Answer(
-            ["primary", "HV-PRIMARY-01", "192.0.2.10", "1", "", "P1", "y", "y"], seed);
+            ["primary", "HV-PRIMARY-01", "192.0.2.10", "1", "", "P1", "y", "y", "n"], seed);
 
         Assert.Equal(["VM-DC-01"], draft.Carried.UnattendedTestFailoverVms);
         Assert.Empty(
@@ -553,7 +554,7 @@ public class ConfigurationInterviewTests
 
         ConfigurationInterview interview = ConfigurationInterview.Start(Host, seed);
 
-        foreach (string answer in new[] { "primary", "HV-PRIMARY-01", "192.0.2.10", "1", "", "P1", "y", "y" })
+        foreach (string answer in new[] { "primary", "HV-PRIMARY-01", "192.0.2.10", "1", "", "P1", "y", "y", "n" })
         {
             interview = interview.Answer(answer);
         }
@@ -605,7 +606,7 @@ public class ConfigurationInterviewTests
         Assert.Equal("3,1", QuestionOf("vms", Host, seed).Default);
 
         ConfigurationDraft draft = Answer(
-            ["primary", "HV-PRIMARY-01", "192.0.2.10", "1", .. Enumerable.Repeat("", 6)], seed);
+            ["primary", "HV-PRIMARY-01", "192.0.2.10", "1", .. Enumerable.Repeat("", 7)], seed);
 
         Assert.Equal(["VM-BACKUP-01", "VM-DC-01"], draft.Vms.Select(vm => vm.Name));
     }
@@ -639,9 +640,105 @@ public class ConfigurationInterviewTests
             [new InterviewVm("SQL, reporting", true, true), new InterviewVm("VM-DC-01", true, true)]);
 
         ConfigurationDraft draft = Answer(
-            ["primary", "HV-PRIMARY-01", "192.0.2.10", "1", "1", "P1", "n", "y"], facts: facts);
+            ["primary", "HV-PRIMARY-01", "192.0.2.10", "1", "1", "P1", "n", "y", "n"], facts: facts);
 
         Assert.Equal("SQL, reporting", Assert.Single(draft.Vms).Name);
+    }
+
+    /// Off unless answered: these hosts are meant to have no outbound access.
+    [Fact]
+    public void The_update_check_is_asked_last_and_defaults_to_off()
+    {
+        InterviewQuestion asked = Questions(FirstRun)[^1];
+
+        Assert.Equal("updates.check", asked.Key);
+        Assert.Equal("n", asked.Default);
+        Assert.False(Answer(FirstRun).CheckUpdates);
+        Assert.Contains("  check: false", ConfigurationTemplate.Render(Answer(FirstRun)), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Checking_for_updates_is_written_validated_and_offered_back_on_a_re_run()
+    {
+        string yaml = ConfigurationTemplate.Render(Answer([.. FirstRun[..^1], "y"]));
+        ConfigurationDocument? seed = new YamlConfigStore().Read(WrittenTo(yaml)).Document;
+
+        ConfigurationValidation validation = ConfigurationValidator.Validate(seed, Machine);
+        Assert.Empty(validation.Errors);
+        Assert.True(validation.Configuration!.Updates.Check);
+        Assert.False(validation.Configuration.Updates.Install);
+
+        Assert.Equal("y", UpdateCheckQuestion(seed).Default);
+    }
+
+    /// Install is never asked, so a re-run keeps it — unless the check it depends on is turned
+    /// off, which the validator would otherwise refuse.
+    [Theory]
+    [InlineData("y", true)]
+    [InlineData("n", false)]
+    public void Install_is_carried_only_while_the_check_stays_on(string check, bool kept)
+    {
+        ConfigurationDocument seed = SeedWith("VM-DC-01");
+        seed.Updates = new UpdatesDocument { Check = true, Install = true };
+
+        Assert.Contains(
+            "'n' also turns off updates.install, which cannot be on without it.",
+            UpdateCheckQuestion(seed).Explanation);
+
+        string yaml = ConfigurationTemplate.Render(
+            Answer(["primary", "HV-PRIMARY-01", "192.0.2.10", "1", "", "P1", "y", "y", check], seed));
+
+        Assert.Equal(kept, yaml.Contains("  install: true", StringComparison.Ordinal));
+        Assert.Empty(
+            ConfigurationValidator.Validate(new YamlConfigStore().Read(WrittenTo(yaml)).Document, Machine).Errors);
+    }
+
+    /// A hand-edited file the validator refuses: Enter answers 'n', and the result validates.
+    [Fact]
+    public void Install_without_the_check_is_dropped_on_enter()
+    {
+        ConfigurationDocument seed = SeedWith("VM-DC-01");
+        seed.Updates = new UpdatesDocument { Check = false, Install = true };
+
+        string yaml = ConfigurationTemplate.Render(
+            Answer(["primary", "HV-PRIMARY-01", "192.0.2.10", "1", "", "P1", "y", "y", ""], seed));
+
+        Assert.DoesNotContain("install:", yaml, StringComparison.Ordinal);
+        Assert.Empty(
+            ConfigurationValidator.Validate(new YamlConfigStore().Read(WrittenTo(yaml)).Document, Machine).Errors);
+    }
+
+    [Fact]
+    public void Enter_through_a_re_run_keeps_both_update_switches_and_their_trailer()
+    {
+        ConfigurationDocument seed = SeedWith("VM-DC-01");
+        seed.Updates = new UpdatesDocument { Check = true, Install = true };
+
+        string original = ConfigurationTemplate.Render(
+            Answer(["primary", "HV-PRIMARY-01", "192.0.2.10", "1", "", "P1", "y", "y", ""], seed))
+            + "  # install: false  # until the next change window\n";
+        ConfigurationDocument? again = new YamlConfigStore().Read(WrittenTo(original)).Document;
+
+        Assert.Equal(
+            original,
+            ConfigurationTemplate.Render(Answer([.. Enumerable.Repeat("", 20)], again), original));
+    }
+
+    private static InterviewQuestion UpdateCheckQuestion(ConfigurationDocument? seed)
+    {
+        ConfigurationInterview interview = ConfigurationInterview.Start(Host, seed);
+
+        foreach (string answer in new[] { "primary", "HV-PRIMARY-01", "192.0.2.10", "1" })
+        {
+            interview = interview.Answer(answer);
+        }
+
+        while (interview.Question!.Key != "updates.check")
+        {
+            interview = interview.Answer("");
+        }
+
+        return interview.Question;
     }
 
     private static VmReplicationState Vm(string name, ReplicationRole role) =>
