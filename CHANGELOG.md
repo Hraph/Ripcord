@@ -63,6 +63,9 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ### Fixed
 
+- **Each `ripcord init` re-run added a blank line between the sections it carries over**
+  (`listener`, `checks`, …). A second re-run now gives the file back unchanged.
+
 - **`service install` and `restart` reported success for a listener that stopped at once.**
   `sc start` returns when the process answers Windows, before the listener reads its
   configuration or opens its log. The start step now watches the service for five seconds and

@@ -223,6 +223,37 @@ public class ConfigurationInterviewTests
             StringComparison.Ordinal);
     }
 
+    /// The first rewrite of a sample may reshape it; every one after must give it back. Blank
+    /// lines between carried sections used to grow by one per run.
+    [Theory]
+    [InlineData("ripcord.primary.yaml", "HV-PRIMARY-01")]
+    [InlineData("ripcord.dr.yaml", "HV-REPLICA-01")]
+    public void A_second_re_run_over_a_sample_changes_nothing(string file, string machine)
+    {
+        string sample = File.ReadAllText(
+            Path.Combine(Architecture.RepositoryLayout.Root, "config", file));
+        InterviewFacts facts = new(
+            machine,
+            [],
+            [
+                new InterviewVm("VM-DC-01", true, true),
+                new InterviewVm("VM-LEGACY-01", true, true),
+                new InterviewVm("VM-BACKUP-01", false, true),
+            ]);
+
+        string once = Rerun(sample);
+
+        Assert.Equal(once, Rerun(once));
+
+        string Rerun(string previous) =>
+            ConfigurationTemplate.Render(
+                Answer(
+                    [.. Enumerable.Repeat("", 40)],
+                    new YamlConfigStore().Read(WrittenTo(previous)).Document,
+                    facts),
+                previous);
+    }
+
     /// The pair's two files are mirror images, so running this over the other host's copy is a
     /// mistake somebody will make. The peer name it carries is this machine, and offering it as
     /// the default would leave a question Enter refuses for ever.

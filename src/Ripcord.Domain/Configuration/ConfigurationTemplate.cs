@@ -126,7 +126,7 @@ public static class ConfigurationTemplate
         {
             text.AppendLine();
 
-            foreach (string line in Carried(section, draft))
+            foreach (string line in Unpadded(Carried(section, draft)))
             {
                 text.AppendLine(line);
             }
@@ -192,6 +192,26 @@ public static class ConfigurationTemplate
             is { } checks
             ? Pruned(checks, draft).DroppedVms
             : [];
+    }
+
+    /// A carried section keeps the blank lines at its edges, and a blank is written between
+    /// sections here as well: without this the gap grows by one on every re-run.
+    private static IEnumerable<string> Unpadded(IReadOnlyList<string> lines)
+    {
+        int start = 0;
+        int end = lines.Count;
+
+        while (start < end && lines[start].Length == 0)
+        {
+            start++;
+        }
+
+        while (end > start && lines[end - 1].Length == 0)
+        {
+            end--;
+        }
+
+        return lines.Skip(start).Take(end - start);
     }
 
     private static IReadOnlyList<string> Carried(YamlSection section, ConfigurationDraft draft) =>
