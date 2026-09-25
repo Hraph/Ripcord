@@ -9,8 +9,8 @@ using Ripcord.Tests.Configuration;
 namespace Ripcord.Tests.Updates;
 
 /// `ripcord rollback` as the operator meets it. The decision is `RollbackPlanTests`; what is
-/// asserted here is the loop around it — that nothing moves without the node name typed in
-/// full, that `--dry-run` moves nothing at all, and that a host with nothing set aside is
+/// asserted here is the loop around it — that nothing moves without a yes,
+/// that `--dry-run` moves nothing at all, and that a host with nothing set aside is
 /// refused rather than told it succeeded.
 public class RollbackCliTests
 {
@@ -21,7 +21,7 @@ public class RollbackCliTests
     {
         KeptBinary swap = new(hasPrevious: false);
 
-        CliRun run = await Run(swap, typed: FakeScenarios.LocalHostName);
+        CliRun run = await Run(swap, typed: "y");
 
         Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
         Assert.Null(swap.Swapped);
@@ -46,14 +46,14 @@ public class RollbackCliTests
         Assert.Contains("Nothing was changed", run.Output, StringComparison.Ordinal);
     }
 
-    /// Rule 3. This replaces the binary a failover runs from, so it takes the node name typed
-    /// in full — the same word every other mutating verb takes.
+    /// Rule 3. The binary set aside is kept, so this is undone by running it again, and it
+    /// asks y/n with Enter declining.
     [Fact]
-    public async Task Without_the_node_name_nothing_is_exchanged()
+    public async Task Without_a_yes_nothing_is_exchanged()
     {
         KeptBinary swap = new();
 
-        CliRun run = await Run(swap, typed: "yes");
+        CliRun run = await Run(swap, typed: "");
 
         Assert.Equal(ExitCode.Refused, run.Code);
         Assert.Null(swap.Swapped);
@@ -65,7 +65,7 @@ public class RollbackCliTests
     {
         KeptBinary swap = new();
 
-        CliRun run = await Run(swap, typed: FakeScenarios.LocalHostName);
+        CliRun run = await Run(swap, typed: "y");
 
         Assert.Equal(ExitCode.Success, run.Code);
         Assert.Equal(BinaryPath, swap.Swapped);
@@ -78,7 +78,7 @@ public class RollbackCliTests
     public async Task An_exchange_that_was_undone_says_the_host_is_where_it_was()
     {
         CliRun run = await Run(
-            new KeptBinary(outcome: SwapOutcome.Recovered), typed: FakeScenarios.LocalHostName);
+            new KeptBinary(outcome: SwapOutcome.Recovered), typed: "y");
 
         Assert.Equal(ExitCode.LocalAccessFailure, run.Code);
         Assert.Contains("runs what it was running", run.Error, StringComparison.Ordinal);
@@ -96,7 +96,7 @@ public class RollbackCliTests
     {
         CliRun run = await Run(
             new KeptBinary(outcome: SwapOutcome.LeftIncomplete),
-            typed: FakeScenarios.LocalHostName);
+            typed: "y");
 
         Assert.Equal(ExitCode.IntermediateState, run.Code);
         Assert.Contains("may have no binary", run.Error, StringComparison.Ordinal);
@@ -110,7 +110,7 @@ public class RollbackCliTests
     {
         KeptBinary swap = new(interrupted: true);
 
-        CliRun run = await Run(swap, typed: FakeScenarios.LocalHostName);
+        CliRun run = await Run(swap, typed: "y");
 
         Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
         Assert.Null(swap.Swapped);

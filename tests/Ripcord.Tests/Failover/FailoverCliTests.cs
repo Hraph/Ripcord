@@ -165,16 +165,20 @@ public class FailoverCliTests
         Assert.Contains("--vm", run.Error, StringComparison.Ordinal);
     }
 
-    /// Rule 3, at its sharpest. Nothing happens until the node name is typed in full.
-    [Fact]
-    public async Task A_real_run_does_nothing_until_the_node_name_is_typed()
+    /// Rule 3, at its sharpest. Nothing happens until the node name is typed in full — the
+    /// y/n the reversible verbs take is not enough here.
+    [Theory]
+    [InlineData("not-the-node")]
+    [InlineData("y")]
+    [InlineData("yes")]
+    public async Task A_real_run_does_nothing_until_the_node_name_is_typed(string typed)
     {
         FakeHypervProvider host = new(FakeScenarios.Healthy(Now));
 
         CliRun run = await Run(
             ["failover", "--scenario", "planned", "--vm", "VM-DC-01"],
             provider: host,
-            typed: "not-the-node");
+            typed: typed);
 
         Assert.Equal(ExitCode.Refused, run.Code);
         Assert.Empty(host.Calls);

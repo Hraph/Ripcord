@@ -924,12 +924,15 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         }
 
         ListenerDeployment deployment = new(ports.ConfigStore, ports.DeploymentExecutor);
+        ObservedService service = ServiceReading.Read(ports.DeploymentExecutor);
 
-        DeploymentOutcome outcome = deployment.Plan(new DeploymentRequest(
-            options.ConfigurationPath ?? environment.DefaultConfigurationPath,
-            environment.MachineName,
-            environment.BinaryPath,
-            Remove: false));
+        DeploymentOutcome outcome = deployment.Plan(
+            new DeploymentRequest(
+                options.ConfigurationPath ?? environment.DefaultConfigurationPath,
+                environment.MachineName,
+                environment.BinaryPath,
+                Remove: false),
+            service);
 
         if (outcome.Observed is not { } observed || outcome.Desired is not { } desired)
         {
@@ -956,21 +959,21 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             return ExitCode.InvalidConfiguration;
         }
 
-        DeploymentPlan plan = change switch
-        {
-            ServiceChange.Start => DeploymentPlan.ToStart(observed),
-            ServiceChange.Stop => DeploymentPlan.ToStop(observed),
-            _ => DeploymentPlan.ToRestart(observed),
-        };
+        ServiceStateChange decided = ServiceStateChange.For(change, service, observed);
 
-        if (!plan.ChangesAnything)
+        if (decided.Unreadable is { } unreadable)
         {
-            output.WriteLine(observed.ServiceRunning
-                ? $"The '{DeploymentPlan.ServiceName}' service is already running. Nothing was changed."
-                : $"The '{DeploymentPlan.ServiceName}' service is not running. Nothing was changed.");
+            error.WriteLine($"ripcord: {unreadable}");
+            return ExitCode.LocalAccessFailure;
+        }
 
+        if (decided.Unchanged is { } unchanged)
+        {
+            output.WriteLine(unchanged);
             return ExitCode.Success;
         }
+
+        DeploymentPlan plan = decided.Plan;
 
         output.Write(DeploymentRenderer.Render(
             plan, desired, removing: false, observed,
@@ -983,7 +986,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         }
 
         if (change == ServiceChange.Stop
-            && !this.Confirmed(
+            && !this.Agreed(
                 output,
                 error,
                 "The other host cannot read this one until the listener starts again."))
@@ -1046,7 +1049,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         // Refused, like every other declined confirmation: an operator who typed the wrong
         // thing and a configuration that cannot be read are different answers, and a caller
         // reading the exit code has no other way to tell them apart.
-        if (!this.Confirmed(
+        if (!this.Agreed(
             output,
             error,
             "This creates a Windows service and opens an inbound port on this host."))
@@ -1457,7 +1460,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         // Unattended skips the confirmation and pays for it elsewhere: the run is refused
         // for any VM the configuration has not named, and every unevaluable finding blocks
         // rather than only the six that block an attended run.
-        if (!options.DryRun && !options.Unattended && !this.Confirmed(
+        if (!options.DryRun && !options.Unattended && !this.Agreed(
             output,
             error,
             "This creates a test VM on this host and destroys it again when the test ends."))
@@ -1605,6 +1608,25 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
     private string? KnownUpdate() =>
         Domain.Updates.UpdateNotices.For(
             ports.UpdateNotices.Read(), this.LocalBuild.Version, ports.Clock.UtcNow);
+
+    /// For what can be undone or touches no production VM: a word, and Enter declines. The
+    /// typed node name stays for failover and fence, so it is never typed out of habit.
+    private bool Agreed(TextWriter output, TextWriter error, string consequence)
+    {
+        output.WriteLine($"  {consequence}");
+        output.Write(this.Ink.Apply(
+            "  " + Rendering.Ink.Bold("Go ahead?")
+            + Rendering.Ink.Faint("  y/n [n]")
+            + Rendering.Ink.Cyan(" > ")));
+
+        if (environment.ConfirmationReader?.ReadLine()?.Trim().ToLowerInvariant() is "y" or "yes")
+        {
+            return true;
+        }
+
+        this.Refuse(error, "ripcord: not confirmed, nothing was changed.");
+        return false;
+    }
 
     private bool Confirmed(TextWriter output, TextWriter error, string consequence)
     {
@@ -1930,7 +1952,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             return ExitCode.Success;
         }
 
-        if (!this.Confirmed(
+        if (!this.Agreed(
             output,
             error,
             "This replaces the binary this host runs its failovers with."))
@@ -2015,7 +2037,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             return ExitCode.Success;
         }
 
-        if (!this.Confirmed(
+        if (!this.Agreed(
             output,
             error,
             "This replaces the binary this host runs its failovers with."))
@@ -2126,11 +2148,4 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             + "4 refused or interrupted - nothing changed,");
         writer.WriteLine("            5 a mutating operation left an intermediate state.");
     }
-}
-
-internal enum ServiceChange
-{
-    Restart,
-    Start,
-    Stop,
 }

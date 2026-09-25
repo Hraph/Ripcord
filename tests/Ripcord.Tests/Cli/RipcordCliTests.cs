@@ -353,15 +353,18 @@ public class RipcordCliTests
         Assert.Empty(executor.Applied);
     }
 
-    /// Rule 3: no mutating operation without explicit typed confirmation. A wrong answer
-    /// leaves the host untouched.
-    [Fact]
-    public async Task Service_changes_nothing_until_the_node_name_is_typed()
+    /// Rule 3: no mutating operation without an explicit answer. Enter declines, so a
+    /// keystroke meant for something else leaves the host untouched.
+    [Theory]
+    [InlineData("")]
+    [InlineData("n")]
+    [InlineData("HV-REPLICA-01")]
+    public async Task Service_changes_nothing_until_yes_is_typed(string typed)
     {
         FakeDeploymentExecutor executor = new();
 
         CliRun run = await Run(
-            ["service", "install"], deploymentExecutor: executor, typed: "yes");
+            ["service", "install"], deploymentExecutor: executor, typed: typed);
 
         Assert.Equal(ExitCode.Refused, run.Code);
         Assert.Empty(executor.Applied);
@@ -376,7 +379,7 @@ public class RipcordCliTests
         CliRun run = await Run(
             ["service", "install"],
             deploymentExecutor: executor,
-            typed: FakeScenarios.LocalHostName);
+            typed: "y");
 
         Assert.Equal(ExitCode.Success, run.Code);
         Assert.Equal(
@@ -389,14 +392,14 @@ public class RipcordCliTests
     /// The confirmation is case-insensitive: host names are, and forcing the operator to match
     /// case at 3 a.m. buys nothing.
     [Fact]
-    public async Task The_confirmation_accepts_the_node_name_in_any_case()
+    public async Task The_confirmation_accepts_yes_in_any_case()
     {
         FakeDeploymentExecutor executor = new();
 
         await Run(
             ["service", "install"],
             deploymentExecutor: executor,
-            typed: FakeScenarios.LocalHostName.ToLowerInvariant());
+            typed: "YES");
 
         Assert.NotEmpty(executor.Applied);
     }
@@ -409,7 +412,7 @@ public class RipcordCliTests
         CliRun run = await Run(
             ["service", "remove"],
             deploymentExecutor: executor,
-            typed: FakeScenarios.LocalHostName);
+            typed: "y");
 
         Assert.Equal(ExitCode.Success, run.Code);
         Assert.Equal(
@@ -428,7 +431,7 @@ public class RipcordCliTests
         FakeDeploymentExecutor executor = new(failOnStep: 1);
 
         CliRun run = await Run(
-            ["service", "install"], deploymentExecutor: executor, typed: FakeScenarios.LocalHostName);
+            ["service", "install"], deploymentExecutor: executor, typed: "y");
 
         Assert.Equal(ExitCode.IntermediateState, run.Code);
         Assert.Single(executor.Applied);
@@ -443,7 +446,7 @@ public class RipcordCliTests
         FakeDeploymentExecutor executor = new(failOnStep: 0);
 
         CliRun run = await Run(
-            ["service", "install"], deploymentExecutor: executor, typed: FakeScenarios.LocalHostName);
+            ["service", "install"], deploymentExecutor: executor, typed: "y");
 
         Assert.Equal(ExitCode.LocalAccessFailure, run.Code);
         Assert.Empty(executor.Applied);
@@ -459,7 +462,7 @@ public class RipcordCliTests
         FakeDeploymentExecutor executor = new(failOnStep: 5);
 
         CliRun run = await Run(
-            ["service", "install"], deploymentExecutor: executor, typed: FakeScenarios.LocalHostName);
+            ["service", "install"], deploymentExecutor: executor, typed: "y");
 
         Assert.Equal(DeploymentAction.RegisterEventSource, executor.Applied[^1]);
         Assert.Contains(
@@ -472,7 +475,7 @@ public class RipcordCliTests
         FakeDeploymentExecutor executor = new(failOnStep: 1);
 
         CliRun run = await Run(
-            ["service", "install"], deploymentExecutor: executor, typed: FakeScenarios.LocalHostName);
+            ["service", "install"], deploymentExecutor: executor, typed: "y");
 
         Assert.DoesNotContain("see why it did not start", run.Output, StringComparison.Ordinal);
     }
@@ -697,7 +700,7 @@ public class RipcordCliTests
 
         FakeDeploymentExecutor confirmed = new(Deployed());
         CliRun run = await Run(
-            ["service", "stop"], deploymentExecutor: confirmed, typed: FakeScenarios.LocalHostName);
+            ["service", "stop"], deploymentExecutor: confirmed, typed: "y");
 
         Assert.Equal(ExitCode.Success, run.Code);
         Assert.Equal([DeploymentAction.StopService], confirmed.Applied);
@@ -933,7 +936,7 @@ public class RipcordCliTests
         CliRun run = await Run(
             dryRun ? ["service", "install", "--dry-run"] : ["service", "install"],
             deploymentExecutor: executor,
-            typed: FakeScenarios.LocalHostName);
+            typed: "y");
 
         Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
         Assert.Empty(executor.Applied);
@@ -981,12 +984,11 @@ public class RipcordCliTests
                 failure: "'icacls \"C:\\Program Files\\Ripcord\\logs\" /grant \"NT SERVICE\\ripcord\"'"
                     + " exited with 1332: No mapping between account names and security IDs "
                     + "was done."),
-            typed: FakeScenarios.LocalHostName,
+            typed: "y",
             binaryPath: ProgramFilesBinary);
 
         // On a console the typed answer ends the prompt's line; here nothing does.
-        string output = run.Output.Replace(
-            $"({FakeScenarios.LocalHostName}):  ", "\n", StringComparison.Ordinal);
+        string output = run.Output.Replace("[n] >   ", "\n", StringComparison.Ordinal);
 
         Assert.Contains("done: Create the 'ripcord' service", output, StringComparison.Ordinal);
         Assert.All(output.Split('\n'), line => Assert.True(line.Length <= 75, line));
@@ -1037,7 +1039,7 @@ public class RipcordCliTests
             ["service", "remove"],
             configStore: new RecordingConfigStore(listenerEnabled: false),
             deploymentExecutor: executor,
-            typed: FakeScenarios.LocalHostName);
+            typed: "y");
 
         Assert.Equal(ExitCode.Success, run.Code);
         Assert.Contains(DeploymentAction.RemoveService, executor.Applied);
@@ -1052,7 +1054,7 @@ public class RipcordCliTests
             ["service", "install"],
             configStore: new RecordingConfigStore(listenerEnabled: false),
             deploymentExecutor: executor,
-            typed: FakeScenarios.LocalHostName);
+            typed: "y");
 
         Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
         Assert.Contains("listener.enabled: false", run.Output, StringComparison.Ordinal);

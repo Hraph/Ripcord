@@ -40,7 +40,7 @@ public sealed class UpdateCliTests
     }
 
     [Fact]
-    public async Task A_real_run_does_nothing_until_the_node_name_is_typed()
+    public async Task A_real_run_does_nothing_until_yes_is_typed()
     {
         Swap swap = new();
 
@@ -56,7 +56,7 @@ public sealed class UpdateCliTests
     {
         Swap swap = new();
 
-        CliRun run = await Run(["update"], swap: swap, typed: Machine);
+        CliRun run = await Run(["update"], swap: swap, typed: "y");
 
         Assert.Equal(ExitCode.Success, run.Code);
         Assert.Equal(
@@ -71,7 +71,7 @@ public sealed class UpdateCliTests
     {
         Swap swap = new() { PreviousInUse = true };
 
-        CliRun run = await Run(["update"], swap: swap, typed: Machine);
+        CliRun run = await Run(["update"], swap: swap, typed: "y");
 
         Assert.NotEqual(ExitCode.Success, run.Code);
         Assert.Empty(swap.Moves);
@@ -83,7 +83,7 @@ public sealed class UpdateCliTests
     [Fact]
     public async Task A_finished_update_says_the_new_version_starts_on_the_next_run()
     {
-        CliRun run = await Run(["update"], typed: Machine);
+        CliRun run = await Run(["update"], typed: "y");
 
         Assert.Contains("restart", run.Output, StringComparison.OrdinalIgnoreCase);
     }
@@ -91,12 +91,12 @@ public sealed class UpdateCliTests
     /// The whole point of the feature. A release signed by anybody else is not installed, and
     /// the host is not touched on the way to finding that out.
     [Fact]
-    public async Task A_release_signed_by_a_stranger_is_refused_after_the_name_was_typed()
+    public async Task A_release_signed_by_a_stranger_is_refused_after_yes_was_typed()
     {
         Swap swap = new();
 
         CliRun run = await Run(
-            ["update"], swap: swap, typed: Machine, source: Source.SignedByAStranger());
+            ["update"], swap: swap, typed: "y", source: Source.SignedByAStranger());
 
         Assert.Equal(ExitCode.Refused, run.Code);
         Assert.Empty(swap.Moves);
@@ -110,7 +110,7 @@ public sealed class UpdateCliTests
     {
         Swap swap = new();
 
-        CliRun run = await Run(["update"], swap: swap, typed: Machine, signingKey: null);
+        CliRun run = await Run(["update"], swap: swap, typed: "y", signingKey: null);
 
         Assert.Equal(ExitCode.Refused, run.Code);
         Assert.Empty(swap.Moves);
@@ -122,7 +122,7 @@ public sealed class UpdateCliTests
         Swap swap = new();
 
         CliRun run = await Run(
-            ["update"], swap: swap, typed: Machine, store: new Store(check: true, install: false));
+            ["update"], swap: swap, typed: "y", store: new Store(check: true, install: false));
 
         Assert.NotEqual(ExitCode.Success, run.Code);
         Assert.Empty(swap.Moves);
@@ -135,7 +135,7 @@ public sealed class UpdateCliTests
         Swap swap = new();
 
         CliRun run = await Run(
-            ["update"], swap: swap, typed: Machine, store: new Store(check: false, install: false));
+            ["update"], swap: swap, typed: "y", store: new Store(check: false, install: false));
 
         Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
         Assert.Empty(swap.Moves);
@@ -148,7 +148,7 @@ public sealed class UpdateCliTests
         Swap swap = new();
 
         CliRun run = await Run(
-            ["update"], swap: swap, typed: Machine, feed: StubReleaseFeed.Publishing("0.1.0"));
+            ["update"], swap: swap, typed: "y", feed: StubReleaseFeed.Publishing("0.1.0"));
 
         Assert.Equal(ExitCode.Success, run.Code);
         Assert.Empty(swap.Moves);

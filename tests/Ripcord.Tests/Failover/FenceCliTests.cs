@@ -33,13 +33,16 @@ public class FenceCliTests
         Assert.Contains("ripcord fence", run.Output, StringComparison.Ordinal);
     }
 
-    /// Rule 3. It changes how this host behaves on its next boot, so it is confirmed.
-    [Fact]
-    public async Task A_real_run_does_nothing_until_the_node_name_is_typed()
+    /// Rule 3. It changes how the production VMs behave on this host's next boot, so it takes
+    /// the node name typed in full, never a y/n.
+    [Theory]
+    [InlineData("not-the-node")]
+    [InlineData("y")]
+    public async Task A_real_run_does_nothing_until_the_node_name_is_typed(string typed)
     {
         FakeHypervProvider provider = Returning();
 
-        CliRun run = await Run(["fence"], provider: provider, typed: "not-the-node");
+        CliRun run = await Run(["fence"], provider: provider, typed: typed);
 
         Assert.Equal(ExitCode.Refused, run.Code);
         Assert.Empty(provider.Calls);
