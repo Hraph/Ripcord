@@ -131,4 +131,35 @@ public class InitRendererTests
                 character >= ' ',
                 $"a control character U+{(int)character:X4} survived into a plain screen"));
     }
+
+    /// Twelve VMs, eleven kept from the file: the default is their numbers, and the line
+    /// Enter is pressed on still fits the console.
+    [Fact]
+    public void The_vm_prompt_with_its_default_fits_the_console()
+    {
+        string[] names = [.. Enumerable.Range(1, 12).Select(index => $"SR16-VM-{index:00}")];
+        InterviewFacts facts = new(
+            "HV-REPLICA-01",
+            [new Ripcord.Domain.Inventory.HostSwitch(
+                "vSwitch-LAN", Ripcord.Domain.Inventory.SwitchConnectivity.External)],
+            [.. names.Select(name => new InterviewVm(name, true, true))]);
+        ConfigurationDocument seed = new()
+        {
+            Vms = [.. names.Take(11).Select(name => new VmDocument { Name = name, Priority = "P2" })],
+        };
+
+        ConfigurationInterview interview = ConfigurationInterview.Start(facts, seed);
+
+        foreach (string answer in new[] { "primary", "HV-PRIMARY-01", "192.0.2.10", "1" })
+        {
+            interview = interview.Answer(answer);
+        }
+
+        InterviewQuestion vms = interview.Question!;
+        string prompt = InitRenderer.Prompt(vms, Palette.None);
+
+        Assert.Equal("1,2,3,4,5,6,7,8,9,10,11", vms.Default);
+        Assert.Contains("[1,2,3,4,5,6,7,8,9,10,11] > ", prompt, StringComparison.Ordinal);
+        Assert.True(prompt.Length <= 75, prompt);
+    }
 }

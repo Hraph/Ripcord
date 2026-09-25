@@ -271,6 +271,39 @@ public class InitCliTests
             ConfigurationNotes.NoVmDeclared, run.Output + run.Error, StringComparison.Ordinal);
     }
 
+    /// Decision 4: the file's VMs come back as their numbers in the list, and Enter through
+    /// the whole run writes the same `vms` again.
+    [Fact]
+    public async Task A_re_run_prefills_the_vms_as_numbers()
+    {
+        const string Previous = """
+            schema_version: 1
+
+            node:
+              hostname: HV-REPLICA-01
+
+            vms:
+              - name: VM-BACKUP-01
+                priority: P2
+              - name: VM-DC-01
+                priority: P1
+                is_domain_controller: true
+            """;
+
+        MemoryConfigStore store = new(Yaml.Read(Previous), Previous);
+
+        CliRun run = await Run(
+            ["dr", "HV-PRIMARY-01", "192.0.2.10", FakeScenarios.ProductionSwitch,
+             .. Enumerable.Repeat("", 6), "y"],
+            store);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Contains("[3,1] > ", run.Output, StringComparison.Ordinal);
+        Assert.Equal(
+            ["VM-BACKUP-01", "VM-DC-01"],
+            Validated(store.Written!).Configuration!.Vms.Select(vm => vm.Name));
+    }
+
     private static FakeHypervProvider NoVm() =>
         new(FakeScenarios.Healthy(TestPorts.Now) with { Vms = [] });
 

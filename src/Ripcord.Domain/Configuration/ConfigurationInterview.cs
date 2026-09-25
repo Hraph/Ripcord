@@ -102,8 +102,6 @@ public sealed record InterviewQuestion(
 /// rather than a restart.
 public sealed class ConfigurationInterview
 {
-    private const string All = "all";
-
     private const string None = "none";
 
     /// What the interview is asking about. A run of questions is headed once rather than each
@@ -412,10 +410,9 @@ public sealed class ConfigurationInterview
         return names.Count == 0 ? given : null;
     }
 
+    /// Names are stored one per line, not comma-joined: a Hyper-V name may contain a comma.
     private string? Vms(InterviewQuestion question, string given)
     {
-        IReadOnlyList<InterviewVm> offered = this.facts.Vms;
-
         if (this.HasNoVm)
         {
             return string.Equals(given, None, StringComparison.OrdinalIgnoreCase)
@@ -423,33 +420,12 @@ public sealed class ConfigurationInterview
                 : "this host has no VM to choose.";
         }
 
-        if (string.Equals(given, All, StringComparison.OrdinalIgnoreCase))
-        {
-            return offered.Count > 0
-                ? this.Store(question, All, "")
-                : "this host's VMs could not be read, so name them instead of 'all'.";
-        }
+        VmChoice choice = VmSelection.Parse(given, this.OfferedNames);
 
-        List<string> chosen = [];
-
-        foreach (string token in given.Split(',', StringSplitOptions.RemoveEmptyEntries
-            | StringSplitOptions.TrimEntries))
-        {
-            if (Chosen(token, [.. offered.Select(vm => vm.Name)]) is not { Length: > 0 } name)
-            {
-                return $"there is no VM {token} in the list.";
-            }
-
-            if (!chosen.Contains(name, StringComparer.OrdinalIgnoreCase))
-            {
-                chosen.Add(name);
-            }
-        }
-
-        return chosen.Count > 0
-            ? this.Store(question, string.Join(",", chosen), "")
-            : "name at least one VM.";
+        return choice.Refusal ?? this.Store(question, string.Join('\n', choice.Names), "");
     }
+
+    private string[] OfferedNames => [.. this.facts.Vms.Select(vm => vm.Name)];
 
     /// The six that have sensible figures. Bounds match the validator's, so a number taken
     /// here cannot be refused by the file.
@@ -535,10 +511,10 @@ public sealed class ConfigurationInterview
 
         return new InterviewQuestion(
             "vms",
-            "Which ones matter? Numbers separated by commas, or 'all'",
-            this.SeededVms(),
+            "Which ones matter?",
+            VmSelection.Default(this.OfferedNames, [.. this.SeededNames()]),
             [.. this.facts.Vms.Select(vm => vm.Described)],
-            dropped,
+            [.. dropped, "Numbers from the list or names, separated by commas, or 'all'."],
             Groups.Vms,
             true);
     }
@@ -558,18 +534,14 @@ public sealed class ConfigurationInterview
         this.facts.Vms.FirstOrDefault(
             vm => string.Equals(vm.Name, name, StringComparison.OrdinalIgnoreCase))?.Name;
 
-    private IReadOnlyList<string> ChosenVms()
+    private string[] ChosenVms()
     {
         if (this.HasNoVm)
         {
             return [];
         }
 
-        string stored = this.answers["vms"];
-
-        return stored == All
-            ? [.. this.facts.Vms.Select(vm => vm.Name)]
-            : [.. stored.Split(',', StringSplitOptions.RemoveEmptyEntries)];
+        return this.answers["vms"].Split('\n', StringSplitOptions.RemoveEmptyEntries);
     }
 
     /// The `checks.acknowledgements` entries naming a VM the new file no longer declares.
@@ -614,15 +586,6 @@ public sealed class ConfigurationInterview
         this.seed?.Replication?.ExpectedRole is { } role
             ? role.Equals("replica", StringComparison.OrdinalIgnoreCase) ? "dr" : "primary"
             : null;
-
-    /// Re-running with the same VMs must not mean retyping them, so the default is the file's
-    /// own list, kept to the VMs still on this host — or everything, when none of them is.
-    private string? SeededVms()
-    {
-        List<string> kept = [.. this.SeededNames().Select(this.OnHost).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase)];
-
-        return kept.Count > 0 ? string.Join(",", kept) : All;
-    }
 
     private string? SeededPriority(string name) => this.SeededVm(name)?.Priority;
 

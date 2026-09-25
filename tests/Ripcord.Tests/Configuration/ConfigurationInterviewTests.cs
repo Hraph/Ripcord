@@ -395,9 +395,10 @@ public class ConfigurationInterviewTests
 
         Assert.DoesNotContain(vms.Choices, choice => choice.Contains("VM-GONE-01", StringComparison.Ordinal));
         Assert.Equal(
-            ["No longer on this host, so dropped from the file:", "  - VM-GONE-01"],
+            ["No longer on this host, so dropped from the file:", "  - VM-GONE-01",
+             "Numbers from the list or names, separated by commas, or 'all'."],
             vms.Explanation);
-        Assert.Equal("VM-DC-01", vms.Default);
+        Assert.Equal("1", vms.Default);
 
         ConfigurationDraft draft = Answer(
             ["primary", "HV-PRIMARY-01", "192.0.2.10", "1", "", "P1", "y", "y"], seed, facts);
@@ -593,6 +594,55 @@ public class ConfigurationInterviewTests
         Assert.False(
             InterviewFacts.From(
                 Machine, [], HostState.Unreachable(Machine, HostReachability.NotConfigured())).Read);
+
+    /// Decision 4: the default is what the prompt asks for — numbers — and Enter on it keeps
+    /// the file's order, which is the start order within a priority.
+    [Fact]
+    public void Enter_on_a_re_run_keeps_the_files_vm_order_in_the_draft()
+    {
+        ConfigurationDocument seed = SeedWith("VM-BACKUP-01", "VM-DC-01");
+
+        Assert.Equal("3,1", QuestionOf("vms", Host, seed).Default);
+
+        ConfigurationDraft draft = Answer(
+            ["primary", "HV-PRIMARY-01", "192.0.2.10", "1", .. Enumerable.Repeat("", 6)], seed);
+
+        Assert.Equal(["VM-BACKUP-01", "VM-DC-01"], draft.Vms.Select(vm => vm.Name));
+    }
+
+    [Fact]
+    public void A_seed_vm_absent_from_the_host_does_not_make_enter_refuse()
+    {
+        ConfigurationInterview interview = ConfigurationInterview.Start(
+            Host, SeedWith("VM-GONE-01", "VM-APP-01"));
+
+        foreach (string answer in new[] { "primary", "HV-PRIMARY-01", "192.0.2.10", "1" })
+        {
+            interview = interview.Answer(answer);
+        }
+
+        Assert.Equal("2", interview.Question!.Default);
+
+        interview = interview.Answer("");
+
+        Assert.Null(interview.Rejection);
+        Assert.Equal("priority:VM-APP-01", interview.Question!.Key);
+    }
+
+    /// Stored one per line, so a comma inside a Hyper-V name survives being picked.
+    [Fact]
+    public void A_vm_name_with_a_comma_is_chosen_by_its_number()
+    {
+        InterviewFacts facts = new(
+            Machine,
+            [new HostSwitch("vSwitch-LAN", SwitchConnectivity.External)],
+            [new InterviewVm("SQL, reporting", true, true), new InterviewVm("VM-DC-01", true, true)]);
+
+        ConfigurationDraft draft = Answer(
+            ["primary", "HV-PRIMARY-01", "192.0.2.10", "1", "1", "P1", "n", "y"], facts: facts);
+
+        Assert.Equal("SQL, reporting", Assert.Single(draft.Vms).Name);
+    }
 
     private static VmReplicationState Vm(string name, ReplicationRole role) =>
         new(name, role, ReplicationState.Replicating, ReplicationHealth.Normal, null, null);
