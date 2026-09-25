@@ -55,6 +55,25 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ### Fixed
 
+- **`service install` and `restart` reported success for a listener that stopped at once.**
+  `sc start` returns when the process answers Windows, before the listener reads its
+  configuration or opens its log. The start step now watches the service for five seconds and
+  fails, with the exit code Windows recorded, if it stops in that time.
+- **`ripcord service` believed an older run's log over Windows' newer exit code.** A start
+  that fails before writing its start line leaves the log as an earlier run left it; a clean
+  stop logged yesterday no longer hides today's failed start. The verdict then says the log is
+  from an earlier run. 1077 now reads *not started since Windows booted*, and codes Windows
+  set read *Windows recorded ...* rather than *Windows stopped it*.
+- **`listener.enabled: false` made `ripcord service`, `restart` and `remove` refuse the
+  configuration.** `service` now reports and exits 0 with its own verdict, `restart` refuses
+  and names the way out, and `remove` works. `install` is refused before anything changes.
+- **`ripcord service` shows how old the snapshot is**, or that it was never written, and ends
+  by naming `ripcord status` when the peer would read this host as offline or stale.
+- `ripcord service` reads the service once per report, heads its last line *Note* rather than
+  *Why it is not running* when the state is not stopped, and says to use an elevated console
+  on access denied. The result lines of `install`, `remove` and `restart`, and the refusal of
+  an unknown `service` word, fit 75 columns.
+
 - **The pending replication size was never read on a real host.** The relationship was passed
   to `GetReplicationStatisticsEx` as an object where Hyper-V expects its text form, and every
   `status` logged a type mismatch for each VM. It is now serialised the way Hyper-V's own

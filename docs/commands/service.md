@@ -27,6 +27,7 @@ RIPCORD LISTENER
     firewall   inbound TCP 7443 from 192.0.2.11
     snapshot   C:\Program Files\Ripcord\state.json
                written by 'ripcord status', served to the peer
+               written 40s ago
                readable by NT SERVICE\ripcord
     logs       writable by NT SERVICE\ripcord
                C:\Program Files\Ripcord\logs
@@ -70,10 +71,20 @@ running two versions.
 | `command` | what Windows runs. The service always reads `ripcord.yaml` beside that binary. |
 | `last exit` | only when it is not running: the code Windows recorded, and what it means. |
 | `firewall`, `snapshot`, `logs` | what the configuration needs, and whether the host has it. Left out when `ripcord.yaml` does not load. |
+| `snapshot`, third line | how long ago `state.json` was written, `STALE` past `peer.offline_after_sec`, or `NOT written yet`. When missing or stale, the report ends by naming `ripcord status`: until it runs, the peer shows this host offline or stale. |
 | `log` | the day's `logs\listener-YYYY-MM-DD.log` (UTC date) beside the service's binary, or yesterday's when today has none, and its last 20 lines. |
 
 The service is shown even when `ripcord.yaml` does not load — the likeliest reason it stopped.
 The configuration's errors follow, and the exit code is then 2.
+
+The heading above the last line is *Why it is not running* only when the service is stopped.
+When it is starting, stopping, paused or its state could not be read, it is *Note*: an
+unreadable state is never presented as a stopped one. Access denied means the console is not
+elevated.
+
+With `listener.enabled: false`, the report still shows the service and exits 0. `install`
+refuses (exit 2), `restart` refuses (exit 4) and `remove` works: switching the listener off
+leaves a way to take off a service installed while it was on.
 
 ## What the snapshot is
 
@@ -131,21 +142,30 @@ Nothing happens until the node name is typed in full.
 ## When it does not start
 
 `service install` or `restart` whose start step fails ends with *Run 'ripcord service' to see
-why it did not start*. That report ends with one line on the likely cause, and what to run:
+why it did not start*. `sc start` returns as soon as the process answers Windows, before the
+listener has read its configuration, so the step then watches the service for five seconds: a
+service that stops in that time fails the step, with the exit code Windows recorded. The
+report ends with one line on the likely cause, and what to run:
 
 | It says | Meaning | It suggests |
 |---|---|---|
 | its start mode is Disabled | Windows will not start it | `sc.exe config ripcord start= auto` |
-| it stopped with exit N | the listener logged its own exit code after its last start | `ripcord check` for 2 and 3 |
-| it stopped on an unhandled error | the error and its stack are in the log | — |
-| it stopped cleanly | stopped by an operator, at shutdown, or the listener is disabled | `ripcord service restart` |
+| the listener is disabled in ripcord.yaml | `listener.enabled: false`: `serve` has nothing to do | `ripcord service remove` |
 | NT SERVICE\ripcord cannot write its logs folder | it cannot open its log, so it stops at once | `ripcord service install --dry-run` |
-| Windows recorded exit N | the log says nothing; Windows kept Ripcord's code | as for the log |
+| it has not been started since Windows booted | 1077: nothing has started it yet | `ripcord service restart` |
+| Windows recorded 1053, 1069, 2 ... | a code Windows set before the listener could log | the event log |
+| Windows recorded exit N | Ripcord's code, and the log does not say it (or says another) | as for the log |
+| it stopped with exit N | the listener logged the exit code Windows recorded | `ripcord check` for 2 and 3 |
+| it stopped on an unhandled error | the error and its stack are in the log | — |
+| it stopped cleanly | stopped by an operator or at shutdown | `ripcord service restart` |
 | the process ended without reporting to Windows | 1067: a crash | the event log |
 | it started, then stopped without writing why | a start line and nothing after it | the event log |
 | no log today or yesterday | it died before it could write one, or stopped earlier | the event log |
 
-The log is believed before Windows: it says which run it is about. The event log commands it
+Windows keeps the latest stop; the log holds only the last run that got as far as writing its
+start line. A start that fails before that leaves the file as an earlier run left it, so the
+log is believed only where Windows does not contradict it, and a verdict taken from Windows
+says *its log is from an earlier run* when the file said otherwise. The event log commands it
 prints — run them in PowerShell:
 
 ```powershell
@@ -159,7 +179,8 @@ crash before it logged anything at all (event 1026).
 `sc.exe query ripcord` shows the same code as `WIN32_EXIT_CODE`. `0x2000000N` is Ripcord's own
 exit code N (see [exit codes](README.md#exit-codes)): `0x20000003` is a local access failure,
 `0x20000002` a configuration that will not load. Any other value was set by Windows, not by
-Ripcord — 2 is a missing binary, 1067 a crash, 1069 an account that could not log on.
+Ripcord — 2 is a missing binary, 1053 no answer to the start request, 1067 a crash, 1069 an
+account that could not log on, 1077 a service not started since boot.
 
 ## `restart` — after every configuration edit
 
@@ -181,7 +202,8 @@ the errors; **3** when the host could not be inspected at all.
 
 For `install`, `remove` and `restart`:
 **2** when the configuration cannot be deployed on this host — a snapshot path on a missing
-drive — and nothing was asked or changed. **4** when the confirmation is declined — nothing was
+drive, a disabled listener for `install` — and nothing was asked or changed. **4** for
+`restart` on a disabled listener. **4** when the confirmation is declined — nothing was
 changed. **3** when a step failed before
 anything was applied. **5** when a step failed with one behind it: the host is between two
 states and the output says where it stopped. Re-running resumes from there.
