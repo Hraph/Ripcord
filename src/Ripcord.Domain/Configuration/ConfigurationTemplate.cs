@@ -63,8 +63,8 @@ public static class ConfigurationTemplate
         }
 
         text.AppendLine();
-        text.AppendLine("# Every VM that matters, in failover order. P1 comes back first, and a");
-        text.AppendLine("# P1 running on both hosts at once halts every mutating command.");
+        text.AppendLine("# Every VM that matters. P1 fails over first, and 'check' makes sure the");
+        text.AppendLine("# DR host can start every P1 at once. P2 is everything that can wait.");
         if (draft.Vms.Count == 0)
         {
             text.AppendLine("# No VM on this host when this was written. Re-run ripcord init.");

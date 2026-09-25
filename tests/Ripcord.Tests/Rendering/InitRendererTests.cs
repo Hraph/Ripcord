@@ -162,4 +162,32 @@ public class InitRendererTests
         Assert.Contains("[1,2,3,4,5,6,7,8,9,10,11] > ", prompt, StringComparison.Ordinal);
         Assert.True(prompt.Length <= 75, prompt);
     }
+
+    /// Every explanation of a full two-VM interview fits the 75-column console.
+    [Fact]
+    public void Every_explanation_line_fits_the_kvm_console()
+    {
+        InterviewFacts facts = new(
+            "HV-REPLICA-01",
+            [new Ripcord.Domain.Inventory.HostSwitch(
+                "vSwitch-LAN", Ripcord.Domain.Inventory.SwitchConnectivity.External)],
+            [new InterviewVm("VM-DC-01", true, true), new InterviewVm("VM-APP-01", true, true)]);
+        ConfigurationInterview interview = ConfigurationInterview.Start(facts);
+        string[] typed = ["dr", "HV-PRIMARY-01", "192.0.2.10", "1", "all", "P1", "y", "P2", "n", "y"];
+        int asked = 0;
+
+        foreach (string answer in typed)
+        {
+            foreach (string line in InitRenderer.Lines(interview.Question!, palette: Palette.None))
+            {
+                Assert.True(line.Length <= 75, line);
+            }
+
+            asked++;
+            interview = interview.Answer(answer);
+        }
+
+        Assert.Null(interview.Question);
+        Assert.Equal(typed.Length, asked);
+    }
 }

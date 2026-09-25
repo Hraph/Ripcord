@@ -668,6 +668,45 @@ public class ConfigurationInterviewTests
         return interview.Question;
     }
 
+    /// The old text claimed a P1 on both hosts halts mutation; split brain halts it for any VM.
+    [Fact]
+    public void The_first_priority_question_says_what_P1_changes()
+    {
+        string text = string.Join(
+            ' ', Questions(FirstRun).First(question => question.Key.StartsWith(
+                "priority:", StringComparison.Ordinal)).Explanation);
+
+        Assert.Contains("first", text, StringComparison.Ordinal);
+        Assert.Contains("'check'", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("halts", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_priority_explanation_is_given_once() =>
+        Assert.Empty(Questions(FirstRun).Single(
+            question => question.Key == "priority:VM-APP-01").Explanation);
+
+    [Fact]
+    public void The_domain_controller_question_explains_itself_once()
+    {
+        List<InterviewQuestion> asked = Questions(FirstRun);
+        string first = string.Join(
+            ' ', asked.Single(question => question.Key == "dc:VM-DC-01").Explanation);
+
+        Assert.Contains("USN", first, StringComparison.Ordinal);
+        Assert.Contains("P1", first, StringComparison.Ordinal);
+        Assert.Empty(asked.Single(question => question.Key == "dc:VM-APP-01").Explanation);
+    }
+
+    [Fact]
+    public void The_template_does_not_claim_priority_gates_mutation()
+    {
+        string yaml = ConfigurationTemplate.Render(Answer(FirstRun));
+
+        Assert.DoesNotContain("halts every mutating command", yaml, StringComparison.Ordinal);
+        Assert.Contains("fails over first", yaml, StringComparison.Ordinal);
+    }
+
     private static ConfigurationDraft Answer(
         IReadOnlyList<string> typed,
         ConfigurationDocument? seed = null,

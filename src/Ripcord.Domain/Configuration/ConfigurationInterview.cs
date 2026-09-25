@@ -121,6 +121,23 @@ public sealed class ConfigurationInterview
         public const string Thresholds = "THRESHOLDS";
     }
 
+    // Each line is at most 73 columns: the renderer indents by 2 on a 75-column console.
+    private static class Explanations
+    {
+        public static readonly string[] Priority =
+        [
+            "P1 fails over first, and 'check' makes sure the DR host can start every",
+            "P1 at once. P1: the domain controller and what users cannot work without.",
+            "P2: everything that can wait.",
+        ];
+
+        public static readonly string[] DomainController =
+        [
+            "'y' makes 'check' remind you on every run of the USN rollback risk. It",
+            "does not change the order: a domain controller should be P1.",
+        ];
+    }
+
     private readonly InterviewFacts facts;
     private readonly ConfigurationDocument? seed;
     private readonly Dictionary<string, string> answers;
@@ -256,10 +273,7 @@ public sealed class ConfigurationInterview
                 $"{name.PadRight(width)}  priority",
                 this.SeededPriority(name),
                 ["P1", "P2"],
-                index > 0
-                    ? []
-                    : ["P1 comes back first in a sweep, and a P1 running on both hosts at",
-                       "once halts every mutating command. P2 is everything that can wait."],
+                index > 0 ? [] : Explanations.Priority,
                 Groups.Priorities));
 
             steps.Add(new InterviewQuestion(
@@ -267,7 +281,7 @@ public sealed class ConfigurationInterview
                 $"{name.PadRight(width)}  domain controller",
                 this.SeededDc(name),
                 ["y", "n"],
-                [],
+                index > 0 ? [] : Explanations.DomainController,
                 Groups.Priorities));
         }
 
