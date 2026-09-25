@@ -26,6 +26,8 @@ LOCAL   HV-REPLICA-01                                             REACHABLE
 
 PEER    HV-PRIMARY-01                                               OFFLINE
   Unreachable since: 2026-09-12 13:41:02 UTC
+
+LISTENER  running                                        0.2.1+abc123def456
 ```
 
 The version line carries **both** builds when the peer has published one. A failover spanning
@@ -65,7 +67,7 @@ inferred from a missing block — with the build its process recorded when it st
 aligned, as `ripcord service` shows it:
 
 ```
-LISTENER  running                                           0.7.0+def5678
+LISTENER  running                                             0.7.0+def5678
 ```
 
 No build when the process recorded none. When it runs another build than this `ripcord.exe` —

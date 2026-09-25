@@ -12,9 +12,10 @@ ripcord service stop    [--dry-run]
 ```
 
 Bare, it changes nothing. `ripcord service status` is the same report under the word an
-operator types by habit — one report, two spellings. `install`, `remove`, `restart`, `start` and `stop` are words rather than flags,
-because all three mutate a host that may be running a domain controller, and a word is harder
-to type by accident than a flag next to the one you meant.
+operator types by habit — one report, two spellings. `install`, `remove`, `restart`, `start`
+and `stop` are words rather than flags, because each mutates a host that may be running a
+domain controller, and a word is harder to type by accident than a flag next to the one you
+meant.
 
 ## `ripcord service` (or `ripcord service status`)
 
@@ -200,8 +201,8 @@ The listener reads `ripcord.yaml` **once, when it starts**. Editing the file cha
 until this has run. `status` and `check` are commands rather than the service, so they re-read
 the file every time — the two can disagree until the listener is restarted.
 
-A service that is not running is started rather than restarted. This is the one mutating verb
-with no typed confirmation, which is a stated exception recorded as decision D75: it is over in
+A service that is not running is started rather than restarted. This and `start` are the
+mutating verbs with no typed confirmation, a stated exception recorded as decision D75: it is over in
 a second, it changes nothing that outlives it, and it is typed several times an evening while
 a configuration is being got right. A confirmation asked for that would become the reflex the
 failover confirmations must never be.
@@ -226,8 +227,9 @@ the errors; **3** when the host could not be inspected at all.
 
 For `install`, `remove`, `restart`, `start` and `stop`:
 **2** when the configuration cannot be deployed on this host — a snapshot path on a missing
-drive, a disabled listener for `install` — and nothing was asked or changed. **4** for
-`restart` on a disabled listener. **4** when the confirmation is declined — nothing was
+drive, a disabled listener for `install`, no service installed for `restart`, `start` or
+`stop` — and nothing was asked or changed. **4** for `restart` or `start` on a disabled
+listener. **4** when the confirmation is declined — nothing was
 changed. **3** when a step failed before
 anything was applied. **5** when a step failed with one behind it: the host is between two
 states and the output says where it stopped. Re-running resumes from there.

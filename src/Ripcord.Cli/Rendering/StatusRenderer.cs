@@ -81,7 +81,8 @@ public static class StatusRenderer
         }
 
         string state = running.Starting ? "starting" : "running";
-        string build = running.Build ?? "";
+        // Read from a file the listener wrote: never allowed to push the line past 75 columns.
+        string build = Layout.Truncate(running.Build ?? "", Width - LabelColumn - 2 - "starting ".Length);
 
         output.AppendLine();
         output.AppendLine(

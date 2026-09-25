@@ -398,8 +398,23 @@ public class StatusRendererTests
             listener: new ListenerAlert("NOT RUNNING", "stopped", "ripcord service", Critical: true),
             running: new ListenerRunning(false, "0.7.0+def5678", false));
 
-        Assert.DoesNotContain("running", rendered.Split('\n').Last(line => line.Length > 0), StringComparison.Ordinal);
-        Assert.Contains("LISTENER  NOT RUNNING", rendered, StringComparison.Ordinal);
+        string line = Assert.Single(
+            rendered.Split('\n'), line => line.StartsWith("LISTENER", StringComparison.Ordinal));
+        Assert.Equal("LISTENER  NOT RUNNING", line);
+    }
+
+    /// The build comes from a file the listener wrote; however long, the line holds 75 columns.
+    [Fact]
+    public void A_starting_listener_with_an_overlong_build_stays_within_the_width()
+    {
+        string rendered = StatusRenderer.Render(
+            DegradedPair(), TimeSpan.FromSeconds(120), Now,
+            running: new ListenerRunning(true, new string('9', 120), false));
+
+        string line = Assert.Single(
+            rendered.Split('\n'), line => line.StartsWith("LISTENER", StringComparison.Ordinal));
+        Assert.StartsWith("LISTENER  starting ", line, StringComparison.Ordinal);
+        Assert.Equal(StatusRenderer.Width, line.Length);
     }
 
     private static string Render(PairView view) =>

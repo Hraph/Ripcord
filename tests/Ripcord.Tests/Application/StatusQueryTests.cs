@@ -4,6 +4,7 @@ using Ripcord.Application.Status;
 using Ripcord.Application;
 using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Deployment;
+using Ripcord.Domain.Diagnostics;
 using Ripcord.Domain.Inventory;
 using Ripcord.Domain.Replication;
 using Ripcord.Domain.TestFailover;
@@ -226,6 +227,53 @@ public class StatusQueryTests
         Assert.Equal(ExitCode.Success, outcome.Code);
         Assert.Equal("UNKNOWN", outcome.Rendered!.Listener!.Headline);
         Assert.Contains("RPC unavailable", outcome.Rendered.Listener.Reason, StringComparison.Ordinal);
+    }
+
+    /// Read beside the binary the service runs, and believed only for the process running now.
+    [Fact]
+    public async Task A_running_listener_is_said_with_the_build_its_process_recorded()
+    {
+        ProcessRecord logs = new(@"C:\Ripcord\logs\listener-process.txt", ["0.6.0+abc1234", "4242"]);
+
+        StatusOutcome outcome = await Run(
+            executor: new ListenerService(RunningAs(processId: 4242)), logReader: logs);
+
+        Assert.Null(outcome.Rendered!.Listener);
+        Assert.Equal(new ListenerRunning(false, "0.6.0+abc1234", false), outcome.Rendered.Running);
+    }
+
+    [Fact]
+    public async Task A_listener_on_this_binary_with_another_build_is_outdated()
+    {
+        ProcessRecord logs = new(
+            @"C:\Program Files\Ripcord\logs\listener-process.txt", ["0.6.0+abc1234", "4242"]);
+        ObservedService service = RunningAs(processId: 4242) with
+        {
+            CommandLine = "\"C:\\Program Files\\Ripcord\\ripcord.exe\" serve",
+        };
+
+        StatusOutcome outcome = await Run(executor: new ListenerService(service), logReader: logs);
+
+        Assert.True(outcome.Rendered!.Running!.Outdated);
+    }
+
+    [Fact]
+    public async Task A_stopped_listener_is_not_also_said_to_run()
+    {
+        StatusOutcome outcome = await Run(executor: ListenerService.In(ServiceRunState.Stopped));
+
+        Assert.Null(outcome.Rendered!.Running);
+    }
+
+    private static ObservedService RunningAs(int processId) =>
+        new(
+            true, "\"C:\\Ripcord\\ripcord.exe\" serve", ServiceRunState.Running, "Auto", 0, 0,
+            ProcessId: processId);
+
+    private sealed class ProcessRecord(string path, IReadOnlyList<string> lines) : IDiagnosticLogReader
+    {
+        public LogReading? Tail(string asked, int maxLines) =>
+            asked == path ? new LogReading(asked, lines, null) : null;
     }
 
     private static Task<StatusOutcome> Run(

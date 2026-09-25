@@ -43,6 +43,8 @@ LOCAL   HV-REPLICA-01                                             REACHABLE
 
 PEER    HV-PRIMARY-01                                               OFFLINE
   Unreachable since: 2026-09-12 13:41:02 UTC
+
+LISTENER  running                                        0.2.1+abc123def456
 ```
 
 75 columns, no colour, nothing that needs a wide terminal — the real reading conditions are a
