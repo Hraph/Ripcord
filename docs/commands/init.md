@@ -16,7 +16,7 @@ Six questions, plus two per VM. Everything has a default; Enter accepts it.
 | the role | primary or DR. The pair's two files are mirror images and nothing observable says which way round replication should run. `--role` answers it from the command line. |
 | the other host | its name, and the address it answers on — written in full, because it is compared against where a connection came from and it lands in a firewall rule |
 | the switch | **chosen from this host's switches**, with what each one reaches |
-| which VMs | **chosen from this host's VMs**, with whether each replicates and whether it is running. `all` is the default |
+| which VMs | **chosen from the VMs Hyper-V reports on this host**, with whether each replicates and whether it is running. `all` is the default. A test-failover copy is not offered. On a host with no VM it says so, writes `vms: []` and asks nothing per VM |
 | per VM | `P1` or `P2`, and whether it is a domain controller |
 | six figures | memory reserve, offline-after, frequency, lag multiplier, volume, free-space warning — shown together and accepted in one answer, or unrolled into six prompts |
 
@@ -49,7 +49,14 @@ The normal case, and the reason it is safe:
   one has never heard of. Carried as the original lines, comments included, because
   re-serialising through the object model would drop both the comments and every key the model
   does not know;
-- **the previous file is kept** as `ripcord.yaml.1`, named in the output before you say yes.
+- **the previous file is kept** as `ripcord.yaml.1`, named in the output before you say yes;
+- **a VM the file names but this host does not have is dropped**, and listed as "No longer on
+  this host" above the VM question. It is not offered and not kept. Its entry in
+  `unattended_test_failover_vms` goes with it. An entry in `checks.acknowledgements` naming it
+  cannot be removed for you, because `checks` is carried as the original lines. It is listed in
+  amber before the yes, and every command refuses the file until you delete it by hand. This is
+  what happens over the sample `install.ps1` leaves behind: its `VM-DC-01`, `VM-LEGACY-01` and
+  `VM-BACKUP-01` are examples, and only this host's own VMs are offered.
 
 That last point is why this asks `[Y/n]` rather than for the node name typed in full, as every
 irreversible command does. Nothing here is irreversible.
@@ -76,5 +83,6 @@ what that file is for.
 `--dry-run` runs the whole interview and prints the file instead of writing it.
 
 If this host's Hyper-V cannot be read, the switch and VM questions have no list to offer and
-ask you to type instead. The run still completes, and the reason the read failed is in
+ask you to type instead. The file's VM names are not offered as a default, since they may be
+the sample's examples. Type a name again and what the file said about that VM is kept. The run still completes, and the reason the read failed is in
 [the day's diagnostic log](../diagnostics.md), `logs\ripcord-YYYY-MM-DD.log`.

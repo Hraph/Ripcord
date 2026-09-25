@@ -22,6 +22,9 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ### Changed
 
+- **`vms: []` is accepted.** `ripcord init` writes it on a host with no VM, and `status` and
+  `check` then say no VM is declared. A file with no `vms` key is still refused.
+
 - **`ripcord service` shows the service even when `ripcord.yaml` does not load** — the
   likeliest reason the listener stopped. The firewall, snapshot and logs rows need the
   configuration and are left out; its errors follow, and the exit code is still 2.
@@ -51,6 +54,12 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
   `system32`.
 
 ### Fixed
+
+- **`ripcord init` offered VMs this host does not have** — the sample's `VM-DC-01`,
+  `VM-LEGACY-01` and `VM-BACKUP-01` among them — and kept them on Enter. It now offers only
+  what Hyper-V reports, never a test-failover copy, and names each VM of the previous file it
+  drops. An acknowledgement in `checks` naming a dropped VM is listed before the write.
+- **`ripcord init` crashed on a host with no VM.**
 
 - **`service install` with a `snapshot_path` on a drive this host lacks is refused before
   anything changes**, and says when it is the old `D:\Ripcord\state.json` default. It used to

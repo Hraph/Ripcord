@@ -12,8 +12,9 @@ that fails either check is not installed and nothing on the host is touched. The
 switch to skip that, because a switch to skip verification is the switch somebody uses at
 3 a.m. Then it puts `ripcord.exe` in `C:\Program Files\Ripcord`, adds that to the machine
 `PATH`, and leaves a `ripcord.yaml` beside it — the annotated sample if it could fetch one, a
-deliberately incomplete template otherwise. Either way the file names no peer and no VM, and
-every command refuses until you fill it in: those refusals are the checklist. An existing
+deliberately incomplete template otherwise. Neither describes this host: the sample names
+example VMs (`VM-DC-01`, `VM-LEGACY-01`, `VM-BACKUP-01`) and an example peer. `ripcord init`
+replaces them with this host's own, offering only the VMs Hyper-V reports here. An existing
 `ripcord.yaml` is never touched.
 
 One thing to be clear about: `irm | iex` runs a script nobody checked. The script verifies what

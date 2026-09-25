@@ -58,6 +58,10 @@ a host nobody named.
 says which way round the pair is meant to be. It is the baseline that "the direction is
 inverted" is judged against; the operating mode itself is always derived from what is observed.
 
+`vms` is required, but it may be the empty list `vms: []` — what `ripcord init` writes on a
+host with no virtual machine yet. `status` and `check` then say "no VM is declared, so nothing
+would fail over", and a sweep refuses. A file with no `vms` key at all is still refused.
+
 ## Per-VM
 
 | Key | Effect |
