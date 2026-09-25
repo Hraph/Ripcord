@@ -35,8 +35,9 @@ published no build says nothing: *cannot be compared* is not *the same*.
 
 ## Where the peer's half comes from
 
-Not from Hyper-V. Each host publishes a snapshot of its own state to a file, and the listener
-serves that file to the other host over mutual TLS ([`serve`](serve.md)). So `status` reads the
+Not from Hyper-V. Each host publishes a snapshot of its own state to a file — `state.json`
+beside `ripcord.yaml` unless `listener.snapshot_path` says otherwise — and the listener serves
+that file to the other host over mutual TLS ([`serve`](serve.md)). So `status` reads the
 peer's *published* view, with its age, and marks it `STALE` past `peer.offline_after_sec`.
 
 A host with the listener switched off degrades to the local half rather than failing.

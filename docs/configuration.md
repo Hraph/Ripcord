@@ -74,6 +74,9 @@ inverted" is judged against; the operating mode itself is always derived from wh
 **`listener`** — the pair channel. Remove it, or set `enabled: false`, and the node degrades to
 the local-only view rather than failing. Needs both certificate thumbprints; the same
 thumbprint on both ends is refused, because it would authenticate a host to itself.
+`snapshot_path` is the snapshot `ripcord status` writes and the listener serves to the peer; it
+defaults to `state.json` beside `ripcord.yaml` and is best left out. A path with no folder in
+it is refused, and one on a drive the host lacks is refused by `service install`.
 
 **`checks.acknowledgements`** — findings seen and accepted. Every entry needs a reason and an
 expiry: without one, an acknowledgement is a rule deleted by the back door.

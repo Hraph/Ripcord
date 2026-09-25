@@ -21,7 +21,9 @@ RIPCORD LISTENER
   ON THIS HOST
     service    running     C:\Program Files\Ripcord\ripcord.exe serve
     firewall   inbound TCP 7443 from 192.0.2.11
-    snapshot   readable by NT SERVICE\ripcord
+    snapshot   C:\Program Files\Ripcord\state.json
+               written by 'ripcord status', served to the peer
+               readable by NT SERVICE\ripcord
     logs       writable by NT SERVICE\ripcord
                C:\Program Files\Ripcord\logs
 
@@ -32,6 +34,28 @@ Installed and running are two facts, not one: a registered service that is stopp
 nothing, and the other host then reports the pair offline — which reads as a network fault
 rather than as a service somebody has to start. The command line is printed with it, because a
 second copy of the binary in another directory is how a pair ends up running two versions.
+
+## What the snapshot is
+
+`state.json` is this host's own state — its VMs, their replication, its build — written by
+`ripcord status` (and by `check`, `failover` and `fence`) and served read-only by the listener
+to the peer over mutual TLS. It is how the other host sees this one: it holds no secret, and
+nothing reads it back on this host.
+
+It defaults to `state.json` beside `ripcord.yaml`, which is the install folder chosen at
+install — `C:\Program Files\Ripcord\state.json` on a default install. An explicit
+`listener.snapshot_path` is kept exactly as written. A path on a drive this host does not have
+refuses `install` before anything changes:
+
+```
+  Cannot be installed as configured:
+    listener.snapshot_path is D:\Ripcord\state.json, the old default, and
+    this host has no D: volume. Remove the line: the snapshot then sits
+    beside ripcord.yaml.
+```
+
+`D:\Ripcord\state.json` was the default up to 0.4. `ripcord service` shows the same message
+in place of its last line.
 
 When something is missing, the last line names the command that would show it rather than
 printing a plan: a plan printed by a command that changes nothing reads like one that is about
@@ -102,6 +126,8 @@ failover confirmations must never be.
 
 ## Exit codes
 
-**4** when the confirmation is declined — nothing was changed. **3** when a step failed before
+**2** when the configuration cannot be deployed on this host — a snapshot path on a missing
+drive — and nothing was asked or changed. **4** when the confirmation is declined — nothing was
+changed. **3** when a step failed before
 anything was applied. **5** when a step failed with one behind it: the host is between two
 states and the output says where it stopped. Re-running resumes from there.

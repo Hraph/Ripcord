@@ -8,7 +8,8 @@ ripcord serve [--config <path>]
 
 ## What it does, and what it deliberately cannot do
 
-It serves one thing, in one direction: the snapshot this host has published. There is no verb,
+It serves one thing, in one direction: the snapshot this host has published — `state.json`
+beside `ripcord.yaml` by default, the file `ripcord status` writes. There is no verb,
 no parameter and no request body — so there is nothing to abuse. It never touches Hyper-V.
 Everything it serves came from a file the privileged `ripcord` wrote.
 

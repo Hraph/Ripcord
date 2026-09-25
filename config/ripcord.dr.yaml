@@ -50,13 +50,14 @@ listener:
   port: 7443
   local_certificate_thumbprint: "AAAA1111BBBB2222CCCC3333DDDD4444EEEE5555"
   peer_certificate_thumbprint: "1111AAAA2222BBBB3333CCCC4444DDDD5555EEEE"
-  # Written by `ripcord status`, served by the listener. Left out, it sits beside this file,
-  # with the log and the audit trail. The service account is granted read access to the folder
-  # holding it: the snapshot is rewritten by moving a new file over the old one, which would
-  # drop an entry set on the file itself.
+  # The snapshot `ripcord status` writes and the listener serves to the peer. Left out, it is
+  # state.json beside this file: C:\Program Files\Ripcord\state.json on a default install.
+  # Leave it out. The service account is granted read access to the folder holding it: the
+  # snapshot is rewritten by moving a new file over the old one, which would drop an entry set
+  # on the file itself.
   # A path with no folder in it is refused: it would resolve against the working directory of
   # whoever runs the command, and a Windows service's is system32.
-  # snapshot_path: "D:\\Ripcord\\state.json"
+  # snapshot_path: "C:\\Program Files\\Ripcord\\state.json"
 
 vms:
   - name: VM-DC-01

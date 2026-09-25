@@ -17,14 +17,23 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
   without a `D:` volume was being deployed onto a path Windows could not even grant access to.
   **On a pair that never set `listener.snapshot_path`, the snapshot moves**: the listener
   serves nothing until the next `ripcord status` writes one at the new location, and the peer
-  reads that host as stale in the meantime. Run `ripcord status` on both hosts after updating,
-  or set `snapshot_path` explicitly first to keep the old location.
+  reads that host as stale in the meantime. After updating such a host, run `ripcord status`
+  (writes the snapshot at the new place), `ripcord service install` (grants the service
+  account access to its folder) and `ripcord service restart` — the running listener read the
+  old path when it started, and `update` does not restart it. `D:\Ripcord\state.json` can be
+  deleted afterwards. Or set `snapshot_path` explicitly first to keep the old location.
+- **`ripcord service` names the snapshot file and says what it is**: the snapshot
+  `ripcord status` writes and the listener serves to the peer. The sample configurations say
+  the same and no longer show a `D:` path.
 - A `listener.snapshot_path` naming no folder — `state.json` — is now refused. It resolved
   against the working directory of whoever ran the command, and a Windows service's is
   `system32`.
 
 ### Fixed
 
+- **`service install` with a `snapshot_path` on a drive this host lacks is refused before
+  anything changes**, and says when it is the old `D:\Ripcord\state.json` default. It used to
+  create the service and the firewall rule, then fail granting access to the snapshot folder.
 - **The listener service died before it answered Windows, so `sc start` failed with 1053
   and nothing anywhere said why.** It opened `listener.log` beside the binary before the
   handshake, and the service account cannot write to `C:\Program Files\Ripcord`. The log is
