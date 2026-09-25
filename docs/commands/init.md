@@ -9,7 +9,8 @@ ripcord init [--config <path>] [--role primary|dr] [--dry-run]
 
 ## What it asks
 
-Six questions, plus two per VM. Everything has a default; Enter accepts it.
+Six questions, plus two per VM. On a re-run everything has a default and Enter accepts it; on
+a first run the role, the other host and each VM's priority must be typed.
 
 | | |
 |---|---|
@@ -36,7 +37,9 @@ host is refused at startup, so asking would only offer a way to get it wrong.
 
 **The pair channel is not set up here.** `listener` needs two certificate thumbprints that do
 not exist yet on a host being configured, so the block is left out — meaning off — and the
-closing lines say so. See [`serve`](serve.md).
+closing lines say so. See [`serve`](serve.md). When a re-run carries a `listener` block that
+switches it on, the closing lines say `ripcord status, then ripcord service restart` instead:
+the listener reads the file only when it starts.
 
 ## Running it again
 
@@ -49,17 +52,23 @@ The normal case, and the reason it is safe:
   `alerting`, `dashboard`, `diagnostics`, `checks`, and any key a later version adds that this
   one has never heard of. Carried as the original lines, comments included, because
   re-serialising through the object model would drop both the comments and every key the model
-  does not know;
+  does not know. A comment at column 0 belongs to the section below it; an indented one to the
+  section it is indented under — the commented `# snapshot_path:` stays in `listener`. The
+  indented comments closing a section it rewrites (`replication`'s commented
+  `# test_failover_switch:`, say) are written back after it, and the commented-out sections
+  after the last one (`# alerting:`, `# diagnostics:`) stay at the end of the file. Other
+  comments inside a rewritten section are replaced by the ones `init` writes;
 - **the previous file is kept** as `ripcord.yaml.1`, named in the output before you say yes;
 - **a VM the file names but this host does not have is dropped**, and listed as "No longer on
   this host" above the VM question. It is not offered and not kept. Its entry in
-  `unattended_test_failover_vms` goes with it. An entry in `checks.acknowledgements` naming it
-  cannot be removed for you, because `checks` is carried as the original lines. It is listed in
-  amber before the yes, and every command refuses the file until you delete it by hand. This is
-  what happens over the sample `install.ps1` leaves behind: its `VM-DC-01`, `VM-LEGACY-01` and
+  `unattended_test_failover_vms` goes with it, and so does its entry in
+  `checks.acknowledgements` — every command would refuse a file acknowledging a VM it does not
+  declare. Each entry taken out is named in amber before the yes. An entry written in flow
+  style (`[{ ... }]`) is not recognised: it is listed instead, and the question then defaults
+  to `n`, so Enter does not write a file every command refuses. This is what happens over the sample `install.ps1` leaves behind: its `VM-DC-01`, `VM-LEGACY-01` and
   `VM-BACKUP-01` are examples, and only this host's own VMs are offered.
 
-That last point is why this asks `[Y/n]` rather than for the node name typed in full, as every
+The previous file being kept is why this asks `y/n [y]` rather than for the node name typed in full, as every
 irreversible command does. Nothing here is irreversible.
 
 Fields inside the sections it *does* rewrite are carried too, not just whole sections: a VM's

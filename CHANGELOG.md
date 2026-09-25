@@ -69,6 +69,16 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
   and names the way out, and `remove` works. `install` is refused before anything changes.
 - **`ripcord service` shows how old the snapshot is**, or that it was never written, and ends
   by naming `ripcord status` when the peer would read this host as offline or stale.
+- **Re-running `ripcord init` over the sample lost the comments explaining the file.** An
+  indented comment closing a section was attached to the next one: the `# snapshot_path:`
+  explanation left `listener` and was dropped with `vms`, and `replication`'s commented keys
+  landed under `vms`. The commented-out `alerting` to `diagnostics` examples were dropped with
+  `storage`. Indented comments now stay in their section and are written back after a
+  rewritten one, and the comment block after the last section stays at the end.
+- **`ripcord init` wrote a file every command refused when a dropped VM was acknowledged in
+  `checks`.** The acknowledgement now goes with the VM and is named before the yes. One it
+  cannot take out makes `n` the default. After a re-run carrying an enabled listener, the
+  closing lines say to restart the service.
 - `ripcord service` reads the service once per report, heads its last line *Note* rather than
   *Why it is not running* when the state is not stopped, and says to use an elevated console
   on access denied. The result lines of `install`, `remove` and `restart`, and the refusal of
