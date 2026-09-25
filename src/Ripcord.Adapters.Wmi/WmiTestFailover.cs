@@ -168,10 +168,12 @@ internal static class WmiTestFailover
         IReadOnlyDictionary<string, string> switches,
         CimOperationOptions options)
     {
-        string testSwitchId = switchName is null
+        // The switch's friendly name, as `Set-VMNetworkAdapter -TestReplicaSwitchName` takes
+        // it and as LastKnownSwitchName reads back — not its GUID (V76).
+        string testSwitch = switchName is null
             ? string.Empty
-            : switches.FirstOrDefault(entry =>
-                string.Equals(entry.Value, switchName, StringComparison.OrdinalIgnoreCase)).Key
+            : switches.Values.FirstOrDefault(name =>
+                string.Equals(name, switchName, StringComparison.OrdinalIgnoreCase))
                 ?? throw new InvalidOperationException(
                     $"no virtual switch on this host is called '{switchName}'");
 
@@ -188,9 +190,20 @@ internal static class WmiTestFailover
                 // (V30). If the pool identifier turns out to be required for the reassignment
                 // to take, the test VM stays on the replica's switch and the isolation rule
                 // refuses it — the safe direction, but a confusing refusal rather than a boot.
-                allocation.CimInstanceProperties["TestReplicaSwitchName"].Value = testSwitchId;
+                allocation.CimInstanceProperties["TestReplicaSwitchName"].Value = testSwitch;
 
                 ModifyResourceSettings(session, allocation, options);
+
+                // Read back: a value Hyper-V did not keep would leave the test VM on another
+                // switch than the one the run is reported against.
+                using CimInstance written = session.GetInstance(Namespace, allocation, options);
+                string kept = CimValues.Text(written, "TestReplicaSwitchName") ?? string.Empty;
+
+                if (!string.Equals(kept, testSwitch, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        $"the test network was set to '{testSwitch}' and Hyper-V kept '{kept}'");
+                }
             }
         }
     }
@@ -218,11 +231,16 @@ internal static class WmiTestFailover
         // The created system is returned by the method. Read from the out parameter rather
         // than derived from the replica's name, which is the whole reason the `" - Test"`
         // suffix never appears in this codebase.
+        //
+        // A REF comes back carrying its key properties only, and ElementName is not a key:
+        // it is re-read, as WmiJob re-reads the job it is handed.
         if (result.OutParameters["ResultingSystem"]?.Value is CimInstance created)
         {
             using (created)
             {
-                if (CimTranslation.VmName(CimValues.Text(created, "ElementName")) is
+                using CimInstance full = session.GetInstance(Namespace, created, options);
+
+                if (CimTranslation.VmName(CimValues.Text(full, "ElementName")) is
                     { Length: > 0 } name)
                 {
                     return name;

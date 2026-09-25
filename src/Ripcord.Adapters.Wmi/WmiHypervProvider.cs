@@ -79,13 +79,22 @@ public sealed class WmiHypervProvider(
             },
             cancellationToken);
 
-    public Task StopTestFailoverAsync(string vmName, CancellationToken cancellationToken) =>
+    public Task StopTestFailoverAsync(string testVmName, CancellationToken cancellationToken) =>
         this.OnHostAsync(
             (session, options) =>
             {
-                using CimInstance vm = Vm(session, vmName, options);
+                using CimInstance testVm = Vm(session, testVmName, options);
 
-                WmiTestFailover.DestroyTestVm(session, vm, options);
+                // DestroySystem on anything else deletes a production VM's definition. The
+                // caller passes the test copy's name; this is the check that it did.
+                if (CimReplicationValues.Role(CimValues.Number(testVm, "ReplicationMode"))
+                    != ReplicationRole.TestReplica)
+                {
+                    throw new InvalidOperationException(
+                        $"'{testVmName}' is not a test VM, and only a test VM is destroyed");
+                }
+
+                WmiTestFailover.DestroyTestVm(session, testVm, options);
 
                 return true;
             },
@@ -170,27 +179,32 @@ public sealed class WmiHypervProvider(
             },
             cancellationToken);
 
-    /// By ElementName, which is what the operator and the configuration call a VM. The name
-    /// is escaped for WQL: a quote in a VM name would otherwise change the query rather than
-    /// fail to match.
+    /// By ElementName, which is what the operator and the configuration call a VM, ignoring
+    /// case as the WQL `=` did. Matched here rather than in a WHERE clause, so no VM name is ever spliced into a query: WQL
+    /// escapes with a backslash, and a name holding one would match nothing.
     private static CimInstance Vm(
         CimSession session, string name, CimOperationOptions options)
     {
-        string escaped = name.Replace("'", "''", StringComparison.Ordinal);
+        CimInstance? found = null;
 
         foreach (CimInstance instance in session.QueryInstances(
-            Namespace,
-            "WQL",
-            "SELECT ElementName, InstallDate, ReplicationMode, EnabledState FROM Msvm_ComputerSystem "
-                + $"WHERE ElementName = '{escaped}'",
-            options))
+            Namespace, "WQL", ComputerSystemQuery, options))
         {
-            if (CimTranslation.IsVirtualMachine(CimValues.Instant(instance, "InstallDate")))
+            if (found is null
+                && string.Equals(
+                    CimValues.Text(instance, "ElementName"), name, StringComparison.OrdinalIgnoreCase)
+                && CimTranslation.IsVirtualMachine(CimValues.Instant(instance, "InstallDate")))
             {
-                return instance;
+                found = instance;
+                continue;
             }
 
             instance.Dispose();
+        }
+
+        if (found is not null)
+        {
+            return found;
         }
 
         throw new InvalidOperationException($"no VM on this host is called '{name}'");
