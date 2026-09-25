@@ -17,7 +17,11 @@ public sealed record DesiredDeployment(
     bool ListenerEnabled = true,
 
     /// `peer.offline_after_sec`: a snapshot older than this is one the peer reads as stale.
-    TimeSpan? SnapshotStaleAfter = null)
+    TimeSpan? SnapshotStaleAfter = null,
+
+    /// `listener.local_certificate_thumbprint`: the certificate whose private key the
+    /// listener signs its handshake with.
+    string? CertificateThumbprint = null)
 {
     /// Access is granted on the folder, never on the snapshot file. `ripcord` rewrites the
     /// snapshot by moving a temporary file over it, and a move brings the new file's access
@@ -64,7 +68,11 @@ public sealed record ObservedDeployment(
     bool SnapshotVolumePresent = true,
 
     /// When the snapshot was last written; null when there is no file.
-    DateTimeOffset? SnapshotWrittenAt = null)
+    DateTimeOffset? SnapshotWrittenAt = null,
+
+    /// Whether the service account can read the certificate's private key. Null when there is
+    /// no such key to look at: no thumbprint, no certificate, or no key file found.
+    bool? KeyReadableByService = null)
 {
     public static ObservedDeployment Nothing { get; } =
         new(false, null, false, null, null, false);
@@ -95,6 +103,8 @@ public enum DeploymentAction
     RevokeLogsAccess,
     RegisterEventSource,
     RemoveEventSource,
+    GrantKeyAccess,
+    RevokeKeyAccess,
 }
 
 /// One change, and why it is needed. The reason is what `--dry-run` prints, so it is written
@@ -237,6 +247,17 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
                 "the listener writes its log there; it may write nowhere else"));
         }
 
+        // Machine keys are readable by SYSTEM and Administrators only, and a virtual account is
+        // neither: without this the handshake fails on this host's own key.
+        if (desired.CertificateThumbprint is { } thumbprint && observed.KeyReadableByService == false)
+        {
+            steps.Add(new DeploymentStep(
+                DeploymentAction.GrantKeyAccess,
+                $"Grant {ServiceAccount} read access to the private key of certificate "
+                + thumbprint,
+                "the listener proves this host's identity with it"));
+        }
+
         if (!observed.EventSourceRegistered)
         {
             steps.Add(new DeploymentStep(
@@ -278,6 +299,14 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
                 DeploymentAction.RemoveEventSource,
                 $"Remove the '{EventSource}' source from the Application event log",
                 "nothing will report under it any more"));
+        }
+
+        if (observed.KeyReadableByService == true)
+        {
+            steps.Add(new DeploymentStep(
+                DeploymentAction.RevokeKeyAccess,
+                $"Revoke {ServiceAccount}'s access to the certificate's private key",
+                "the service account no longer needs it"));
         }
 
         // The folder and its logs stay, like the snapshot: they are what explains the past.

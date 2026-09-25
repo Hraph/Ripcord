@@ -18,6 +18,7 @@ public static class DesiredDeploymentFactory
             configuration.Peer.Address,
             LogFolder.Beside(binaryPath),
             configuration.Listener.Enabled,
-            configuration.Peer.OfflineAfter);
+            configuration.Peer.OfflineAfter,
+            configuration.Listener.LocalCertificateThumbprint);
     }
 }

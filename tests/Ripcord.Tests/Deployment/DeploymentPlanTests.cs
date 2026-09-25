@@ -14,6 +14,42 @@ public class DeploymentPlanTests
         PeerAddress: "192.0.2.11",
         LogsFolder: @"D:\Ripcord\logs");
 
+    /// A virtual account cannot read a machine key until it is granted: the handshake then
+    /// fails on this host's own certificate.
+    [Fact]
+    public void An_unreadable_private_key_is_granted_before_the_service_starts()
+    {
+        DeploymentPlan plan = DeploymentPlan.For(
+            Desired with { CertificateThumbprint = "AB12" },
+            ObservedDeployment.Nothing with { KeyReadableByService = false });
+
+        List<DeploymentAction> actions = [.. plan.Steps.Select(step => step.Action)];
+
+        Assert.Contains(DeploymentAction.GrantKeyAccess, actions);
+        Assert.True(
+            actions.IndexOf(DeploymentAction.GrantKeyAccess)
+                < actions.IndexOf(DeploymentAction.StartService));
+        Assert.Contains("AB12", plan.Steps.Single(step => step.Action == DeploymentAction.GrantKeyAccess).Description, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(null)]
+    public void A_readable_or_unfound_key_needs_no_grant(bool? readable) =>
+        Assert.DoesNotContain(
+            DeploymentPlan.For(
+                    Desired with { CertificateThumbprint = "AB12" },
+                    Matching() with { KeyReadableByService = readable })
+                .Steps,
+            step => step.Action == DeploymentAction.GrantKeyAccess);
+
+    [Fact]
+    public void Removal_revokes_the_key_access_it_granted() =>
+        Assert.Contains(
+            DeploymentAction.RevokeKeyAccess,
+            DeploymentPlan.ToRemove(Matching() with { KeyReadableByService = true })
+                .Steps.Select(step => step.Action));
+
     [Fact]
     public void A_disabled_listener_is_blocked_before_any_step()
     {

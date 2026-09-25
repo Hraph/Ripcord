@@ -30,6 +30,10 @@ public enum PeerVerdict
     /// `Verify` never returns it: it is the listener's own failure, named here so a refusal
     /// caused by this host is not logged as a caller who did something wrong.
     LocalCertificateUnavailable,
+
+    /// This host found its certificate but could not use its private key in the handshake —
+    /// the service account was never granted read access to it.
+    LocalKeyUnusable,
 }
 
 /// Chain validation **and** name validation, per the specification: neither alone is enough.
@@ -90,6 +94,8 @@ public static class PeerIdentity
         PeerVerdict.WrongSubject => "the certificate subject is not the peer's",
         PeerVerdict.LocalCertificateUnavailable =>
             "this host could not present its own certificate",
+        PeerVerdict.LocalKeyUnusable =>
+            "this host could not use its own private key; run ripcord service install --dry-run",
         _ => "the certificate did not come from the peer's address",
     };
 
