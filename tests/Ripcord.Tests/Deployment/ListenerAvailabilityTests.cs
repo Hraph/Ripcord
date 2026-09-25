@@ -65,6 +65,15 @@ public sealed class ListenerAvailabilityTests
         Assert.False(alert.Critical);
     }
 
+    /// A choice, and already said: the PEER section reads "no peer channel configured on this
+    /// node". A block on every run of a local-only node would teach the eye to skip it.
+    [Fact]
+    public void A_disabled_listener_raises_nothing_whatever_the_service()
+    {
+        Assert.Null(Judge(Enabled with { Enabled = false }, Service(ServiceRunState.Stopped)));
+        Assert.Null(Judge(Enabled with { Enabled = false }, ObservedService.Absent));
+    }
+
     /// Same words as `ripcord service`, including what to do about a denied read.
     [Fact]
     public void An_unreadable_service_says_what_ripcord_service_says()
@@ -75,16 +84,6 @@ public sealed class ListenerAvailabilityTests
         Assert.Equal(
             ServiceDiagnosis.Diagnose(unreadable, null, null).Why,
             Judge(Enabled, unreadable)!.Reason);
-    }
-
-    [Fact]
-    public void A_disabled_listener_says_the_channel_is_off_whatever_the_service()
-    {
-        ListenerAlert alert = Judge(Enabled with { Enabled = false }, Service(ServiceRunState.Running))!;
-
-        Assert.Equal("OFF", alert.Headline);
-        Assert.Contains(Peer, alert.Reason, StringComparison.Ordinal);
-        Assert.False(alert.Critical);
     }
 
     private static readonly ListenerSettings Enabled =

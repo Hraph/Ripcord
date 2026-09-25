@@ -14,7 +14,7 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 ### Added
 
 - **`ripcord status` ends with a `LISTENER` block when the other host cannot read this one**:
-  the service is not installed, not running, disabled in `ripcord.yaml`, or could not be read,
+  the service is not installed, not running, or could not be read,
   with the command to run next. Over there this host only shows `SILENT`, which reads as a
   network fault. The exit code is unchanged.
 - **`ripcord service` says why a stopped listener stopped**: the command Windows runs, its

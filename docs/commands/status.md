@@ -45,8 +45,8 @@ A host with the listener switched off degrades to the local half rather than fai
 ## Why the other host cannot read this one
 
 On the other host this one shows `SILENT`, which reads as a network fault. Often the cause is
-here, where only this side can see it, so a `LISTENER` block closes the page whenever the other
-host cannot read this one:
+here, where only this side can see it, so a `LISTENER` block closes the page whenever the
+configuration wants a listener and this host is not running one:
 
 ```
 LISTENER  NOT RUNNING
@@ -58,11 +58,12 @@ LISTENER  NOT RUNNING
 |---|---|
 | `NOT INSTALLED` | the configuration wants a listener and no service exists. Next: `ripcord service install --dry-run` |
 | `NOT RUNNING` | the service is stopped, stopping or paused. Next: `ripcord service`, which says why |
-| `OFF` | `listener` is absent or `enabled: false` in `ripcord.yaml`: a choice, not a fault |
-| `UNKNOWN` | Windows would not describe the service — the reason is printed. Never read as stopped |
+| `UNKNOWN` | Windows would not describe the service — the reason is printed, in the words `ripcord service` uses. Never read as stopped |
 
-A running or starting service adds nothing. The block never changes the exit code: it is a
-fact about this host's listener, not a failed read.
+A running or starting service adds nothing, and neither does a listener switched off in
+`ripcord.yaml`: that is a choice, and the `PEER` section already says no channel is configured.
+The block never changes the exit code: it is a fact about this host's listener, not a failed
+read.
 
 When it exits **3**, the console says which read failed and the day's `logs\ripcord-YYYY-MM-DD.log` says why — the
 exception, its type and its stack. See [the diagnostic log](../diagnostics.md).

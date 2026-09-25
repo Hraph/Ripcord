@@ -3,7 +3,7 @@ using Ripcord.Domain.Configuration;
 namespace Ripcord.Domain.Deployment;
 
 /// Why the other host cannot read this one. `Critical` when the configuration wants a
-/// listener and Windows says none is running; not when that is a choice or cannot be told.
+/// listener and Windows says none is running; not when that cannot be told.
 public sealed record ListenerAlert(string Headline, string Reason, string Next, bool Critical);
 
 /// The line at the bottom of `ripcord status`. Over there this host shows SILENT, which reads
@@ -16,13 +16,10 @@ public static class ListenerAvailability
         ArgumentNullException.ThrowIfNull(listener);
         ArgumentNullException.ThrowIfNull(service);
 
+        // A choice, and the PEER section already says the channel is off on this node.
         if (!listener.Enabled)
         {
-            return new ListenerAlert(
-                "OFF",
-                $"the listener is disabled in ripcord.yaml, so {peerName} cannot read this host",
-                "ripcord service",
-                Critical: false);
+            return null;
         }
 
         if (!service.Installed)
