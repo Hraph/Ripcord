@@ -33,7 +33,13 @@ public sealed class FileSnapshotStore : ISnapshotStore
     {
         try
         {
-            return SnapshotWireFormat.Read(File.ReadAllText(path));
+            // Shared for delete: `ripcord status` replaces the file by moving over it, and a
+            // read holding it without that share makes the replace fail.
+            using FileStream stream = new(
+                path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using StreamReader reader = new(stream);
+
+            return SnapshotWireFormat.Read(reader.ReadToEnd());
         }
         catch (Exception exception) when (
             exception is IOException or UnauthorizedAccessException or NotSupportedException)
