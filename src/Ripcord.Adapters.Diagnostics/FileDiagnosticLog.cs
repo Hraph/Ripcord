@@ -82,11 +82,13 @@ public sealed class FileDiagnosticLog(
 
                 string file = this.FileAt(this.current, now);
 
+                // The operator may have pointed the log at a folder that does not exist yet —
+                // `D:\Ripcord` on a host where only the binary's own folder exists — or somebody
+                // emptied it while the service was running.
+                Directory.CreateDirectory(this.current.Folder);
+
                 if (file != this.lastFile)
                 {
-                    // The operator may have pointed the log at a folder that does not exist
-                    // yet — `D:\Ripcord` on a host where only the binary's own folder exists.
-                    Directory.CreateDirectory(this.current.Folder);
                     Prune(this.current.Folder, now);
                     this.lastFile = file;
                 }
