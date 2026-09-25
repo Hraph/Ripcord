@@ -101,6 +101,23 @@ public class ListenerSettingsValidationTests
         Assert.Contains("this host's certificate", error.Message, StringComparison.Ordinal);
     }
 
+    /// `enabled: false` is how a host runs before its certificates exist; the sample's
+    /// placeholders behind it must not stop `status` or `failover` from loading.
+    [Fact]
+    public void Behind_a_disabled_listener_the_placeholders_load_as_absent()
+    {
+        ConfigurationDocument document = Valid();
+        document.Listener!.Enabled = false;
+        document.Listener.LocalCertificateThumbprint = ListenerSettings.SamplePlaceholders[0];
+        document.Listener.PeerCertificateThumbprint = ListenerSettings.SamplePlaceholders[1];
+
+        ConfigurationValidation result = Validate(document);
+
+        Assert.Empty(result.Errors);
+        Assert.Null(result.Configuration!.Listener.LocalCertificateThumbprint);
+        Assert.Null(result.Configuration.Listener.PeerCertificateThumbprint);
+    }
+
     /// Windows certificate tooling copies thumbprints with spaces and in either case; both
     /// paste forms are the same certificate.
     [Theory]

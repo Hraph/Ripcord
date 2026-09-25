@@ -841,11 +841,16 @@ public static class ConfigurationValidator
             return null;
         }
 
+        // Behind `enabled: false`, the documented way to run a host first, it is simply absent.
         if (ListenerSettings.SamplePlaceholders.Contains(normalised))
         {
-            errors.Add(new ConfigurationError(
-                path, $"is the sample's placeholder: put the thumbprint of {whose}"));
-            complete = false;
+            if (required)
+            {
+                errors.Add(new ConfigurationError(
+                    path, $"is the sample's placeholder: put the thumbprint of {whose}"));
+                complete = false;
+            }
+
             return null;
         }
 

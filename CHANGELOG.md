@@ -44,8 +44,9 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 - **The samples' placeholder thumbprints are refused by name.** A `listener` block still
   carrying `AAAA1111…` or `1111AAAA…` used to load, and the pair channel then failed as a
-  `SILENT` peer, which reads as a network fault. **A `ripcord.yaml` that still has them no
-  longer loads**: put the thumbprints of the two hosts' certificates, or remove the block.
+  `SILENT` peer, which reads as a network fault. **A `ripcord.yaml` whose listener is enabled
+  with them no longer loads**: put the thumbprints of the two hosts' certificates, or set
+  `enabled: false`, behind which they are ignored.
 
 ### Fixed
 

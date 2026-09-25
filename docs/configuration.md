@@ -78,7 +78,8 @@ would fail over", and a sweep refuses. A file with no `vms` key at all is still 
 **`listener`** — the pair channel. Remove it, or set `enabled: false`, and the node degrades to
 the local-only view rather than failing. Needs both certificate thumbprints; the same
 thumbprint on both ends is refused, because it would authenticate a host to itself, and so are
-the samples' two placeholders, by name.
+the samples' two placeholders, by name, unless `enabled: false`. `ripcord service` shows the
+thumbprint to use.
 `snapshot_path` is the snapshot `ripcord status` writes and the listener serves to the peer; it
 defaults to `state.json` beside `ripcord.yaml` and is best left out. A path with no folder in
 it is refused, and one on a drive the host lacks is refused by `service install`.
