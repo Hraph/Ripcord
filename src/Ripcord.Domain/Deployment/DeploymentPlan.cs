@@ -10,7 +10,14 @@ public sealed record DesiredDeployment(
     string PeerAddress,
 
     /// The only folder the service account may write to: the listener's log goes there.
-    string LogsFolder)
+    string LogsFolder,
+
+    /// `listener.enabled`. Off, there is nothing to install, but a service installed earlier
+    /// can still be looked at and removed.
+    bool ListenerEnabled = true,
+
+    /// `peer.offline_after_sec`: a snapshot older than this is one the peer reads as stale.
+    TimeSpan? SnapshotStaleAfter = null)
 {
     /// Access is granted on the folder, never on the snapshot file. `ripcord` rewrites the
     /// snapshot by moving a temporary file over it, and a move brings the new file's access
@@ -54,7 +61,10 @@ public sealed record ObservedDeployment(
 
     /// Whether the drive the snapshot is on exists here. The folder on it is created by the
     /// grant, a volume cannot be.
-    bool SnapshotVolumePresent = true)
+    bool SnapshotVolumePresent = true,
+
+    /// When the snapshot was last written; null when there is no file.
+    DateTimeOffset? SnapshotWrittenAt = null)
 {
     public static ObservedDeployment Nothing { get; } =
         new(false, null, false, null, null, false);
@@ -146,6 +156,11 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
     {
         ArgumentNullException.ThrowIfNull(desired);
         ArgumentNullException.ThrowIfNull(observed);
+
+        if (!desired.ListenerEnabled)
+        {
+            return new DeploymentPlan([], ListenerDisabled);
+        }
 
         // Checked before any step: the grant is the third step, and failing there used to leave
         // a service and an open port behind for a listener that could never serve.
@@ -307,6 +322,10 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
         action is DeploymentAction.StartService
             or DeploymentAction.RestartService
             or DeploymentAction.UpdateService;
+
+    public const string ListenerDisabled =
+        "the listener is disabled in ripcord.yaml (listener.enabled: false). Set it to true "
+        + "to install the listener, or run 'ripcord service remove' to take it off this host.";
 
     private static string MissingVolume(DesiredDeployment desired) =>
         ListenerSettings.IsLegacyDefault(desired.SnapshotPath)

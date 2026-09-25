@@ -15,6 +15,16 @@ public class DeploymentPlanTests
         LogsFolder: @"D:\Ripcord\logs");
 
     [Fact]
+    public void A_disabled_listener_is_blocked_before_any_step()
+    {
+        DeploymentPlan plan = DeploymentPlan.For(
+            Desired with { ListenerEnabled = false }, ObservedDeployment.Nothing);
+
+        Assert.Empty(plan.Steps);
+        Assert.Equal(DeploymentPlan.ListenerDisabled, plan.BlockedBy);
+    }
+
+    [Fact]
     public void On_a_fresh_host_everything_is_created()
     {
         DeploymentPlan plan = DeploymentPlan.For(Desired, ObservedDeployment.Nothing);

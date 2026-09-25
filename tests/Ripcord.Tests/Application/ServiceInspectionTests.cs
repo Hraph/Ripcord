@@ -89,14 +89,60 @@ public class ServiceInspectionTests
             report.Verdict.Why?.Contains("cannot write its logs folder", StringComparison.Ordinal));
     }
 
+    /// One reading per report: two could disagree on one screen, and each costs a CIM query.
+    [Fact]
+    public void The_service_is_read_once_and_that_reading_is_what_the_plan_sees()
+    {
+        Host host = new(StoppedService);
+
+        new ServiceInspection(Valid(), host, new Logs()).Inspect(Request(), Now);
+
+        Assert.Equal(1, host.Readings);
+        Assert.Equal([StoppedService], host.Given);
+    }
+
+    [Theory]
+    [InlineData(null, SnapshotAge.Missing)]
+    [InlineData(60, SnapshotAge.Fresh)]
+    [InlineData(121, SnapshotAge.Stale)]
+    public void The_snapshot_is_judged_against_the_peer_offline_threshold(
+        int? secondsAgo, SnapshotAge expected)
+    {
+        // The sample's peer.offline_after_sec is 120.
+        Host host = new(StoppedService)
+        {
+            WrittenAt = secondsAgo is { } seconds ? Now.AddSeconds(-seconds) : null,
+        };
+
+        ServiceReport report = new ServiceInspection(Valid(), host, new Logs()).Inspect(Request(), Now);
+
+        Assert.Equal(expected, report.Snapshot);
+    }
+
     /// Logs not writable by the service; ObserveService throws when given nothing.
     private sealed class Host(ObservedService? service) : IDeploymentExecutor
     {
-        public ObservedDeployment Observe(DesiredDeployment desired) =>
-            ObservedDeployment.Nothing with { ServiceInstalled = true };
+        public int Readings { get; private set; }
 
-        public ObservedService ObserveService() =>
-            service ?? throw new InvalidOperationException("WMI refused");
+        public List<ObservedService> Given { get; } = [];
+
+        public DateTimeOffset? WrittenAt { get; init; }
+
+        public ObservedDeployment Observe(DesiredDeployment desired, ObservedService service)
+        {
+            this.Given.Add(service);
+            return ObservedDeployment.Nothing with
+            {
+                ServiceInstalled = true,
+                SnapshotWrittenAt = this.WrittenAt,
+            };
+        }
+
+        public ObservedService ObserveService()
+        {
+            this.Readings++;
+            return service ?? throw new InvalidOperationException("WMI refused");
+        }
 
         public void Apply(DeploymentStep change, DesiredDeployment desired) =>
             throw new InvalidOperationException("inspection must not change anything");

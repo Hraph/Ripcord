@@ -13,7 +13,11 @@ public sealed record ServiceReport(
     DeploymentOutcome Deployment,
     string LogsFolder,
     LogReading? Log,
-    ServiceVerdict Verdict);
+    ServiceVerdict Verdict,
+
+    /// Null when the configuration did not load or the host could not be read.
+    SnapshotAge? Snapshot = null,
+    TimeSpan? SnapshotWrittenAgo = null);
 
 /// Read-only: the service as Windows sees it, the deployment as the configuration wants it,
 /// the end of the listener's log, and one line on why a stopped listener stopped.
@@ -37,7 +41,7 @@ public sealed class ServiceInspection(
         }
 
         DeploymentOutcome deployment =
-            new ListenerDeployment(configStore, executor).Plan(request);
+            new ListenerDeployment(configStore, executor).Plan(request, service);
 
         // Where the service writes, not where this command does: the listener logs beside
         // the binary Windows runs, whatever `--config` this run was given.
@@ -59,7 +63,15 @@ public sealed class ServiceInspection(
             deployment,
             logsFolder,
             log,
-            ServiceDiagnosis.Diagnose(service, LogsWritable(deployment, logsFolder), log));
+            ServiceDiagnosis.Diagnose(
+                service,
+                LogsWritable(deployment, logsFolder),
+                log,
+                listenerDisabled: deployment.Desired is { ListenerEnabled: false }),
+            deployment is { Desired: { } desired, Observed: { } observed }
+                ? SnapshotFreshness.Judge(observed.SnapshotWrittenAt, now, desired.SnapshotStaleAfter)
+                : null,
+            now - deployment.Observed?.SnapshotWrittenAt);
     }
 
     /// Only known for the folder the configuration's deployment looked at.

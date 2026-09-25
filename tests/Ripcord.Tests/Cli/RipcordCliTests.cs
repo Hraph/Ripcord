@@ -491,7 +491,11 @@ public class RipcordCliTests
         CliRun run = await Run(["service", "state"]);
 
         Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
-        Assert.Contains("run 'ripcord service' on its own", run.Error, StringComparison.Ordinal);
+        Assert.Equal(
+            "ripcord: 'service state' is not a service verb.\n"
+                + "  to look:    ripcord service\n"
+                + "  to change:  ripcord service install | remove | restart\n",
+            run.Error.ReplaceLineEndings("\n"));
     }
 
     [Fact]
@@ -858,6 +862,143 @@ public class RipcordCliTests
         Assert.All(run.Output.Split('\n'), line => Assert.True(line.Length <= 75, line));
     }
 
+    private const string ProgramFilesBinary = @"C:\Program Files\Ripcord\ripcord.exe";
+
+    /// The lines read when an install half-fails, with the path a real host has.
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(4)]
+    public async Task Applied_service_install_fits_75_columns(int failOnStep)
+    {
+        CliRun run = await Run(
+            ["service", "install"],
+            deploymentExecutor: new FakeDeploymentExecutor(
+                failOnStep: failOnStep,
+                failure: "'icacls \"C:\\Program Files\\Ripcord\\logs\" /grant \"NT SERVICE\\ripcord\"'"
+                    + " exited with 1332: No mapping between account names and security IDs "
+                    + "was done."),
+            typed: FakeScenarios.LocalHostName,
+            binaryPath: ProgramFilesBinary);
+
+        // On a console the typed answer ends the prompt's line; here nothing does.
+        string output = run.Output.Replace(
+            $"({FakeScenarios.LocalHostName}):  ", "\n", StringComparison.Ordinal);
+
+        Assert.Contains("done: Create the 'ripcord' service", output, StringComparison.Ordinal);
+        Assert.All(output.Split('\n'), line => Assert.True(line.Length <= 75, line));
+    }
+
+    /// The documented off switch has to leave a way to look at, and take off, a service
+    /// installed while it was on.
+    [Fact]
+    public async Task Service_on_a_disabled_listener_reports_and_exits_zero()
+    {
+        CliRun run = await Run(
+            ["service"],
+            configStore: new RecordingConfigStore(listenerEnabled: false),
+            deploymentExecutor: new FakeDeploymentExecutor(Deployed() with { ServiceRunning = false }));
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Contains(
+            "the listener is disabled in ripcord.yaml (listener.enabled: false)",
+            run.Output,
+            StringComparison.Ordinal);
+        Assert.Contains("    ripcord service remove", run.Output, StringComparison.Ordinal);
+        Assert.Empty(run.Error);
+    }
+
+    [Fact]
+    public async Task Restart_on_a_disabled_listener_refuses_and_names_the_way_out()
+    {
+        FakeDeploymentExecutor executor = new(Deployed() with { ServiceRunning = false });
+
+        CliRun run = await Run(
+            ["service", "restart"],
+            configStore: new RecordingConfigStore(listenerEnabled: false),
+            deploymentExecutor: executor);
+
+        Assert.Equal(ExitCode.Refused, run.Code);
+        Assert.Contains("listener.enabled: true", run.Error, StringComparison.Ordinal);
+        Assert.Contains("ripcord service remove", run.Error, StringComparison.Ordinal);
+        Assert.Empty(executor.Applied);
+    }
+
+    [Fact]
+    public async Task Remove_on_a_disabled_listener_still_removes()
+    {
+        FakeDeploymentExecutor executor = new(Deployed());
+
+        CliRun run = await Run(
+            ["service", "remove"],
+            configStore: new RecordingConfigStore(listenerEnabled: false),
+            deploymentExecutor: executor,
+            typed: FakeScenarios.LocalHostName);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Contains(DeploymentAction.RemoveService, executor.Applied);
+    }
+
+    [Fact]
+    public async Task Install_on_a_disabled_listener_is_blocked_and_changes_nothing()
+    {
+        FakeDeploymentExecutor executor = new();
+
+        CliRun run = await Run(
+            ["service", "install"],
+            configStore: new RecordingConfigStore(listenerEnabled: false),
+            deploymentExecutor: executor,
+            typed: FakeScenarios.LocalHostName);
+
+        Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
+        Assert.Contains("listener.enabled: false", run.Output, StringComparison.Ordinal);
+        Assert.Empty(executor.Applied);
+    }
+
+    [Fact]
+    public async Task An_unknown_service_state_is_not_called_not_running()
+    {
+        CliRun run = await Run(
+            ["service"],
+            deploymentExecutor: new FakeDeploymentExecutor(
+                Deployed(),
+                service: new ObservedService(
+                    true,
+                    $"\"{BinaryPath}\" serve",
+                    ServiceRunState.Unknown,
+                    null,
+                    null,
+                    null,
+                    ObservedService.AccessDenied)));
+
+        Assert.DoesNotContain("Why it is not running", run.Output, StringComparison.Ordinal);
+        Assert.Contains("  Note:", run.Output, StringComparison.Ordinal);
+        Assert.Contains("elevated console", run.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Service_says_when_the_snapshot_was_never_written_and_names_status()
+    {
+        CliRun run = await Run(["service"], deploymentExecutor: new FakeDeploymentExecutor(Deployed()));
+
+        Assert.Contains("               NOT written yet\n", run.Output, StringComparison.Ordinal);
+        Assert.EndsWith(
+            "  The peer is served no current snapshot until this runs:\n    ripcord status\n",
+            run.Output.ReplaceLineEndings("\n"),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Service_gives_the_age_of_a_fresh_snapshot_and_no_status_hint()
+    {
+        CliRun run = await Run(
+            ["service"],
+            deploymentExecutor: new FakeDeploymentExecutor(
+                Deployed() with { SnapshotWrittenAt = Now.AddSeconds(-30) }));
+
+        Assert.Contains("               written 30s ago\n", run.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("ripcord status\n", run.Output, StringComparison.Ordinal);
+    }
+
     private static ObservedDeployment Deployed() => new(
         ServiceInstalled: true,
         ServiceBinaryPath: BinaryPath,
@@ -1132,6 +1273,7 @@ public class RipcordCliTests
         IBinarySwap? binarySwap = null,
         IDiagnosticLog? diagnostics = null,
         IDiagnosticLogReader? logReader = null,
+        string binaryPath = BinaryPath,
         CancellationToken cancellationToken = default)
     {
         StringWriter output = new();
@@ -1160,7 +1302,7 @@ public class RipcordCliTests
                 diagnostics ?? new SilentDiagnosticLog(),
                 logReader ?? new NoLogs()),
             new CliEnvironment(
-                machineName, DefaultConfigPath, BinaryPath, new StringReader(typed ?? "")));
+                machineName, DefaultConfigPath, binaryPath, new StringReader(typed ?? "")));
 
         ExitCode code = await cli.RunAsync(args, output, error, cancellationToken);
 
@@ -1198,13 +1340,14 @@ public class RipcordCliTests
     private sealed class FakeDeploymentExecutor(
         ObservedDeployment? observed = null,
         int failOnStep = -1,
-        ObservedService? service = null) : IDeploymentExecutor
+        ObservedService? service = null,
+        string failure = "sc.exe exited with code 5") : IDeploymentExecutor
     {
         private readonly List<DeploymentAction> applied = [];
 
         public IReadOnlyList<DeploymentAction> Applied => this.applied;
 
-        public ObservedDeployment Observe(DesiredDeployment desired) =>
+        public ObservedDeployment Observe(DesiredDeployment desired, ObservedService service) =>
             observed ?? ObservedDeployment.Nothing;
 
         /// Agrees with `Observe` unless a test says otherwise.
@@ -1223,7 +1366,7 @@ public class RipcordCliTests
         {
             if (this.applied.Count == failOnStep)
             {
-                throw new InvalidOperationException("sc.exe exited with code 5");
+                throw new InvalidOperationException(failure);
             }
 
             this.applied.Add(change.Action);

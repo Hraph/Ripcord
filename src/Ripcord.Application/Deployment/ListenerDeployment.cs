@@ -26,7 +26,8 @@ public sealed record DeploymentOutcome(
 /// doing on purpose: `--dry-run` runs exactly this and stops.
 public sealed class ListenerDeployment(IConfigStore configStore, IDeploymentExecutor executor)
 {
-    public DeploymentOutcome Plan(DeploymentRequest request)
+    /// `service` is the reading the caller already made, if it made one.
+    public DeploymentOutcome Plan(DeploymentRequest request, ObservedService? service = null)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -46,19 +47,12 @@ public sealed class ListenerDeployment(IConfigStore configStore, IDeploymentExec
             return Invalid(validation.Errors);
         }
 
-        if (DesiredDeploymentFactory.From(configuration, request.BinaryPath) is not { } desired)
-        {
-            return new DeploymentOutcome(
-                ExitCode.InvalidConfiguration,
-                null,
-                null,
-                [new ConfigurationError("listener.enabled", "the listener is disabled on this node")],
-                null);
-        }
+        DesiredDeployment desired = DesiredDeploymentFactory.From(configuration, request.BinaryPath);
 
         try
         {
-            ObservedDeployment observed = executor.Observe(desired);
+            ObservedDeployment observed =
+                executor.Observe(desired, service ?? executor.ObserveService());
 
             return new DeploymentOutcome(
                 ExitCode.Success,

@@ -6,7 +6,8 @@ namespace Ripcord.Ports.Deployment;
 /// decides what needs doing — that is DeploymentPlan, which runs anywhere.
 public interface IDeploymentExecutor
 {
-    ObservedDeployment Observe(DesiredDeployment desired);
+    /// Around a service already read, so one report never holds two readings of it.
+    ObservedDeployment Observe(DesiredDeployment desired, ObservedService service);
 
     /// The service alone, which needs no configuration: `ripcord service` still shows it when
     /// `ripcord.yaml` does not load, the likeliest reason a listener stopped.

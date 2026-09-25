@@ -89,7 +89,7 @@ public static class DeploymentRenderer
 
         if (deployment is { Observed: { } observed, Desired: { } desired })
         {
-            AppendAccess(output, observed, desired);
+            AppendAccess(output, observed, desired, report);
         }
         else
         {
@@ -108,7 +108,10 @@ public static class DeploymentRenderer
 
         if (service.Installed && report.Verdict.Why is { } why)
         {
-            output.AppendLine("  Why it is not running:");
+            // Only a stopped service is "not running": an unknown state is never guessed as one.
+            output.AppendLine(service.State == ServiceRunState.Stopped
+                ? "  Why it is not running:"
+                : "  Note:");
             AppendWrapped(output, "    ", "    ", why);
 
             // Commands on lines of their own, never wrapped: they are typed from the screen.
@@ -134,6 +137,12 @@ public static class DeploymentRenderer
             output.AppendLine(plan.ChangesAnything
                 ? $"  {plan.Steps.Count} step(s) would change it: ripcord service install --dry-run"
                 : "  It matches the configuration.");
+        }
+
+        if (report.Snapshot is SnapshotAge.Missing or SnapshotAge.Stale)
+        {
+            output.AppendLine("  The peer is served no current snapshot until this runs:");
+            output.AppendLine("    ripcord status");
         }
 
         return Layout.Rendered(output, palette);
@@ -255,12 +264,15 @@ public static class DeploymentRenderer
                 + $"     {observed.ServiceBinaryPath} serve"
             : "    service    not installed");
 
-        AppendAccess(output, observed, desired);
+        AppendAccess(output, observed, desired, report: null);
         output.AppendLine();
     }
 
     private static void AppendAccess(
-        StringBuilder output, ObservedDeployment observed, DesiredDeployment desired)
+        StringBuilder output,
+        ObservedDeployment observed,
+        DesiredDeployment desired,
+        ServiceReport? report)
     {
         output.AppendLine(observed.FirewallRuleInstalled
             ? $"    firewall   inbound TCP {observed.FirewallPort} "
@@ -270,6 +282,20 @@ public static class DeploymentRenderer
         // Named and explained: an operator granting access to a file has to know what it is.
         AppendWrapped(output, "    snapshot   ", "               ", desired.SnapshotPath);
         output.AppendLine("               written by 'ripcord status', served to the peer");
+
+        switch (report?.Snapshot)
+        {
+            case SnapshotAge.Missing:
+                output.AppendLine("               NOT written yet");
+                break;
+            case SnapshotAge.Stale:
+                output.AppendLine(
+                    $"               written {Layout.Duration(report.SnapshotWrittenAgo)} ago: STALE");
+                break;
+            case SnapshotAge.Fresh:
+                output.AppendLine($"               written {Layout.Duration(report.SnapshotWrittenAgo)} ago");
+                break;
+        }
         output.AppendLine(observed.SnapshotReadableByService
             ? $"               readable by {DeploymentPlan.ServiceAccount}"
             : $"               NOT readable by {DeploymentPlan.ServiceAccount}");
@@ -315,13 +341,20 @@ public static class DeploymentRenderer
 
         foreach (DeploymentStep step in applied)
         {
-            output.AppendLine($"  done: {step.Description}");
+            AppendWrapped(output, "  done: ", "        ", step.Description);
         }
 
         if (failed is not null)
         {
-            output.AppendLine(Ink.Red($"  FAILED: {failed.Description}"));
-            output.AppendLine($"          {failureMessage}");
+            string prefix = "  FAILED: ";
+
+            foreach (string line in Layout.Wrap(failed.Description, Layout.Width - prefix.Length))
+            {
+                output.AppendLine(Ink.Red(prefix + line));
+                prefix = "          ";
+            }
+
+            AppendWrapped(output, "          ", "          ", failureMessage ?? "");
             output.AppendLine();
 
             // Failing on the first step changed nothing, and telling an operator the host is

@@ -46,7 +46,7 @@ public sealed class NoOpPeerListener : IPeerListener
 
 public sealed class NoOpDeploymentExecutor : IDeploymentExecutor
 {
-    public ObservedDeployment Observe(DesiredDeployment desired) => ObservedDeployment.Nothing;
+    public ObservedDeployment Observe(DesiredDeployment desired, ObservedService service) => ObservedDeployment.Nothing;
 
     public ObservedService ObserveService() => ObservedService.Absent;
 
@@ -214,7 +214,7 @@ public static class Yaml
 /// reach it; the ones that do bring their own.
 public sealed class UntouchedHost : IDeploymentExecutor
 {
-    public ObservedDeployment Observe(DesiredDeployment desired) =>
+    public ObservedDeployment Observe(DesiredDeployment desired, ObservedService service) =>
         new(false, null, false, null, null, false, false);
 
     public ObservedService ObserveService() => ObservedService.Absent;

@@ -810,12 +810,12 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         };
     }
 
+    /// `status` is left off on purpose: it is the bare form spelt out, not a verb of its own.
     private static ExitCode Unknown(string verb, TextWriter error)
     {
-        error.WriteLine(
-            $"ripcord: 'service {verb}' is not a thing to do to the service. "
-            + "It is 'install', 'remove' or 'restart'. To look, run 'ripcord service' "
-            + "on its own.");
+        error.WriteLine($"ripcord: 'service {verb}' is not a service verb.");
+        error.WriteLine("  to look:    ripcord service");
+        error.WriteLine("  to change:  ripcord service install | remove | restart");
 
         return ExitCode.InvalidConfiguration;
     }
@@ -879,6 +879,14 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         {
             this.WriteDeploymentFailure(error, outcome);
             return outcome.Code;
+        }
+
+        // Started, it would stop again at once: `serve` has nothing to do.
+        if (!desired.ListenerEnabled)
+        {
+            error.WriteLine("ripcord: the listener is disabled in ripcord.yaml.");
+            error.WriteLine("  Set listener.enabled: true, or run 'ripcord service remove'.");
+            return ExitCode.Refused;
         }
 
         DeploymentPlan plan = DeploymentPlan.ToRestart(observed);

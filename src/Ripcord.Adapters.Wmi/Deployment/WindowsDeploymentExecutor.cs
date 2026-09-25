@@ -19,11 +19,10 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
 
     private static readonly TimeSpan CimTimeout = TimeSpan.FromSeconds(15);
 
-    public ObservedDeployment Observe(DesiredDeployment desired)
+    public ObservedDeployment Observe(DesiredDeployment desired, ObservedService service)
     {
         ArgumentNullException.ThrowIfNull(desired);
-
-        ObservedService service = this.ObserveService();
+        ArgumentNullException.ThrowIfNull(service);
 
         (int ruleCode, string ruleOutput) = Run(
             "netsh",
@@ -44,8 +43,16 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             service.State == ServiceRunState.Running,
             LogsWritable(desired.LogsFolder),
             EventSourceRegistered(),
-            desired.SnapshotVolume.Length == 0 || Directory.Exists(desired.SnapshotVolume));
+            desired.SnapshotVolume.Length == 0 || Directory.Exists(desired.SnapshotVolume),
+            SnapshotWrittenAt(desired));
     }
+
+    /// Only a path with a folder is looked at: a bare file name would be read against this
+    /// process's working directory, not the listener's.
+    private static DateTimeOffset? SnapshotWrittenAt(DesiredDeployment desired) =>
+        desired.SnapshotFolder.Length > 0 && File.Exists(desired.SnapshotPath)
+            ? new DateTimeOffset(File.GetLastWriteTimeUtc(desired.SnapshotPath), TimeSpan.Zero)
+            : null;
 
     /// `Win32_Service` rather than `sc query`: `sc` prints its labels and state words in the
     /// host's language, and a French Windows would answer something unreadable for ever.
@@ -91,7 +98,12 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         }
         catch (CimException exception)
         {
-            return imagePath is null ? ObservedService.Absent : Unread(imagePath, exception.Message);
+            // Said in the Domain's words: the message itself is in the host's language.
+            string reason = exception.NativeErrorCode == NativeErrorCode.AccessDenied
+                ? ObservedService.AccessDenied
+                : exception.Message;
+
+            return imagePath is null ? ObservedService.Absent : Unread(imagePath, reason);
         }
     }
 
@@ -140,6 +152,32 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             {
                 throw new InvalidOperationException(
                     $"'{file} {arguments}' exited with {code}: {output.Trim()}");
+            }
+        }
+
+        if (DeploymentPlan.StartsTheService(change.Action))
+        {
+            this.WatchTheStart();
+        }
+    }
+
+    private static readonly TimeSpan StartWatch = TimeSpan.FromSeconds(5);
+
+    private static readonly TimeSpan StartWatchInterval = TimeSpan.FromMilliseconds(500);
+
+    /// `sc start` returns once the process has answered the service manager. Every failure the
+    /// listener can report comes after that, so the step watches it for a few seconds.
+    private void WatchTheStart()
+    {
+        Stopwatch watch = Stopwatch.StartNew();
+
+        while (watch.Elapsed < StartWatch)
+        {
+            Thread.Sleep(StartWatchInterval);
+
+            if (ServiceDiagnosis.StartFailure(this.ObserveService()) is { } failure)
+            {
+                throw new InvalidOperationException(failure);
             }
         }
     }
