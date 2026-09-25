@@ -36,8 +36,11 @@ Running it again with the same line changes nothing.
 ## What it writes
 
 The two keys under `listener`, in place, and nothing else: every other line, comment and line
-ending stays. The samples' comment about the placeholders goes with them. A file with no
-`listener` section gets one at the end, `enabled: true`. The previous file is kept as
+ending stays, a comment at the end of either key's line too. A key missing or commented out is
+added under `listener:`, at the section's indentation. The samples' comment about the
+placeholders goes with them. A file with no `listener` section gets one at the end,
+`enabled: true`. A section that is there without `enabled: true` keeps it, and the output says
+the pair channel stays off until it is set. The previous file is kept as
 `ripcord.yaml.1`, so the change is undone by moving it back — which is why it asks `y/n`
 rather than the node name.
 
@@ -51,13 +54,19 @@ rather than the node name.
 | no certificate here | none for `CN=<this host>` with a private key that has not expired |
 | several certificates here | none of them configured: choose with `--local <thumbprint>`, as `ripcord service` lists them |
 | no `ripcord.yaml` | run `ripcord init` first |
+| a `ripcord.yaml` that does not load | its error is printed: fix it first |
 | `listener` on one line | flow style (`listener: { ... }`) is left to be edited by hand |
 
-A bare thumbprint, without the host name, is accepted too, in any case and with spaces as
-Windows copies it; only the name check is lost.
+A bare thumbprint, without the host name, is accepted too, in any case, with spaces and with
+the invisible mark the Windows certificate dialog copies in front of it; only the name check is
+lost.
+
+The file is read back once written. If it does not hold the two thumbprints, the command says
+so and names the kept copy to move back.
 
 ## Exit codes
 
 **0** written, already set, or `--dry-run`. **2** no key given or a bad option. **4** refused
-or declined — nothing was changed. **3** the file could not be written; the previous one is
-where it was.
+or declined — nothing was changed. **3** the file could not be written; the output says where
+the previous one is. **5** written, but it does not read back with the two thumbprints: move
+`ripcord.yaml.1` back.

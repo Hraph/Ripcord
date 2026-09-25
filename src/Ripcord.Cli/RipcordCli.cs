@@ -889,13 +889,13 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         path ??= environment.DefaultConfigurationPath;
 
         string? previous = ports.ConfigStore.ReadText(path);
-        ConfigurationDocument? document = previous is null ? null : ports.ConfigStore.Read(path).Document;
+        ConfigurationRead? read = previous is null ? null : ports.ConfigStore.Read(path);
+        ConfigurationDocument? document = read?.Document;
 
         PairingPlan plan = ListenerPairing.Plan(
             previous,
+            document,
             environment.MachineName,
-            document?.Peer?.Hostname,
-            document?.Listener?.LocalCertificateThumbprint,
             HostCertificateReading.Read(ports.Certificates, environment.MachineName, ports.Clock.UtcNow),
             key,
             local);
@@ -904,6 +904,15 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         {
             this.Refuse(error, "ripcord: nothing was changed.");
             WriteWrapped(error, refusal);
+
+            if (read is { Document: null })
+            {
+                foreach (ConfigurationError readError in read.Errors)
+                {
+                    WriteWrapped(error, $"{readError.Path} {readError.Message}".Trim());
+                }
+            }
+
             return ExitCode.Refused;
         }
 
@@ -917,6 +926,13 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         output.WriteLine("  peer_certificate_thumbprint");
         output.WriteLine($"    {plan.Peer}  {peerName}");
         output.WriteLine();
+
+        if (plan.StaysDisabled)
+        {
+            output.WriteLine(this.Ink.Apply(Rendering.Ink.Amber(
+                "  listener.enabled is not true: the pair channel stays off until it is.")));
+            output.WriteLine();
+        }
 
         if (!plan.Changes)
         {
@@ -942,7 +958,20 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             if (written.FailureMessage is { } failure)
             {
                 WriteWrapped(error, failure);
+                error.WriteLine(written.Kept is { } moved
+                    ? $"  the previous configuration is at {moved}"
+                    : "  the configuration on this host was not touched.");
                 return ExitCode.LocalAccessFailure;
+            }
+
+            if (!ListenerPairing.Landed(plan, ports.ConfigStore.Read(path).Document))
+            {
+                this.Refuse(error, "ripcord: the file written does not read back as planned.");
+                WriteWrapped(
+                    error,
+                    $"{path} does not hold those two thumbprints once read again. Move "
+                    + $"{written.Kept ?? path + ".1"} back over it and set them by hand.");
+                return ExitCode.IntermediateState;
             }
 
             output.WriteLine(this.Ink.Apply(Rendering.Ink.Green($"  wrote {path}")));

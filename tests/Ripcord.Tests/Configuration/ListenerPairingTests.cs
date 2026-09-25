@@ -1,7 +1,7 @@
-using Ripcord.Domain.Inventory;
 using Ripcord.Adapters.Yaml;
 using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Deployment;
+using Ripcord.Domain.Inventory;
 
 namespace Ripcord.Tests.Configuration;
 
@@ -27,7 +27,15 @@ public class ListenerPairingTests
 
     private static PairingPlan Plan(
         string? previous, string key, HostCertificates? mine = null, string? typedLocal = null) =>
-        ListenerPairing.Plan(previous, Me, Other, null, mine ?? Certificates(Mine), key, typedLocal);
+        ListenerPairing.Plan(
+            previous,
+            previous is null ? null : Yaml.Read(previous).Document,
+            Me,
+            mine ?? Certificates(Mine),
+            key,
+            typedLocal);
+
+    private const string Head = "schema_version: 1\npeer:\n  hostname: HV-PRIMARY-01\n";
 
     /// The shipped sample, as `install.ps1` leaves it: placeholders in, a valid file out.
     [Fact]
@@ -130,4 +138,67 @@ public class ListenerPairingTests
             "on one line",
             Plan("listener: { enabled: true }\n", Theirs).Refusal,
             StringComparison.Ordinal);
+
+    /// A column-0 comment does not end the section: the key under it is found, not duplicated.
+    [Fact]
+    public void A_key_below_a_column_zero_comment_is_rewritten_in_place()
+    {
+        string previous = Head + "listener:\n  enabled: true\n# the pair\n"
+            + $"  local_certificate_thumbprint: \"{Mine}\"\n  peer_certificate_thumbprint: \"\"\n";
+
+        PairingPlan plan = Plan(previous, Theirs);
+
+        Assert.Single(plan.Yaml!.Split('\n'), line => line.Contains("peer_certificate", StringComparison.Ordinal));
+        Assert.True(ListenerPairing.Landed(plan, Yaml.Read(plan.Yaml).Document));
+    }
+
+    /// Keys commented out and a four-space section: the inserted lines must parse.
+    [Fact]
+    public void Inserted_keys_take_the_sections_indentation()
+    {
+        string previous = Head + "listener:\n    enabled: true\n    # peer_certificate_thumbprint: \"\"\n";
+
+        PairingPlan plan = Plan(previous, Theirs);
+
+        Assert.Contains($"\n    peer_certificate_thumbprint: \"{Theirs}\"", plan.Yaml, StringComparison.Ordinal);
+        Assert.Contains("    # peer_certificate_thumbprint", plan.Yaml, StringComparison.Ordinal);
+        Assert.True(ListenerPairing.Landed(plan, Yaml.Read(plan.Yaml!).Document));
+    }
+
+    [Fact]
+    public void A_trailing_comment_on_the_key_line_stays()
+    {
+        string previous = Head + "listener:\n  enabled: true\n"
+            + $"  peer_certificate_thumbprint: \"{Mine}\"  # the other host\n";
+
+        Assert.Contains(
+            $"  peer_certificate_thumbprint: \"{Theirs}\" # the other host",
+            Plan(previous, Theirs).Yaml,
+            StringComparison.Ordinal);
+    }
+
+    /// The certificate dialog's copy starts with an invisible left-to-right mark.
+    [Fact]
+    public void The_certificate_dialogs_invisible_mark_is_dropped() =>
+        Assert.Equal(Theirs, Plan(Samples.Read("ripcord.dr.yaml"), "\u200e" + Theirs.ToLowerInvariant()).Peer);
+
+    [Fact]
+    public void A_file_that_does_not_load_is_refused() =>
+        Assert.Contains("does not load", Plan("listener: [\n", Theirs).Refusal, StringComparison.Ordinal);
+
+    [Theory]
+    [InlineData("listener:\n  enabled: false\n", true)]
+    [InlineData("listener:\n  port: 7443\n", true)]
+    [InlineData("listener:\n  enabled: true\n", false)]
+    [InlineData("", false)]
+    public void A_listener_left_disabled_is_said(string section, bool said) =>
+        Assert.Equal(said, Plan(Head + section, Theirs).StaysDisabled);
+
+    [Fact]
+    public void The_file_as_it_was_has_not_landed()
+    {
+        string sample = Samples.Read("ripcord.dr.yaml");
+
+        Assert.False(ListenerPairing.Landed(Plan(sample, Theirs), Yaml.Read(sample).Document));
+    }
 }

@@ -1,9 +1,9 @@
-using Ripcord.Domain.Inventory;
-using Ripcord.Domain.Configuration;
 using System.Globalization;
 using System.Text;
 using Ripcord.Application.Deployment;
+using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Deployment;
+using Ripcord.Domain.Inventory;
 
 namespace Ripcord.Cli.Rendering;
 

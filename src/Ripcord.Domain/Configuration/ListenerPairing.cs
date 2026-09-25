@@ -1,13 +1,15 @@
+using System.Globalization;
 using Ripcord.Domain.Deployment;
 
 namespace Ripcord.Domain.Configuration;
 
 /// What `ripcord pair` would write: this host's certificate and the other host's, into the
-/// `listener` section. Either a new text or the reason there is none.
+/// `listener` section. Either a new text or the reason there is none. `StaysDisabled`: the
+/// section is there without `enabled: true`, which pairing leaves to the operator.
 public sealed record PairingPlan(
-    string? Local, string? Peer, string? Yaml, bool Changes, string? Refusal)
+    string? Local, string? Peer, string? Yaml, bool Changes, bool StaysDisabled, string? Refusal)
 {
-    public static PairingPlan Refused(string reason) => new(null, null, null, false, reason);
+    public static PairingPlan Refused(string reason) => new(null, null, null, false, false, reason);
 }
 
 /// Both thumbprints set from one typed value. The other host's is typed because only it can
@@ -27,12 +29,11 @@ public static class ListenerPairing
     public static string Key(string machineName, string thumbprint) =>
         $"{machineName}:{thumbprint.ToUpperInvariant()}";
 
-    /// `peerHostname` is what the file names as the other host, when it names one.
+    /// `document` is `previous` as the configuration store read it: null when it does not load.
     public static PairingPlan Plan(
         string? previous,
+        ConfigurationDocument? document,
         string machineName,
-        string? peerHostname,
-        string? configuredLocal,
         HostCertificates mine,
         string typedKey,
         string? typedLocal = null)
@@ -44,6 +45,14 @@ public static class ListenerPairing
         {
             return PairingPlan.Refused("there is no ripcord.yaml yet: run 'ripcord init' first");
         }
+
+        // The rewrite is textual; on a file that does not parse it could not be checked back.
+        if (document is null)
+        {
+            return PairingPlan.Refused("ripcord.yaml does not load: fix the error below first");
+        }
+
+        string? peerHostname = document.Peer?.Hostname;
 
         int colon = typedKey.LastIndexOf(':');
         string? keyHost = colon > 0 ? typedKey[..colon].Trim() : null;
@@ -79,7 +88,7 @@ public static class ListenerPairing
             return PairingPlan.Refused($"LocalMachine\\My could not be read: {unreadable}");
         }
 
-        if (Local(mine, Thumbprint(configuredLocal), typedLocal) is not { } local)
+        if (Local(mine, Thumbprint(document.Listener?.LocalCertificateThumbprint), typedLocal) is not { } local)
         {
             return PairingPlan.Refused(LocalRefusal(mine, typedLocal));
         }
@@ -96,7 +105,19 @@ public static class ListenerPairing
                 "the listener section is written on one line: edit its two thumbprints by hand");
         }
 
-        return new PairingPlan(local, peer, yaml, yaml != previous, null);
+        bool staysDisabled = Header(previous) >= 0 && document.Listener?.Enabled != true;
+
+        return new PairingPlan(local, peer, yaml, yaml != previous, staysDisabled, null);
+    }
+
+    /// Read back after writing: the text rewrite checked by the parser every command uses.
+    public static bool Landed(PairingPlan plan, ConfigurationDocument? written)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+
+        return written?.Listener is { } listener
+            && Thumbprint(listener.LocalCertificateThumbprint) == plan.Local
+            && Thumbprint(listener.PeerCertificateThumbprint) == plan.Peer;
     }
 
     /// The one already configured if it is still usable, else the only one there is. Two or
@@ -129,10 +150,14 @@ public static class ListenerPairing
                 + "choose one with --local <thumbprint>, as 'ripcord service' lists them",
         };
 
-    /// The same normalisation as the validator: spaces out, upper case.
+    /// The validator's normalisation, spaces out and upper case, plus the invisible left-to-right
+    /// mark the Windows certificate dialog puts in front of a copied thumbprint.
     private static string? Thumbprint(string? value)
     {
-        string normalised = (value ?? "").Replace(" ", "", StringComparison.Ordinal).Trim().ToUpperInvariant();
+        string normalised = new string(
+            [.. (value ?? "").Where(character => !char.IsWhiteSpace(character)
+                && CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.Format)])
+            .ToUpperInvariant();
 
         return normalised.Length == 40 && normalised.All(Uri.IsHexDigit) ? normalised : null;
     }
@@ -144,7 +169,7 @@ public static class ListenerPairing
         string newline = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
         List<string> lines = [.. text.Split('\n').Select(line => line.TrimEnd('\r'))];
 
-        int header = lines.FindIndex(line => line.StartsWith("listener:", StringComparison.Ordinal));
+        int header = Header(text);
 
         if (header < 0)
         {
@@ -175,10 +200,18 @@ public static class ListenerPairing
 
         int end = header + 1;
 
-        while (end < lines.Count && (lines[end].Length == 0 || char.IsWhiteSpace(lines[end][0])))
+        // A comment at column 0 does not end a YAML block; only a key there does.
+        while (end < lines.Count
+            && (lines[end].Length == 0 || char.IsWhiteSpace(lines[end][0]) || lines[end][0] == '#'))
         {
             end++;
         }
+
+        // Inserted keys take the section's own indentation: two spaces under four is a parse error.
+        string indent = lines[(header + 1)..end]
+            .Where(line => line.Trim().Length > 0 && !line.TrimStart().StartsWith('#'))
+            .Select(line => line[..(line.Length - line.TrimStart().Length)])
+            .FirstOrDefault(found => found.Length > 0) ?? "  ";
 
         bool localSet = Set(lines, header + 1, end, LocalKey, local);
         bool peerSet = Set(lines, header + 1, end, PeerKey, peer);
@@ -187,12 +220,12 @@ public static class ListenerPairing
 
         if (!localSet)
         {
-            missing.Add($"  {LocalKey}: \"{local}\"");
+            missing.Add($"{indent}{LocalKey}: \"{local}\"");
         }
 
         if (!peerSet)
         {
-            missing.Add($"  {PeerKey}: \"{peer}\"");
+            missing.Add($"{indent}{PeerKey}: \"{peer}\"");
         }
 
         lines.InsertRange(header + 1, missing);
@@ -201,6 +234,10 @@ public static class ListenerPairing
         return string.Join(newline, lines);
     }
 
+    private static int Header(string text) =>
+        text.Split('\n').ToList().FindIndex(line => line.StartsWith("listener:", StringComparison.Ordinal));
+
+    /// A trailing comment on the key's line is the operator's too; a thumbprint holds no `#`.
     private static bool Set(List<string> lines, int start, int end, string key, string value)
     {
         for (int index = start; index < end; index++)
@@ -210,7 +247,9 @@ public static class ListenerPairing
             if (trimmed.StartsWith(key + ":", StringComparison.Ordinal))
             {
                 string indent = lines[index][..(lines[index].Length - trimmed.Length)];
-                lines[index] = $"{indent}{key}: \"{value}\"";
+                int comment = trimmed.IndexOf(" #", StringComparison.Ordinal);
+                string tail = comment < 0 ? "" : trimmed[comment..];
+                lines[index] = $"{indent}{key}: \"{value}\"{tail}";
                 return true;
             }
         }
