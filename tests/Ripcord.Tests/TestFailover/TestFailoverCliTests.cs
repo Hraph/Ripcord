@@ -156,6 +156,9 @@ public class TestFailoverCliTests
 
         Assert.Equal(ExitCode.Refused, run.Code);
         Assert.Contains("unattended_test_failover_vms", run.Error);
+        Assert.All(
+            run.Error.Split(Environment.NewLine),
+            line => Assert.True(line.Length <= Ripcord.Cli.Rendering.StatusRenderer.Width, line));
     }
 
     /// Run on the host that holds the primary copies there is nothing to test, and the

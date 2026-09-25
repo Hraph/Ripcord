@@ -426,7 +426,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         if (written.FailureMessage is { } failure)
         {
-            error.WriteLine($"ripcord: {failure}");
+            WriteWrapped(error, failure);
 
             error.WriteLine(written.Kept is { } moved
                 ? $"  the previous configuration is at {moved}"
@@ -1225,8 +1225,8 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         if (outcome.Code == ExitCode.Refused)
         {
-            error.WriteLine(
-                $"ripcord: {swept.VmName} refused, nothing was changed: {outcome.FailureMessage}");
+            WriteWrapped(
+                error, $"{swept.VmName} refused, nothing was changed: {outcome.FailureMessage}");
 
             foreach (Finding finding in outcome.Refusal?.Unevaluated ?? [])
             {
@@ -1489,7 +1489,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         if (outcome.Code == ExitCode.Refused)
         {
-            error.WriteLine($"ripcord: refused, nothing was changed: {outcome.FailureMessage}");
+            WriteWrapped(error, $"refused, nothing was changed: {outcome.FailureMessage}");
             return outcome.Code;
         }
 
@@ -1626,7 +1626,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
     {
         if (outcome.FailureMessage is { } failure)
         {
-            error.WriteLine($"ripcord: cannot inspect this host: {failure}");
+            WriteWrapped(error, $"cannot inspect this host: {failure}");
             return;
         }
 
@@ -1670,7 +1670,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
     }
 
     /// A reason from Windows or the network can run to 150 columns on a 75-column console.
-    private static void WriteWrapped(TextWriter error, string failure)
+    private static IEnumerable<string> Wrapped(string failure)
     {
         const string Prefix = "ripcord: ";
         string indent = new(' ', Prefix.Length);
@@ -1680,8 +1680,16 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         foreach (string line in Rendering.Layout.Wrap(flat, Rendering.Layout.Width - Prefix.Length))
         {
-            error.WriteLine((first ? Prefix : indent) + line);
+            yield return (first ? Prefix : indent) + line;
             first = false;
+        }
+    }
+
+    private static void WriteWrapped(TextWriter error, string failure)
+    {
+        foreach (string line in Wrapped(failure))
+        {
+            error.WriteLine(line);
         }
     }
 
@@ -1934,7 +1942,11 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         if (applied.Message is { } message)
         {
-            this.Refuse(error, $"ripcord: {message}");
+            foreach (string line in Wrapped(message))
+            {
+                this.Refuse(error, line);
+            }
+
             return applied.Code;
         }
 

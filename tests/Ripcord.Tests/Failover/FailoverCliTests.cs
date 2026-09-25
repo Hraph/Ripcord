@@ -380,7 +380,9 @@ public class FailoverCliTests
 
         Assert.Equal(ExitCode.Refused, run.Code);
         Assert.Contains(
-            "not running the same Ripcord", run.Error, StringComparison.Ordinal);
+            "not running the same Ripcord",
+            ConsoleText.Unwrapped(run.Error),
+            StringComparison.Ordinal);
     }
 
     private sealed record CliRun(ExitCode Code, string Output, string Error);

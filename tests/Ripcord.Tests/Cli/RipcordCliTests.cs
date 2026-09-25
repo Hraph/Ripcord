@@ -211,8 +211,8 @@ public class RipcordCliTests
             provider: FakeHypervProvider.FailingLocally("the WMI service is not running"));
 
         Assert.Equal(ExitCode.LocalAccessFailure, run.Code);
-        Assert.Contains("cannot read the local Hyper-V state", Unwrapped(run.Error), StringComparison.Ordinal);
-        Assert.Contains("the WMI service is not running", Unwrapped(run.Error), StringComparison.Ordinal);
+        Assert.Contains("cannot read the local Hyper-V state", ConsoleText.Unwrapped(run.Error), StringComparison.Ordinal);
+        Assert.Contains("the WMI service is not running", ConsoleText.Unwrapped(run.Error), StringComparison.Ordinal);
     }
 
     /// A refusal is wrapped at 75 columns, whatever the length of the reason inside it.
@@ -229,9 +229,6 @@ public class RipcordCliTests
             run.Error.Split(Environment.NewLine),
             line => Assert.True(line.Length <= Ripcord.Cli.Rendering.StatusRenderer.Width, line));
     }
-
-    private static string Unwrapped(string text) =>
-        string.Join(' ', text.Split((char[])[' ', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
 
     [Fact]
     public async Task The_usage_names_check_and_its_exit_code()
@@ -1144,7 +1141,7 @@ public class RipcordCliTests
         CliRun run = await Run(["check-update"]);
 
         Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
-        Assert.Contains("updates.check: true", Unwrapped(run.Error), StringComparison.Ordinal);
+        Assert.Contains("updates.check: true", ConsoleText.Unwrapped(run.Error), StringComparison.Ordinal);
         Assert.DoesNotContain("Hyper-V", run.Error, StringComparison.Ordinal);
     }
 

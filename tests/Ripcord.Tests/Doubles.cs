@@ -256,3 +256,10 @@ public static class TestPorts
             new SilentDiagnosticLog(),
             new NoLogs());
 }
+
+/// The console wraps at 75 columns, so a sentence is asserted on with its line breaks undone.
+public static class ConsoleText
+{
+    public static string Unwrapped(string text) =>
+        string.Join(' ', text.Split((char[])[' ', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
+}
