@@ -22,6 +22,8 @@ RIPCORD LISTENER
     service    running     C:\Program Files\Ripcord\ripcord.exe serve
     firewall   inbound TCP 7443 from 192.0.2.11
     snapshot   readable by NT SERVICE\ripcord
+    logs       writable by NT SERVICE\ripcord
+               C:\Program Files\Ripcord\logs
 
   It matches the configuration.
 ```
@@ -42,10 +44,17 @@ correct host does nothing. A moved binary, a changed port or a changed peer addr
 update rather than a teardown. `remove` is the same list read backwards — and it leaves the
 snapshot file alone, because an uninstaller that deletes data is one people are afraid to run.
 
-Four steps at most, in this order: create or repoint the service, open the port to the peer
-only, grant the service account read access to the folder holding the snapshot, **and start the
-service last** — after the rule that lets the peer in and the access it needs to the file it
-serves.
+Six steps at most, in this order: create the service, open the port to the peer only, grant
+the service account read access to the folder holding the snapshot, create `logs` beside the
+binary and grant the service account **modify** access to it, register the `ripcord` source in
+the Application event log, **and start or repoint the service last** — after the rule that lets
+the peer in and the access it needs to the file it serves and the folder it logs to.
+
+The logs folder is the only place the service account may write. Modify rather than write,
+because pruning an old log deletes it; on that folder only, never on the install folder or the
+binary. The event source is where the listener reports a start it cannot log to its file: a
+virtual account cannot write to the event log under a source nobody registered. `remove`
+revokes the folder access and removes the source, and leaves the logs where they are.
 
 The folder, not the file: `ripcord status` rewrites the snapshot by moving a new file over the
 old one, and a move brings the new file's access list with it, so an entry set on the file
@@ -54,6 +63,30 @@ fresh host nothing has written a snapshot, and `icacls` cannot grant access to a
 not exist.
 
 Nothing happens until the node name is typed in full.
+
+## When it does not start
+
+`service install` or `restart` whose start step fails ends with *Run 'ripcord service' to see
+why it did not start*. Then, in order:
+
+1. `ripcord service` — installed, running, and whether the service account can write its logs.
+2. The day's log, `logs\listener-YYYY-MM-DD.log` (UTC date), beside the binary.
+3. The listener's own report when it could not open that file:
+
+   ```powershell
+   Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='ripcord'} -MaxEvents 5 | Format-List TimeCreated,Message
+   ```
+
+4. A crash before it logged anything at all:
+
+   ```powershell
+   Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='.NET Runtime'; Id=1026} -MaxEvents 3 | Format-List TimeCreated,Message
+   ```
+
+`sc.exe query ripcord` shows the code the service stopped with as `WIN32_EXIT_CODE`. `0x2000000N`
+is Ripcord's own exit code N (see [exit codes](README.md#exit-codes)): `0x20000003`
+is a local access failure, `0x20000002` a configuration that will not load. Any other value
+was set by Windows, not by Ripcord — 2 is a missing binary, 1067 a crash.
 
 ## `restart` — after every configuration edit
 

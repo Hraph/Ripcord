@@ -48,4 +48,24 @@ public class DocumentedNamesTests
             named,
             name => Assert.Equal(DeploymentPlan.ServiceName, name, ignoreCase: true));
     }
+
+    /// The event log source the service page tells an operator to filter on is the one
+    /// `service install` registers; the runtime's own source is the only other one named.
+    [Fact]
+    public void The_documented_event_source_is_the_one_that_is_registered()
+    {
+        string text = File.ReadAllText(
+            Path.Combine(RepositoryLayout.Root, "docs", "commands", "service.md"));
+
+        string[] sources =
+        [
+            .. Regex
+                .Matches(text, @"ProviderName='([^']+)'")
+                .Select(match => match.Groups[1].Value)
+                .Where(source => source != ".NET Runtime"),
+        ];
+
+        Assert.NotEmpty(sources);
+        Assert.All(sources, source => Assert.Equal(DeploymentPlan.EventSource, source));
+    }
 }

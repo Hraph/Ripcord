@@ -36,8 +36,12 @@ never stops the loop.
 binary answers it and runs the same verb until `Stop-Service`; started by a person it behaves
 like any other command. A verb that returns on its own — the listener disabled in the
 configuration, a file that will not load — **stops** the service rather than leaving it
-reported as running with nothing behind it, exits with the code it decided, and writes the
-reason to `listener.log` beside the binary. A service has no console; without that file the
-reason would go nowhere.
+reported as running with nothing behind it, reports the code it decided to Windows, and writes
+the reason to `logs\listener-YYYY-MM-DD.log` beside the binary (UTC date, appended, a banner at
+each start). A service has no console; without that file the reason would go nowhere.
+
+The file is opened only after the service has answered Windows, so a log it cannot write
+never turns into a 1053. If it cannot be opened, the service writes why to the Application
+event log under the source `ripcord` and stops. See [`ripcord service`](service.md#when-it-does-not-start).
 
 Install it with [`ripcord service install`](service.md).

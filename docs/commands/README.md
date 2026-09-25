@@ -54,7 +54,7 @@ that carry the meaning, and colour only makes them easier to find. So the block 
 identically without it, which is what it is:
 
 - redirected to a file — `ripcord status > state.txt`;
-- written by the listener service into `listener.log`;
+- written by the listener service into `logs\listener-YYYY-MM-DD.log`;
 - on a console whose `SetConsoleMode` refuses virtual-terminal processing;
 - with `NO_COLOR` set to anything, or `--no-color` on the command line.
 

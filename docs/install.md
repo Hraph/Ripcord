@@ -42,7 +42,7 @@ stick is not more trusted than a download.
 | Switch | |
 |---|---|
 | `-Role primary\|dr` | Which sample configuration to place. Asked for if omitted. |
-| `-Path <dir>` | Somewhere other than `C:\Program Files\Ripcord`. |
+| `-Path <dir>` | Somewhere other than `C:\Program Files\Ripcord`. The `logs` folder moves with it. |
 | `-Version v0.1.0` | A particular release rather than the latest. |
 | `-CheckTask` | Create the scheduled `ripcord check --notify` task (see [alerting](alerting.md)). |
 | `-Shortcut` | A Start Menu shortcut to the dashboard page. |
@@ -53,6 +53,10 @@ changes nothing until [`ripcord service restart`](commands/service.md) — the r
 configuration it was started with, and the peer sees no difference. `ripcord status` and
 `ripcord check`, being commands rather than the service, read the file every time they run, so
 the two can disagree until the service is restarted.
+
+The listener service runs as `NT SERVICE\ripcord` and may write to one place only:
+`logs\` beside the binary, which [`ripcord service install`](commands/service.md) creates and
+grants it. Nothing else in the install folder is writable by it, the binary least of all.
 
 Installing is not configuring. `node.hostname`, the peer address and both certificate
 thumbprints are per-host, and `ripcord status` refuses a file that names another machine — by

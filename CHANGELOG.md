@@ -25,6 +25,14 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ### Fixed
 
+- **The listener service died before it answered Windows, so `sc start` failed with 1053
+  and nothing anywhere said why.** It opened `listener.log` beside the binary before the
+  handshake, and the service account cannot write to `C:\Program Files\Ripcord`. The log is
+  now opened after the handshake, in a `logs` folder `service install` grants the account
+  modify access to — that folder only, never the install folder or the binary. When the file
+  still cannot be opened, the service reports why in the Application event log and stops.
+- **`service install` whose start fails says to run `ripcord service`**, and `ripcord service`
+  now says whether the service account can write its logs folder.
 - **The listener was granted access to the snapshot *file*, which survived one write.**
   `ripcord status` rewrites the snapshot by moving a new file over the old one, and a move
   carries the new file's access list with it — so the entry set at deployment was gone after
@@ -113,12 +121,16 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
   reads as a network fault rather than as a service somebody has to start. The running state is
   read from `Win32_Service.Started`, a boolean, rather than from `sc query`, whose words are in
   the language of the host.
-- A service that stops because its own verb failed now exits with that code, and writes what
-  happened to `listener.log` beside the binary. It exited 0 whatever it decided, so Windows
-  could not tell a configuration that will never load from an operator stopping the service on
-  purpose — no recovery policy fires on a clean stop — and a service has no console, so the
-  reason went nowhere at all. Truncated at each start, so the file holds the run somebody is
-  asking about.
+- A service that stops because its own verb failed now reports that code to Windows, and
+  writes what happened to `logs\listener-YYYY-MM-DD.log`. It reported 0 whatever it decided, so
+  Windows could not tell a configuration that will never load from an operator stopping the
+  service on purpose, and a service has no console, so the reason went nowhere at all. A .NET
+  service can only set the Win32 exit code, so Ripcord's code N is carried as `0x2000000N` —
+  the bit Windows reserves for applications, so 2 is never mistaken for "file not found".
+  Appended, with a banner at each start naming the version and the configuration.
+- `service install` has two more steps: create `logs` beside the binary and grant
+  `NT SERVICE\ripcord` modify access to it, and register the `ripcord` source in the
+  Application event log. `service remove` undoes both and leaves the logs in place.
 - Creating the service and starting it are two steps of the deployment plan rather than one
   action doing both. A `sc create` that succeeded followed by a `sc start` that timed out used
   to report that nothing had been changed, on a host that then held a registered service.
