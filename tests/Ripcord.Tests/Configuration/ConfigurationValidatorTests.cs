@@ -138,12 +138,27 @@ public class ConfigurationValidatorTests
     }
 
     [Fact]
-    public void A_configuration_with_no_vms_is_rejected()
+    public void A_configuration_without_a_vms_key_is_rejected()
+    {
+        ConfigurationDocument document = Valid();
+        document.Vms = null;
+
+        AssertError(Validate(document), "vms");
+    }
+
+    /// A host with no VM yet: `ripcord init` writes `vms: []` on purpose.
+    [Fact]
+    public void An_empty_vms_list_is_accepted()
     {
         ConfigurationDocument document = Valid();
         document.Vms = [];
+        document.Checks = null;
+        document.Replication!.UnattendedTestFailoverVms = null;
 
-        AssertError(Validate(document), "vms");
+        ConfigurationValidation validation = Validate(document);
+
+        Assert.Empty(validation.Errors);
+        Assert.Empty(validation.Configuration!.Vms);
     }
 
     /// Optional and unused at this milestone (decision D5) — but a value that is present and

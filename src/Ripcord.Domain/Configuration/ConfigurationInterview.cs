@@ -1,19 +1,53 @@
 using System.Globalization;
 using System.Net;
 using Ripcord.Domain.Inventory;
+using Ripcord.Domain.Replication;
 
 namespace Ripcord.Domain.Configuration;
 
 /// What `ripcord init` can see of the host before there is a configuration to read.
 ///
-/// Both lists may be empty, and that is not an error: a host whose Hyper-V cannot be reached
-/// still has to be able to complete the interview, by typing what the lists would have offered.
+/// `Read` tells a host with no VM apart from a host whose Hyper-V could not be read: both have
+/// an empty list, but only the second one is completed by typing names.
 public sealed record InterviewFacts(
     string MachineName,
     IReadOnlyList<HostSwitch> Switches,
-    IReadOnlyList<InterviewVm> Vms)
+    IReadOnlyList<InterviewVm> Vms,
+    bool Read = true)
 {
-    public static InterviewFacts Unread(string machineName) => new(machineName, [], []);
+    public static InterviewFacts Unread(string machineName) => new(machineName, [], [], false);
+
+    /// Only what is really on this host. A test-failover copy is Hyper-V's own temporary VM,
+    /// never one to declare, and a name reported twice is offered once so `all` cannot write
+    /// the same VM twice.
+    public static InterviewFacts From(
+        string machineName, IReadOnlyList<HostSwitch> switches, HostState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+
+        if (!state.IsReachable)
+        {
+            return Unread(machineName);
+        }
+
+        List<InterviewVm> vms = [];
+
+        foreach (VmReplicationState vm in state.Vms)
+        {
+            if (vm.Role == ReplicationRole.TestReplica
+                || vms.Exists(known => string.Equals(known.Name, vm.Name, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            vms.Add(new InterviewVm(
+                vm.Name,
+                vm.Role != ReplicationRole.None,
+                vm.PowerState == VmPowerState.Running));
+        }
+
+        return new InterviewFacts(machineName, switches, vms);
+    }
 }
 
 /// A VM as the interview offers it: the name, and the two facts that help somebody recognise
@@ -69,6 +103,8 @@ public sealed record InterviewQuestion(
 public sealed class ConfigurationInterview
 {
     private const string All = "all";
+
+    private const string None = "none";
 
     /// What the interview is asking about. A run of questions is headed once rather than each
     /// prompt carrying its own context, which is what made twelve VMs read as one long wall.
@@ -196,36 +232,24 @@ public sealed class ConfigurationInterview
             [.. this.facts.Switches.Select(Described)],
             this.facts.Switches.Count > 0
                 ? []
-                : ["This host's switches could not be read, so type the name."],
+                : [this.facts.Read
+                    ? "This host has no virtual switch, so type the name."
+                    : "This host's switches could not be read, so type the name."],
             Groups.Replication,
             this.facts.Switches.Count > 0));
 
-        bool listed = this.OfferedVms().Count > 0;
-
-        // The question has to match what is on the screen. It used to offer `all` whatever was
-        // above it, so on a host whose VMs could not be read it proposed an answer and then
-        // refused it — which is the tool arguing with itself in front of the operator.
-        steps.Add(new InterviewQuestion(
-            "vms",
-            listed
-                ? "Which ones matter? Numbers separated by commas, or 'all'"
-                : "Name the ones that matter, separated by commas",
-            this.SeededVms(),
-            [.. this.OfferedVms().Select(vm => vm.Described)],
-            listed
-                ? []
-                : ["This host's VMs could not be read, so there is nothing to pick from."],
-            Groups.Vms,
-            listed));
+        steps.Add(this.VmsQuestion());
 
         if (this.Missing(steps, out incomplete))
         {
             return incomplete;
         }
 
-        int width = this.ChosenVms().Max(name => name.Length);
+        // Nothing to ask per VM on a host that has none.
+        IReadOnlyList<string> chosen = this.ChosenVms();
+        int width = chosen.Select(name => name.Length).DefaultIfEmpty(0).Max();
 
-        foreach ((string name, int index) in this.ChosenVms().Select((name, index) => (name, index)))
+        foreach ((string name, int index) in chosen.Select((name, index) => (name, index)))
         {
             // The explanation belongs to the group, not to every VM in it: repeated twelve
             // times it stops being read, which is the same as not being there.
@@ -390,7 +414,14 @@ public sealed class ConfigurationInterview
 
     private string? Vms(InterviewQuestion question, string given)
     {
-        List<InterviewVm> offered = this.OfferedVms();
+        IReadOnlyList<InterviewVm> offered = this.facts.Vms;
+
+        if (this.HasNoVm)
+        {
+            return string.Equals(given, None, StringComparison.OrdinalIgnoreCase)
+                ? this.Store(question, None, "")
+                : "this host has no VM to choose.";
+        }
 
         if (string.Equals(given, All, StringComparison.OrdinalIgnoreCase))
         {
@@ -417,7 +448,7 @@ public sealed class ConfigurationInterview
 
         return chosen.Count > 0
             ? this.Store(question, string.Join(",", chosen), "")
-            : "name at least one VM: a configuration with none is refused.";
+            : "name at least one VM.";
     }
 
     /// The six that have sensible figures. Bounds match the validator's, so a number taken
@@ -461,30 +492,112 @@ public sealed class ConfigurationInterview
             : null;
     }
 
-    private List<InterviewVm> OfferedVms()
-    {
-        List<InterviewVm> offered = [.. this.facts.Vms];
+    /// Read, and nothing there. Distinct from unread, where the names are typed instead.
+    private bool HasNoVm => this.facts is { Read: true, Vms.Count: 0 };
 
-        // A VM named in the file but absent from the host still has to be offerable, or a
-        // re-run on a host whose Hyper-V is unreadable would quietly drop it.
-        foreach (string name in this.seed?.Vms?.Select(vm => vm.Name).OfType<string>() ?? [])
+    /// Three shapes, because what is on the screen has to match what is accepted: a list read
+    /// off the host, a host read with no VM on it, or a host whose Hyper-V could not be read.
+    /// The file's own VM names are never offered: they may be the shipped sample's
+    /// placeholders, and a name offered here is a name written into the file.
+    private InterviewQuestion VmsQuestion()
+    {
+        if (!this.facts.Read)
         {
-            if (!offered.Exists(vm => string.Equals(vm.Name, name, StringComparison.OrdinalIgnoreCase)))
-            {
-                offered.Add(new InterviewVm(name, false, false));
-            }
+            return new InterviewQuestion(
+                "vms",
+                "Name the ones that matter, separated by commas",
+                null,
+                [],
+                ["This host's VMs could not be read, so type their names.",
+                 "What the file said about a VM is kept for any name typed again."],
+                Groups.Vms);
         }
 
-        return offered;
+        List<string> dropped = [.. this.DroppedVms().Select(name => $"  - {name}")];
+
+        if (dropped.Count > 0)
+        {
+            dropped.Insert(0, "No longer on this host, so dropped from the file:");
+        }
+
+        if (this.HasNoVm)
+        {
+            return new InterviewQuestion(
+                "vms",
+                "Continue with none",
+                None,
+                [],
+                [.. dropped,
+                 "This host has no virtual machine, so the file declares none.",
+                 "Run ripcord init again once they exist."],
+                Groups.Vms);
+        }
+
+        return new InterviewQuestion(
+            "vms",
+            "Which ones matter? Numbers separated by commas, or 'all'",
+            this.SeededVms(),
+            [.. this.facts.Vms.Select(vm => vm.Described)],
+            dropped,
+            Groups.Vms,
+            true);
     }
+
+    /// The file's VMs this host does not have. Nothing counts as dropped on an unread host:
+    /// there is no list to say a name is missing from.
+    private IEnumerable<string> DroppedVms() =>
+        this.facts.Read
+            ? this.SeededNames().Where(name => this.OnHost(name) is null)
+            : [];
+
+    private IEnumerable<string> SeededNames() =>
+        this.seed?.Vms?.Select(vm => vm.Name?.Trim()).OfType<string>().Where(name => name.Length > 0)
+        ?? [];
+
+    private string? OnHost(string name) =>
+        this.facts.Vms.FirstOrDefault(
+            vm => string.Equals(vm.Name, name, StringComparison.OrdinalIgnoreCase))?.Name;
 
     private IReadOnlyList<string> ChosenVms()
     {
+        if (this.HasNoVm)
+        {
+            return [];
+        }
+
         string stored = this.answers["vms"];
 
         return stored == All
-            ? [.. this.OfferedVms().Select(vm => vm.Name)]
+            ? [.. this.facts.Vms.Select(vm => vm.Name)]
             : [.. stored.Split(',', StringSplitOptions.RemoveEmptyEntries)];
+    }
+
+    /// The `checks.acknowledgements` entries naming a VM the new file no longer declares.
+    /// That section is carried as the original lines, so they cannot be dropped here, and the
+    /// validator refuses a file that keeps them: the operator has to be told before saying yes.
+    public IReadOnlyList<string> StaleAcknowledgements
+    {
+        get
+        {
+            if (this.Draft is not { } draft
+                || this.seed?.Checks?.Acknowledgements is not { } entries)
+            {
+                return [];
+            }
+
+            List<string> stale = [];
+
+            for (int index = 0; index < entries.Count; index++)
+            {
+                if (entries[index]?.Vm?.Trim() is { Length: > 0 } vm
+                    && !draft.Vms.Any(kept => string.Equals(kept.Name, vm, StringComparison.OrdinalIgnoreCase)))
+                {
+                    stale.Add($"checks.acknowledgements[{index}]: {vm} is no longer declared");
+                }
+            }
+
+            return stale;
+        }
     }
 
     /// A default that would be refused is not offered. Running this against the *other* host's
@@ -503,15 +616,12 @@ public sealed class ConfigurationInterview
             : null;
 
     /// Re-running with the same VMs must not mean retyping them, so the default is the file's
-    /// own list — or everything, on a host being set up for the first time.
+    /// own list, kept to the VMs still on this host — or everything, when none of them is.
     private string? SeededVms()
     {
-        if (this.seed?.Vms is not { Count: > 0 } declared)
-        {
-            return this.OfferedVms().Count > 0 ? All : null;
-        }
+        List<string> kept = [.. this.SeededNames().Select(this.OnHost).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase)];
 
-        return string.Join(",", declared.Select(vm => vm.Name).OfType<string>());
+        return kept.Count > 0 ? string.Join(",", kept) : All;
     }
 
     private string? SeededPriority(string name) => this.SeededVm(name)?.Priority;
@@ -612,15 +722,28 @@ public sealed class ConfigurationInterview
 
     /// Same reasoning one level up: the parts of `replication` and `storage` no question
     /// covers are the file's, not the interview's, and a rewrite has to give them back.
-    private CarriedSettings Carried() =>
-        this.seed is null
-            ? CarriedSettings.None
-            : new CarriedSettings(
-                this.seed.Replication?.HealthWarningAfterSec,
-                this.seed.Replication?.TestFailoverSwitch,
-                this.seed.Replication?.TestFailoverOrphanAfterHours,
-                this.seed.Replication?.UnattendedTestFailoverVms,
-                this.seed.Storage?.CheckBitlockerAutounlock);
+    ///
+    /// The unattended authorisation is kept only for VMs still declared: the validator refuses
+    /// an entry naming any other.
+    private CarriedSettings Carried()
+    {
+        if (this.seed is null)
+        {
+            return CarriedSettings.None;
+        }
+
+        IReadOnlyList<string> chosen = this.ChosenVms();
+
+        return new CarriedSettings(
+            this.seed.Replication?.HealthWarningAfterSec,
+            this.seed.Replication?.TestFailoverSwitch,
+            this.seed.Replication?.TestFailoverOrphanAfterHours,
+            this.seed.Replication?.UnattendedTestFailoverVms is { } unattended
+                ? [.. unattended.Where(name => name is not null
+                    && chosen.Contains(name.Trim(), StringComparer.OrdinalIgnoreCase))]
+                : null,
+            this.seed.Storage?.CheckBitlockerAutounlock);
+    }
 
     private sealed record InterviewPlan(IReadOnlyList<InterviewQuestion> Steps, bool Complete);
 }

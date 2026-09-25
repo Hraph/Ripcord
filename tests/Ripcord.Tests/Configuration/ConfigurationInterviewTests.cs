@@ -1,6 +1,7 @@
 using Ripcord.Adapters.Yaml;
 using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Inventory;
+using Ripcord.Domain.Replication;
 using Ripcord.Ports.Configuration;
 
 namespace Ripcord.Tests.Configuration;
@@ -160,7 +161,14 @@ public class ConfigurationInterviewTests
             Answer(
                 [.. Enumerable.Repeat("", 40)],
                 seed,
-                InterviewFacts.Unread("HV-PRIMARY-01")),
+                new InterviewFacts(
+                    "HV-PRIMARY-01",
+                    [],
+                    [
+                        new InterviewVm("VM-DC-01", true, true),
+                        new InterviewVm("VM-LEGACY-01", true, true),
+                        new InterviewVm("VM-BACKUP-01", false, true),
+                    ])),
             sample);
 
         Assert.Contains("failover: manual", rewritten, StringComparison.Ordinal);
@@ -372,6 +380,243 @@ public class ConfigurationInterviewTests
         Assert.Equal(
             "peer.hostname",
             ConfigurationInterview.Start(Host, role: ExpectedRole.Replica).Question!.Key);
+
+    /// Decision 3: the list is what Hyper-V reports, never what the previous file said.
+    [Fact]
+    public void A_vm_in_the_file_but_not_on_the_host_is_neither_offered_nor_kept()
+    {
+        ConfigurationDocument seed = SeedWith("VM-DC-01", "VM-GONE-01");
+        InterviewFacts facts = new(
+            Machine,
+            [new HostSwitch("vSwitch-LAN", SwitchConnectivity.External)],
+            [new InterviewVm("VM-DC-01", true, true), new InterviewVm("VM-APP-01", true, true)]);
+
+        InterviewQuestion vms = QuestionOf("vms", facts, seed);
+
+        Assert.DoesNotContain(vms.Choices, choice => choice.Contains("VM-GONE-01", StringComparison.Ordinal));
+        Assert.Equal(
+            ["No longer on this host, so dropped from the file:", "  - VM-GONE-01"],
+            vms.Explanation);
+        Assert.Equal("VM-DC-01", vms.Default);
+
+        ConfigurationDraft draft = Answer(
+            ["primary", "HV-PRIMARY-01", "192.0.2.10", "1", "", "P1", "y", "y"], seed, facts);
+
+        Assert.Equal("VM-DC-01", Assert.Single(draft.Vms).Name);
+    }
+
+    /// The field report: `install.ps1` left the sample on the host, and init offered its
+    /// placeholders beside the real VMs and kept them on Enter.
+    [Fact]
+    public void The_shipped_samples_vms_never_reach_a_host_that_does_not_have_them()
+    {
+        string sample = File.ReadAllText(
+            Path.Combine(Architecture.RepositoryLayout.Root, "config", "ripcord.primary.yaml"));
+        ConfigurationDocument? seed = new YamlConfigStore().Read(WrittenTo(sample)).Document;
+        InterviewFacts facts = new(
+            "HV-PRIMARY-01",
+            [],
+            [new InterviewVm("SR-DC", true, true), new InterviewVm("SR-APP", true, true)]);
+
+        InterviewQuestion vms = QuestionOf("vms", facts, seed);
+        string rewritten = ConfigurationTemplate.Render(
+            Answer(["", "", "", "", "", "P1", "", "P2", "", ""], seed, facts), sample);
+
+        Assert.Equal("all", vms.Default);
+        Assert.Equal(["SR-DC  (replicated, running)", "SR-APP  (replicated, running)"], vms.Choices);
+
+        // Comments aside, only the carried `checks` block may still name one, which is what
+        // the warning before writing is for.
+        string owned = string.Join(
+            "\n",
+            rewritten[..rewritten.IndexOf("\nchecks:", StringComparison.Ordinal)]
+                .Split('\n')
+                .Where(line => !line.TrimStart().StartsWith('#')));
+
+        foreach (string placeholder in new[] { "VM-DC-01", "VM-LEGACY-01", "VM-BACKUP-01" })
+        {
+            Assert.DoesNotContain(placeholder, owned, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void A_host_with_no_vm_writes_an_empty_list_and_asks_nothing_per_vm()
+    {
+        InterviewFacts facts = new(Machine, [new HostSwitch("vSwitch-LAN", SwitchConnectivity.External)], []);
+        ConfigurationInterview interview = ConfigurationInterview.Start(facts);
+        List<InterviewQuestion> asked = [];
+
+        foreach (string answer in new[] { "primary", "HV-PRIMARY-01", "192.0.2.10", "1", "", "y" })
+        {
+            asked.Add(interview.Question!);
+            interview = interview.Answer(answer);
+        }
+
+        Assert.Null(interview.Question);
+        Assert.DoesNotContain(asked, question => question.Key.Contains(':', StringComparison.Ordinal));
+
+        InterviewQuestion vms = asked.Single(question => question.Key == "vms");
+        Assert.Equal("none", vms.Default);
+        Assert.False(vms.Listed);
+        Assert.Contains("This host has no virtual machine, so the file declares none.", vms.Explanation);
+
+        string yaml = ConfigurationTemplate.Render(interview.Draft!);
+        Assert.Contains("vms: []", yaml, StringComparison.Ordinal);
+
+        ConfigurationValidation validation = ConfigurationValidator.Validate(
+            new YamlConfigStore().Read(WrittenTo(yaml)).Document, Machine);
+        Assert.Empty(validation.Errors);
+        Assert.Empty(validation.Configuration!.Vms);
+    }
+
+    [Fact]
+    public void With_no_vm_on_the_host_a_typed_name_is_refused()
+    {
+        ConfigurationInterview interview = ConfigurationInterview.Start(new InterviewFacts(Machine, [], []));
+
+        foreach (string answer in new[] { "primary", "HV-PRIMARY-01", "192.0.2.10", "vSwitch-LAN" })
+        {
+            interview = interview.Answer(answer);
+        }
+
+        Assert.Equal("this host has no VM to choose.", interview.Answer("VM-X").Rejection);
+        Assert.Equal("this host has no VM to choose.", interview.Answer("all").Rejection);
+    }
+
+    /// Read, but no switch: that is not "could not be read".
+    [Fact]
+    public void A_host_with_no_switch_is_not_called_unreadable() =>
+        Assert.Equal(
+            ["This host has no virtual switch, so type the name."],
+            QuestionOf("switch", new InterviewFacts(Machine, [], [])).Explanation);
+
+    [Fact]
+    public void A_host_whose_hyper_v_cannot_be_read_offers_no_name_from_the_file()
+    {
+        InterviewQuestion vms = QuestionOf(
+            "vms", InterviewFacts.Unread(Machine), SeedWith("VM-DC-01", "VM-BACKUP-01"));
+
+        Assert.Null(vms.Default);
+        Assert.False(vms.Listed);
+        Assert.Empty(vms.Choices);
+        Assert.DoesNotContain(vms.Explanation, line => line.Contains("VM-", StringComparison.Ordinal));
+    }
+
+    /// Typing a name again still brings back what the file said about it.
+    [Fact]
+    public void A_name_typed_again_on_an_unread_host_keeps_what_the_file_said_about_it()
+    {
+        string sample = File.ReadAllText(
+            Path.Combine(Architecture.RepositoryLayout.Root, "config", "ripcord.primary.yaml"));
+        ConfigurationDocument? seed = new YamlConfigStore().Read(WrittenTo(sample)).Document;
+
+        ConfigurationDraft draft = Answer(
+            ["", "", "", "", "VM-BACKUP-01", "", "", ""], seed, InterviewFacts.Unread("HV-PRIMARY-01"));
+
+        DraftVm vm = Assert.Single(draft.Vms);
+        Assert.Equal("manual", vm.Failover);
+        Assert.True(vm.HasPassthroughDisk);
+    }
+
+    [Fact]
+    public void Dropping_a_vm_removes_it_from_the_unattended_authorisation()
+    {
+        ConfigurationDocument seed = SeedWith("VM-DC-01", "VM-GONE-01");
+        seed.Replication = new ReplicationDocument
+        {
+            UnattendedTestFailoverVms = ["VM-GONE-01", "VM-DC-01"],
+        };
+
+        ConfigurationDraft draft = Answer(
+            ["primary", "HV-PRIMARY-01", "192.0.2.10", "1", "", "P1", "y", "y"], seed);
+
+        Assert.Equal(["VM-DC-01"], draft.Carried.UnattendedTestFailoverVms);
+        Assert.Empty(
+            ConfigurationValidator.Validate(
+                new YamlConfigStore().Read(WrittenTo(ConfigurationTemplate.Render(draft))).Document,
+                Machine).Errors);
+    }
+
+    [Fact]
+    public void An_acknowledgement_naming_a_dropped_vm_is_reported()
+    {
+        ConfigurationDocument seed = SeedWith("VM-DC-01", "VM-GONE-01");
+        seed.Checks = new ChecksDocument
+        {
+            Acknowledgements =
+            [
+                new AcknowledgementDocument { Rule = "passthrough-disk-on-replicated-vm", Vm = "VM-DC-01" },
+                new AcknowledgementDocument { Rule = "passthrough-disk-on-replicated-vm", Vm = "VM-GONE-01" },
+            ],
+        };
+
+        ConfigurationInterview interview = ConfigurationInterview.Start(Host, seed);
+
+        foreach (string answer in new[] { "primary", "HV-PRIMARY-01", "192.0.2.10", "1", "", "P1", "y", "y" })
+        {
+            interview = interview.Answer(answer);
+        }
+
+        Assert.Equal(
+            ["checks.acknowledgements[1]: VM-GONE-01 is no longer declared"],
+            interview.StaleAcknowledgements);
+    }
+
+    [Fact]
+    public void Test_failover_copies_are_not_offered()
+    {
+        HostState state = new(
+            Machine,
+            [Vm("VM-DC-01", ReplicationRole.Replica), Vm("VM-DC-01 - Test", ReplicationRole.TestReplica)],
+            HostReachability.Reachable());
+
+        Assert.Equal(
+            ["VM-DC-01"],
+            InterviewFacts.From(Machine, [], state).Vms.Select(vm => vm.Name));
+    }
+
+    [Fact]
+    public void A_name_hyper_v_reports_twice_is_offered_once()
+    {
+        HostState state = new(
+            Machine,
+            [Vm("VM-DC-01", ReplicationRole.Replica), Vm("vm-dc-01", ReplicationRole.None)],
+            HostReachability.Reachable());
+
+        Assert.Equal(
+            ["VM-DC-01"],
+            InterviewFacts.From(Machine, [], state).Vms.Select(vm => vm.Name));
+    }
+
+    [Fact]
+    public void An_unreachable_host_state_is_read_as_unread() =>
+        Assert.False(
+            InterviewFacts.From(
+                Machine, [], HostState.Unreachable(Machine, HostReachability.NotConfigured())).Read);
+
+    private static VmReplicationState Vm(string name, ReplicationRole role) =>
+        new(name, role, ReplicationState.Replicating, ReplicationHealth.Normal, null, null);
+
+    private static ConfigurationDocument SeedWith(params string[] names) =>
+        new()
+        {
+            Vms = [.. names.Select(name => new VmDocument { Name = name, Priority = "P1" })],
+        };
+
+    /// The question with this key, reached by pressing Enter or giving the first-run answers.
+    private static InterviewQuestion QuestionOf(
+        string key, InterviewFacts facts, ConfigurationDocument? seed = null)
+    {
+        ConfigurationInterview interview = ConfigurationInterview.Start(facts, seed);
+        string[] typed = ["primary", "HV-OTHER-01", "192.0.2.10", "vSwitch-LAN"];
+
+        for (int index = 0; interview.Question!.Key != key; index++)
+        {
+            interview = interview.Answer(typed[index]);
+        }
+
+        return interview.Question;
+    }
 
     private static ConfigurationDraft Answer(
         IReadOnlyList<string> typed,

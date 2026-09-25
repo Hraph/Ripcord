@@ -844,9 +844,10 @@ public static class ConfigurationValidator
     private static List<VmSettings> ValidateVms(
         List<VmDocument>? vms, List<ConfigurationError> errors)
     {
-        if (vms is null || vms.Count == 0)
+        // Absent is a file nobody finished; `[]` is a host with no VM yet, written on purpose.
+        if (vms is null)
         {
-            errors.Add(new ConfigurationError("vms", "required, at least one VM"));
+            errors.Add(new ConfigurationError("vms", "required: list the VMs, or [] for none"));
             return [];
         }
 

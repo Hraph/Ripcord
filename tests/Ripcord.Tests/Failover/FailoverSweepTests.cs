@@ -41,6 +41,17 @@ public class FailoverSweepTests
         Assert.Contains("manual", excluded.Reason, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// `vms: []` is valid since init writes it on a host with no VM; a sweep of it must refuse,
+    /// never exit 0 having moved nothing.
+    [Fact]
+    public void Sweeping_an_empty_configuration_is_refused()
+    {
+        SweepSelection selection = FailoverSweep.Select([], SweepScope.All);
+
+        Assert.True(selection.Refuses);
+        Assert.Empty(selection.VmNames);
+    }
+
     [Fact]
     public void A_priority_sweep_takes_only_that_tier()
     {
