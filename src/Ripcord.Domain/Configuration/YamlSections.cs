@@ -12,11 +12,41 @@ namespace Ripcord.Domain.Configuration;
 /// every key it does not know, and re-serialising drops every comment. Both are things the
 /// operator wrote on purpose, and a setup command that eats them is one nobody runs twice.
 ///
-/// The split is a column-0 scan, which is all a top-level key can be in YAML. Comments and
-/// blank lines attach to the section *below* them: a paragraph above `alerting:` was written
-/// about alerting, and moving it away from its section would be its own kind of loss.
+/// The split is a column-0 scan, which is all a top-level key can be in YAML. Column-0
+/// comments and blank lines attach to the section *below* them: a paragraph above `alerting:`
+/// was written about alerting, and moving it away from its section would be its own kind of
+/// loss. An indented comment belongs to the section above it, whose keys it is indented under.
 public sealed record YamlSection(string Key, IReadOnlyList<string> Lines)
 {
+    /// The indented comments that close the section — commented-out keys, usually. A
+    /// regenerated section is written without them, so they are given back after it.
+    public IReadOnlyList<string> Trailer
+    {
+        get
+        {
+            int end = this.Lines.Count;
+
+            while (end > 1 && this.Lines[end - 1].Length == 0)
+            {
+                end--;
+            }
+
+            int start = end;
+
+            while (start > 1 && YamlSections.IsCommentOrBlank(this.Lines[start - 1]))
+            {
+                start--;
+            }
+
+            while (start < end && this.Lines[start].Length == 0)
+            {
+                start++;
+            }
+
+            return [.. this.Lines.Skip(start).Take(end - start)];
+        }
+    }
+
     public bool Equals(YamlSection? other) =>
         other is not null && this.Key == other.Key && Structural.Same(this.Lines, other.Lines);
 
@@ -31,11 +61,18 @@ public sealed record YamlSection(string Key, IReadOnlyList<string> Lines)
 
 public static class YamlSections
 {
-    public static IReadOnlyList<YamlSection> Split(string? text)
+    public static IReadOnlyList<YamlSection> Split(string? text) => SplitAll(text).Sections;
+
+    /// The column-0 comment block after the last section: examples of sections the file does
+    /// not have, commented out. It belongs to no section, so regenerating one never loses it.
+    public static IReadOnlyList<string> Epilogue(string? text) => SplitAll(text).Epilogue;
+
+    private static (IReadOnlyList<YamlSection> Sections, IReadOnlyList<string> Epilogue) SplitAll(
+        string? text)
     {
         if (text is null || text.Length == 0)
         {
-            return [];
+            return ([], []);
         }
 
         List<YamlSection> sections = [];
@@ -63,12 +100,22 @@ public static class YamlSections
             key = found;
         }
 
-        if (key is not null)
+        if (key is null)
         {
-            sections.Add(new YamlSection(key, [.. TrimmedTail(pending)]));
+            return (sections, []);
         }
 
-        return sections;
+        int epilogue = AttachedFrom(pending);
+
+        // Only a block with a comment in it: blank lines alone are just the end of the file.
+        if (epilogue < pending.Count && pending[epilogue..].Any(line => line.Length > 0))
+        {
+            sections.Add(new YamlSection(key, [.. TrimmedTail(pending[..epilogue])]));
+            return (sections, [.. TrimmedTail(pending[epilogue..])]);
+        }
+
+        sections.Add(new YamlSection(key, [.. TrimmedTail(pending)]));
+        return (sections, []);
     }
 
     public static IReadOnlyList<YamlSection> Except(
@@ -103,7 +150,7 @@ public static class YamlSections
     {
         int index = lines.Count;
 
-        while (index > 0 && IsCommentOrBlank(lines[index - 1]))
+        while (index > 0 && IsColumnZeroCommentOrBlank(lines[index - 1]))
         {
             index--;
         }
@@ -113,8 +160,11 @@ public static class YamlSections
         return index < lines.Count && index > 0 && lines[index].Length == 0 ? index + 1 : index;
     }
 
-    private static bool IsCommentOrBlank(string line) =>
+    internal static bool IsCommentOrBlank(string line) =>
         line.Length == 0 || line.TrimStart().StartsWith('#');
+
+    private static bool IsColumnZeroCommentOrBlank(string line) =>
+        line.Length == 0 || line[0] == '#';
 
     /// One trailing blank line at most, so sections joined back together do not accumulate
     /// the whitespace at the end of the file.

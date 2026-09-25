@@ -19,6 +19,7 @@ public static class ConfigurationTemplate
         ArgumentNullException.ThrowIfNull(draft);
 
         StringBuilder text = new();
+        IReadOnlyList<YamlSection> before = YamlSections.Split(previous);
 
         text.AppendLine("# Written by `ripcord init`. Re-run it to change any of this: every");
         text.AppendLine("# question arrives answered with what is already here.");
@@ -30,6 +31,7 @@ public static class ConfigurationTemplate
         text.AppendLine("  # Held back from the failover target's capacity check, for the");
         text.AppendLine("  # management OS itself.");
         text.AppendLine($"  host_memory_reserve_gb: {Number(draft.HostMemoryReserveGb)}");
+        Trailer(text, before, "node");
         text.AppendLine();
         text.AppendLine("peer:");
         text.AppendLine("  # The other host of the pair, and the address it answers on. Not a");
@@ -37,6 +39,7 @@ public static class ConfigurationTemplate
         text.AppendLine($"  hostname: {draft.PeerHostname}");
         text.AppendLine($"  address: {draft.PeerAddress}");
         text.AppendLine($"  offline_after_sec: {Number(draft.PeerOfflineAfterSec)}");
+        Trailer(text, before, "peer");
         text.AppendLine();
         text.AppendLine("replication:");
         text.AppendLine("  # Which side this host normally is. The pair's two files are mirror");
@@ -51,6 +54,7 @@ public static class ConfigurationTemplate
         // Never asked, never invented: whatever the file said, given back. Written after the
         // answered keys so the part the interview owns stays at the top of the section.
         Carried(text, draft.Carried);
+        Trailer(text, before, "replication");
 
         text.AppendLine();
         text.AppendLine("storage:");
@@ -61,6 +65,8 @@ public static class ConfigurationTemplate
         {
             text.AppendLine($"  check_bitlocker_autounlock: {Flag(bitlocker)}");
         }
+
+        Trailer(text, before, "storage");
 
         text.AppendLine();
         text.AppendLine("# Every VM that matters. P1 fails over first, and 'check' makes sure the");
@@ -102,17 +108,54 @@ public static class ConfigurationTemplate
             }
         }
 
-        foreach (YamlSection section in YamlSections.Except(YamlSections.Split(previous), Owned))
+        foreach (YamlSection section in YamlSections.Except(before, Owned))
         {
             text.AppendLine();
 
-            foreach (string line in section.Lines)
+            foreach (string line in Carried(section, draft))
+            {
+                text.AppendLine(line);
+            }
+        }
+
+        if (YamlSections.Epilogue(previous) is { Count: > 0 } epilogue)
+        {
+            text.AppendLine();
+
+            foreach (string line in epilogue)
             {
                 text.AppendLine(line);
             }
         }
 
         return text.ToString();
+    }
+
+    /// The acknowledgements `Render` took out of `checks` because their VM is no longer declared.
+    public static IReadOnlyList<string> DroppedAcknowledgements(
+        ConfigurationDraft draft, string? previous)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+
+        return YamlSections.Split(previous).FirstOrDefault(section => section.Key == "checks")
+            is { } checks
+            ? Pruned(checks, draft).DroppedVms
+            : [];
+    }
+
+    private static IReadOnlyList<string> Carried(YamlSection section, ConfigurationDraft draft) =>
+        section.Key == "checks" ? Pruned(section, draft).Lines : section.Lines;
+
+    private static AcknowledgementPruning.Pruned Pruned(YamlSection checks, ConfigurationDraft draft) =>
+        AcknowledgementPruning.Prune(checks.Lines, [.. draft.Vms.Select(vm => vm.Name)]);
+
+    /// Not for `vms`: a comment closing that list is about one VM, which may be the one dropped.
+    private static void Trailer(StringBuilder text, IReadOnlyList<YamlSection> previous, string key)
+    {
+        foreach (string line in previous.FirstOrDefault(section => section.Key == key)?.Trailer ?? [])
+        {
+            text.AppendLine(line);
+        }
     }
 
     /// What was kept from the previous file, for the operator to read before saying yes. Named

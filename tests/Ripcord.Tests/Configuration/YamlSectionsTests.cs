@@ -100,4 +100,53 @@ public class YamlSectionsTests
     [InlineData("# nothing but a comment\n")]
     public void A_file_with_no_key_has_no_sections(string? text) =>
         Assert.Empty(YamlSections.Split(text));
+
+    private const string Indented = """
+        replication:
+          expected_role: replica
+          # test_failover_switch: vSwitch-ISOLATED
+
+        # The read-only pair channel.
+        listener:
+          enabled: true
+          # The snapshot 'ripcord status' writes.
+          # snapshot_path: C:\Ripcord\state.json
+
+        storage:
+          data_volume: "D:"
+
+        # Notification, off by default.
+        # alerting:
+        #   enabled: true
+        """;
+
+    /// Indented under a section's keys, a comment is about that section, whatever follows.
+    [Fact]
+    public void An_indented_comment_at_the_end_of_a_section_stays_with_it()
+    {
+        IReadOnlyList<YamlSection> sections = YamlSections.Split(Indented);
+
+        Assert.Equal(
+            ["  # test_failover_switch: vSwitch-ISOLATED"],
+            sections.Single(s => s.Key == "replication").Trailer);
+        Assert.Equal(
+            ["  # The snapshot 'ripcord status' writes.", "  # snapshot_path: C:\\Ripcord\\state.json"],
+            sections.Single(s => s.Key == "listener").Trailer);
+        Assert.Equal("# The read-only pair channel.", sections.Single(s => s.Key == "listener").Lines[0]);
+    }
+
+    [Fact]
+    public void The_comment_block_after_the_last_section_is_the_epilogue_not_part_of_it()
+    {
+        Assert.Equal(
+            ["storage:", "  data_volume: \"D:\""],
+            YamlSections.Split(Indented).Single(s => s.Key == "storage").Lines);
+        Assert.Equal(
+            ["# Notification, off by default.", "# alerting:", "#   enabled: true"],
+            YamlSections.Epilogue(Indented));
+    }
+
+    [Fact]
+    public void A_file_ending_on_a_section_has_no_epilogue() =>
+        Assert.Empty(YamlSections.Epilogue(File));
 }
