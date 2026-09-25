@@ -9,7 +9,7 @@ half-updated pair depends on.
 
 A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binary.
 
-## Unreleased
+## 0.6.0 — 2026-09-25
 
 ### Added
 
@@ -21,6 +21,18 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
   no, and writes `updates.check` either way. `updates.install` is still never asked: a re-run
   keeps it, unless the check is answered no — install cannot be on without it. The samples'
   commented-out `# updates:` example is dropped from the rewritten file.
+
+### Fixed
+
+- **Each `ripcord init` re-run added a blank line between the sections it carries over**
+  (`listener`, `checks`, …). A second re-run now gives the file back unchanged.
+
+## 0.3.0 – 0.5.0 — 2026-09-14 to 2026-09-25
+
+These three were released without a section of their own; everything below shipped in one of them.
+
+### Added
+
 - **`ripcord service` says why a stopped listener stopped**: the command Windows runs, its
   start mode, the exit code Windows recorded (`0x2000000N` is Ripcord's exit N) with what it
   means, the day's `logs\listener-YYYY-MM-DD.log` and its last 20 lines, and one line on the
@@ -62,9 +74,6 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
   `system32`.
 
 ### Fixed
-
-- **Each `ripcord init` re-run added a blank line between the sections it carries over**
-  (`listener`, `checks`, …). A second re-run now gives the file back unchanged.
 
 - **`service install` and `restart` reported success for a listener that stopped at once.**
   `sc start` returns when the process answers Windows, before the listener reads its
