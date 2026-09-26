@@ -25,6 +25,11 @@ file that was built. Check it before replacing anything.
 
 ## Updating
 
+**After updating a host, run `ripcord service install --dry-run`, then
+`ripcord service install`.** A release can need something new on the host; install applies it,
+and restarts a Ripcord service still running the build from before the update. Then the other
+host, the same way.
+
 `ripcord update` installs a newer release on the host it is run on. It is **off** unless
 `updates.install` says so, it asks `y/n` with Enter declining, and it refuses any release
 whose detached signature does not verify against the key compiled into the running binary.

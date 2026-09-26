@@ -22,18 +22,22 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
   the last administrator's read, dated. `ripcord publish` does it once by hand.
 - **`service install` and `service remove` handle both services**; `restart`, `start` and
   `stop` act on both, and `ripcord service` shows the publisher with the last lines of its log.
+  Install also restarts a service still running the build from before `ripcord update`, sets
+  both to restart a minute after a crash, and narrows the listener's 0.7.0 read on the install
+  folder to its own files.
 
-**Upgrading a host**, in this order: `ripcord update`, then `ripcord service install` (creates
-the publisher and `state\`, and starts it), then `ripcord service restart` (the listener then
-serves `state\state.json`). `ripcord service` names the next command if the order is not kept.
+**Upgrading a host**: `ripcord update`, then `ripcord service install --dry-run` and
+`ripcord service install`. It creates the publisher and `state\`, restarts the listener onto
+the new binary and `state\state.json`, and starts the publisher. If a stale snapshot remains,
+`ripcord service` names the one command that fixes it. The old `state.json` beside
+`ripcord.yaml` can be deleted.
 
 ### Changed
 
 - **The snapshot moves to `state\state.json` beside `ripcord.yaml`, and is no longer
   configurable.** A folder of its own, so nothing that writes it is ever granted anything
   beside `ripcord.exe`. A `listener.snapshot_path` line still loads, is ignored, and every
-  command says so. **After updating: `ripcord service install`, then `ripcord service
-  restart`**, so the listener serves the new file. The old `state.json` can be deleted.
+  command says so. See **Upgrading a host** above.
 - **`service install` grants the listener read access to `ripcord.yaml` explicitly**, on the
   files of the install folder only. It used to come from the snapshot grant on that folder.
 

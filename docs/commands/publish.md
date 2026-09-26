@@ -21,7 +21,7 @@ service does not.
 
 | | |
 |---|---|
-| account | `NT SERVICE\ripcord-publish`, a virtual account: no password, no network logon |
+| account | `NT SERVICE\ripcord-publish`, a virtual account: no password, never used to sign in; across the network it acts as the computer's own account, and the publisher opens no socket |
 | Hyper-V | member of **Hyper-V Administrators** (found by its SID, `S-1-5-32-578`, so the French "Administrateurs Hyper-V" too): reading the VMs' replication needs it. The listener is never a member |
 | BitLocker | one ACE on `root\cimv2\Security\MicrosoftVolumeEncryption`, enable and execute methods only — and only while `storage.check_bitlocker_autounlock` is on |
 | files | read on the files of the install folder (`ripcord.yaml`), **modify on `state\` only** — never beside `ripcord.exe` — and modify on `logs\publish\`, which the listener is kept out of |

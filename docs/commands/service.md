@@ -1,6 +1,8 @@
 # `ripcord service`
 
-The listener service: what it is doing, and the things that change it.
+The two Ripcord services — the listener that serves this host's snapshot to the other one, and
+the publisher that keeps that snapshot current — what they are doing, and the things that
+change them.
 
 ```
 ripcord service [status]            is it running, and if not, why
@@ -22,27 +24,47 @@ meant.
 On a healthy host:
 
 ```
-RIPCORD LISTENER
+RIPCORD SERVICES
 
-  ON THIS HOST
+  LISTENER
     service    running      start mode Auto
     command    "C:\Program Files\Ripcord\ripcord.exe" serve
-    version    0.7.0+def5678
+    version    0.8.0+def5678
     firewall   inbound TCP 7443 from 192.0.2.11
+    config     readable by NT SERVICE\ripcord
     snapshot   C:\Program Files\Ripcord\state\state.json
                written by ripcord-publish, served to the peer
-               written 40s ago
+               written 12s ago
                readable by NT SERVICE\ripcord
     key        readable by NT SERVICE\ripcord
                0123456789ABCDEF0123456789ABCDEF01234567
     logs       writable by NT SERVICE\ripcord
                C:\Program Files\Ripcord\logs
+
+  THIS HOST'S CERTIFICATE
+    0123456789ABCDEF0123456789ABCDEF01234567  in ripcord.yaml
+      CN=HV-DR-01, expires 2029-09-01
+    On the other host, run:
+      ripcord pair HV-DR-01:0123456789ABCDEF0123456789ABCDEF01234567
     log        listener-2026-09-25.log
 
   LAST 3 LINES OF THE LOG
-    08:00:00.000Z service: ==== ripcord 0.4.1+32aac02 listener starting
+    08:00:00.000Z service: ==== ripcord 0.8.0+def5678 listener starting
         configuration C:\Program Files\Ripcord\ripcord.yaml
     08:00:00.000Z serve: running: serve
+
+  PUBLISHER
+    service    running      start mode Auto
+    command    "C:\Program Files\Ripcord\ripcord.exe" publish
+    version    0.8.0+def5678
+    config     readable by NT SERVICE\ripcord-publish
+    hyper-v    member of Administrateurs Hyper-V
+    bitlocker  readable by it
+    snapshot   writable by NT SERVICE\ripcord-publish
+    logs       writable by it alone
+               C:\Program Files\Ripcord\logs\publish
+    log        publish-2026-09-25.log
+    ...
 
   It matches the configuration.
 ```
@@ -50,7 +72,7 @@ RIPCORD LISTENER
 On a listener that stopped:
 
 ```
-  ON THIS HOST
+  LISTENER
     service    STOPPED      start mode Auto
     command    "C:\Program Files\Ripcord\ripcord.exe" serve
     last exit  0x20000002, Ripcord exit 2: the configuration did not load
@@ -147,7 +169,7 @@ with it.
 
 **Access nothing uses any more is taken back**, as the last steps: every machine key file the
 service account can read other than the configured certificate's — the ones left by `pair` or a
-renewal, however many — and, once a service moved, what either account was granted in the old install folder, its `state`, its `logs` and `logs\\publish`.
+renewal, however many — and, once a service moved, what either account was granted in the old install folder, its `state`, its `logs` and `logs\publish`.
 Only entries of the account's own are touched, never inherited ones, and never recursively
 into a folder that still holds the install folder, the logs or the snapshot in use. With the
 configured certificate's key not found, no key is touched: which one is current cannot be told.
