@@ -69,7 +69,7 @@ public class ServiceStateChangeTests
         Assert.Equal(2, decided.Plan.Steps.Count);
         Assert.Equal(
             publisherFirst ? RipcordService.Publisher : RipcordService.Listener,
-            decided.Plan.Steps[0].Subject);
+            decided.Plan.Steps[0].Service);
     }
 
     [Fact]
@@ -78,7 +78,7 @@ public class ServiceStateChangeTests
         ServiceStateChange decided = ServiceStateChange.ForBoth(
             ServiceChange.Start, In(ServiceRunState.Stopped), ObservedService.Absent);
 
-        Assert.Equal(RipcordService.Listener, Assert.Single(decided.Plan.Steps).Subject);
+        Assert.Equal(RipcordService.Listener, Assert.Single(decided.Plan.Steps).Service);
         Assert.Contains("'ripcord-publish' service is not installed", decided.Unchanged, StringComparison.Ordinal);
 
         // The listener is started: saying nothing changed would be the one false line.

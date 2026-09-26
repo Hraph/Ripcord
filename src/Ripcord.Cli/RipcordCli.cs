@@ -1182,7 +1182,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         // Both services: the publisher also reads ripcord.yaml only when it starts.
         ServiceStateChange decided = ServiceStateChange.ForBoth(
-            change, service, observed.PublisherOrNothing.Service);
+            change, service, observed.Publisher.Service);
 
         if (decided.Unreadable is { } unreadable)
         {

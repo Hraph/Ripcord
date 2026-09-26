@@ -103,11 +103,7 @@ public sealed record ServiceStateChange(DeploymentPlan Plan, string? Unchanged, 
         new(
             new DeploymentPlan(
             [
-                new DeploymentStep(
-                    action,
-                    $"{verb} the '{which.Name}' service",
-                    reason,
-                    Service: which == RipcordService.Listener ? null : which),
+                new DeploymentStep(which, action, $"{verb} the '{which.Name}' service", reason),
             ]),
             null,
             null);

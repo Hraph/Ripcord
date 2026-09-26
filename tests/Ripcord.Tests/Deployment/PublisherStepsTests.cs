@@ -27,7 +27,10 @@ public class PublisherStepsTests
         LogsWritableByService: true,
         EventSourceRegistered: true,
         ConfigurationReadableByService: true,
-        ListenerRecovers: true);
+        ListenerRecovers: true)
+    {
+        Publisher = ObservedPublisher.Absent("Hyper-V Administrators"),
+    };
 
     private static IReadOnlyList<DeploymentAction> Actions(DeploymentPlan plan) =>
         [.. plan.Steps.Where(step => step.Service == RipcordService.Publisher).Select(step => step.Action)];
@@ -37,7 +40,7 @@ public class PublisherStepsTests
     [Fact]
     public void On_a_fresh_host_the_publisher_is_created_granted_and_started_in_order()
     {
-        DeploymentPlan plan = DeploymentPlan.For(Desired, ObservedDeployment.Nothing);
+        DeploymentPlan plan = DeploymentPlan.For(Desired, DeploymentPlanTests.FreshHost);
 
         Assert.Equal(
             [DeploymentAction.CreateService, DeploymentAction.ConfigureRecovery,
@@ -52,7 +55,7 @@ public class PublisherStepsTests
             steps.FindIndex(step => step.Service == RipcordService.Publisher && step.Action == DeploymentAction.CreateService)
             < steps.FindIndex(step => step.Action == DeploymentAction.CreateFirewallRule));
         Assert.True(
-            steps.FindIndex(step => step.Service is null && step.Action == DeploymentAction.StartService)
+            steps.FindIndex(step => step.Service == RipcordService.Listener && step.Action == DeploymentAction.StartService)
             < steps.FindIndex(step => step.Service == RipcordService.Publisher && step.Action == DeploymentAction.StartService));
     }
 
@@ -117,7 +120,7 @@ public class PublisherStepsTests
     public void A_host_with_no_hyper_v_administrators_group_is_refused_before_anything()
     {
         DeploymentPlan plan = DeploymentPlan.For(
-            Desired, ObservedDeployment.Nothing with { Publisher = ObservedPublisher.Nothing with { HyperVAdministrators = null } });
+            Desired, ObservedDeployment.Nothing with { Publisher = ObservedPublisher.Absent(null) });
 
         Assert.True(plan.IsBlocked);
         Assert.Empty(plan.Steps);
@@ -162,7 +165,7 @@ public class PublisherStepsTests
             [DeploymentAction.RevokeEncryptionNamespaceAccess],
             Actions(DeploymentPlan.ToRemove(ListenerInPlace with
             {
-                Publisher = ObservedPublisher.Nothing with { Encryption = NamespaceGrant.Granted },
+                Publisher = ObservedPublisher.Absent("Hyper-V Administrators") with { Encryption = NamespaceGrant.Granted },
             })));
 
     /// The dry-run shows the exact ACE, SID included.
@@ -170,7 +173,7 @@ public class PublisherStepsTests
     public void The_bitlocker_step_names_the_exact_ace() =>
         Assert.Contains(
             NamespaceAcl.Ace(VirtualAccount.Sid("ripcord-publish")),
-            DeploymentPlan.For(Desired, ObservedDeployment.Nothing).Steps
+            DeploymentPlan.For(Desired, DeploymentPlanTests.FreshHost).Steps
                 .Single(step => step.Action == DeploymentAction.GrantEncryptionNamespaceAccess).Description,
             StringComparison.Ordinal);
 

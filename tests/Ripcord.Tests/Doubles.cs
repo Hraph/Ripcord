@@ -215,7 +215,10 @@ public static class Yaml
 public sealed class UntouchedHost : IDeploymentExecutor
 {
     public ObservedDeployment Observe(DesiredDeployment desired, ObservedService service) =>
-        new(false, null, false, null, null, false, false);
+        new(false, null, false, null, null, false, false)
+        {
+            Publisher = ObservedPublisher.Absent("Hyper-V Administrators"),
+        };
 
     public ObservedService ObserveService(RipcordService which) => ObservedService.Absent;
 

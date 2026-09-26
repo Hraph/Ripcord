@@ -30,8 +30,10 @@ public sealed record ObservedPublisher(
     /// Running another build than the binary on disk, as its process record says.
     bool Outdated = false)
 {
-    public static ObservedPublisher Nothing { get; } = new(
-        ObservedService.Absent, false, false, false, false, false, "Hyper-V Administrators", false, NamespaceGrant.Missing, null);
+    /// None of it there. The group's name is this host's to give, never assumed: null, as when
+    /// it could not be found, blocks an install rather than naming a group that is not there.
+    public static ObservedPublisher Absent(string? hyperVAdministrators) =>
+        new(ObservedService.Absent, false, false, false, false, false, hyperVAdministrators, false, NamespaceGrant.Missing, null);
 }
 
 /// What the publishing service needs, in the order it needs it. Least privilege, named step by
@@ -68,11 +70,11 @@ public static class PublisherSteps
     /// Shared with the listener's plan, so both services recover the same way.
     public static DeploymentStep Recovery(RipcordService service) =>
         new(
+            service,
             DeploymentAction.ConfigureRecovery,
             $"Restart '{service.Name}' a minute after a crash (sc.exe {ServiceRecovery.Arguments(service)})",
             "a service that died stays dead until somebody notices; one that stops itself on "
-                + "purpose is left alone",
-            Service: service == RipcordService.Listener ? null : service);
+                + "purpose is left alone");
 
     public static IEnumerable<DeploymentStep> Grants(DesiredDeployment desired, ObservedPublisher observed)
     {
@@ -240,7 +242,7 @@ public static class PublisherSteps
 
     private static DeploymentStep Step(
         DeploymentAction action, string description, string reason, string? target = null) =>
-        new(action, description, reason, target, Service: Publisher);
+        new(Publisher, action, description, reason, target);
 
     private static bool SamePath(string? left, string? right) =>
         string.Equals(left?.Trim(), right?.Trim(), StringComparison.OrdinalIgnoreCase);

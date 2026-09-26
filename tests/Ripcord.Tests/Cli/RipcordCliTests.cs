@@ -1105,8 +1105,10 @@ public class RipcordCliTests
         EventSourceRegistered: true,
         KeyReadableByService: true,
         ConfigurationReadableByService: true,
-        Publisher: Deployment.DeploymentPlanTests.PublisherInPlace(BinaryPath, NamespaceGrant.Granted),
-        ListenerRecovers: true);
+        ListenerRecovers: true)
+    {
+        Publisher = Deployment.DeploymentPlanTests.PublisherInPlace(BinaryPath, NamespaceGrant.Granted),
+    };
 
     private static ObservedDeployment BothStopped() => Deployed() with
     {
@@ -1456,12 +1458,12 @@ public class RipcordCliTests
         public IReadOnlyList<DeploymentAction> Applied => this.applied;
 
         public ObservedDeployment Observe(DesiredDeployment desired, ObservedService service) =>
-            observed ?? ObservedDeployment.Nothing;
+            observed ?? Deployment.DeploymentPlanTests.FreshHost;
 
         /// Agrees with `Observe` unless a test says otherwise.
         public ObservedService ObserveService(RipcordService which) =>
             which == RipcordService.Publisher
-                ? observed?.PublisherOrNothing.Service ?? ObservedService.Absent
+                ? observed?.Publisher.Service ?? ObservedService.Absent
                 : service ?? (observed is { ServiceInstalled: true } deployed
                 ? new ObservedService(
                     true,

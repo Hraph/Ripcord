@@ -93,9 +93,6 @@ public sealed record ObservedDeployment(
     /// Ripcord's to take back, whatever else lets it read there.
     bool InstallFolderGrantedToService = false,
 
-    /// The publishing service and what it was granted; null reads as none of it there.
-    ObservedPublisher? Publisher = null,
-
     /// Whether Windows restarts the listener after a crash (`ServiceRecovery`).
     bool ListenerRecovers = false,
 
@@ -107,10 +104,13 @@ public sealed record ObservedDeployment(
     /// 0.7.0 set when the snapshot lived there, readable down to `logs` and the audit trail.
     bool InstallFolderGrantBroad = false)
 {
-    public static ObservedDeployment Nothing { get; } =
-        new(false, null, false, null, null, false);
+    /// The publishing service and what it was granted, always observed: a plan that assumed it
+    /// absent would add a group the host may not have.
+    public required ObservedPublisher Publisher { get; init; }
 
-    public ObservedPublisher PublisherOrNothing => this.Publisher ?? ObservedPublisher.Nothing;
+    /// Nothing at all, not even the Hyper-V Administrators group: an install is blocked.
+    public static ObservedDeployment Nothing { get; } =
+        new(false, null, false, null, null, false) { Publisher = ObservedPublisher.Absent(null) };
 }
 
 public enum DeploymentAction
@@ -174,6 +174,7 @@ public enum DeploymentAction
 /// One change, and why it is needed. The reason is what `--dry-run` prints, so it is written
 /// for the operator rather than for the log.
 public sealed record DeploymentStep(
+    RipcordService Service,
     DeploymentAction Action,
     string Description,
     string Reason,
@@ -183,13 +184,7 @@ public sealed record DeploymentStep(
 
     /// Whether the revoke reaches into the folder's contents. Never for a folder that holds the
     /// logs or the snapshot still in use: `/t` would strip their grants too.
-    bool Recursive = false,
-
-    /// Which service the step is about; null is the listener.
-    RipcordService? Service = null)
-{
-    public RipcordService Subject => this.Service ?? RipcordService.Listener;
-}
+    bool Recursive = false);
 
 /// The difference between what is on the host and what should be. Deployment and removal are
 /// the same list read in two directions, so an uninstaller cannot drift from its installer.
@@ -222,7 +217,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
             return new DeploymentPlan([], ListenerDisabled);
         }
 
-        ObservedPublisher publisher = observed.PublisherOrNothing;
+        ObservedPublisher publisher = observed.Publisher;
 
         if (publisher.HyperVAdministrators is null)
         {
@@ -241,6 +236,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
         if (!observed.ServiceInstalled)
         {
             steps.Add(new DeploymentStep(
+                RipcordService.Listener,
                 DeploymentAction.CreateService,
                 $"Create the '{ServiceName}' service running '{desired.BinaryPath} serve' "
                 + $"as {ServiceAccount}",
@@ -252,6 +248,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
         {
             // Applied last, like a start: it restarts the service, which needs its folders.
             update = new DeploymentStep(
+                RipcordService.Listener,
                 DeploymentAction.UpdateService,
                 $"Point the '{ServiceName}' service at '{desired.BinaryPath} serve'",
                 $"it currently runs '{observed.ServiceBinaryPath}'");
@@ -279,6 +276,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
         if (!observed.FirewallRuleInstalled)
         {
             steps.Add(new DeploymentStep(
+                RipcordService.Listener,
                 DeploymentAction.CreateFirewallRule,
                 $"Allow inbound TCP {desired.Port} from {desired.PeerAddress} only",
                 "no firewall rule restricts the listener to the peer"));
@@ -287,6 +285,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
             || !SamePath(observed.FirewallRemoteAddress, desired.PeerAddress))
         {
             steps.Add(new DeploymentStep(
+                RipcordService.Listener,
                 DeploymentAction.UpdateFirewallRule,
                 $"Allow inbound TCP {desired.Port} from {desired.PeerAddress} only",
                 $"it currently allows port {observed.FirewallPort} "
@@ -296,6 +295,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
         if (!observed.ConfigurationReadableByService)
         {
             steps.Add(new DeploymentStep(
+                RipcordService.Listener,
                 DeploymentAction.GrantConfigurationAccess,
                 $"Grant {ServiceAccount} read access to the files in '{desired.InstallFolder}'",
                 "it reads ripcord.yaml there at every start; nothing below it, nothing written"));
@@ -304,6 +304,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
         if (!observed.SnapshotReadableByService)
         {
             steps.Add(new DeploymentStep(
+                RipcordService.Listener,
                 DeploymentAction.GrantSnapshotAccess,
                 $"Grant {ServiceAccount} read access to '{desired.SnapshotFolder}'",
                 $"that folder holds {SnapshotFileName(desired)}, "
@@ -313,6 +314,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
         if (!observed.LogsWritableByService)
         {
             steps.Add(new DeploymentStep(
+                RipcordService.Listener,
                 DeploymentAction.GrantLogsAccess,
                 $"Create '{desired.LogsFolder}' and grant {ServiceAccount} modify access to it",
                 "the listener writes its log there; it may write nowhere else"));
@@ -323,6 +325,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
         if (desired.CertificateThumbprint is { } thumbprint && observed.KeyReadableByService == false)
         {
             steps.Add(new DeploymentStep(
+                RipcordService.Listener,
                 DeploymentAction.GrantKeyAccess,
                 $"Grant {ServiceAccount} read access to the private key of certificate "
                 + thumbprint,
@@ -332,6 +335,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
         if (!observed.EventSourceRegistered)
         {
             steps.Add(new DeploymentStep(
+                RipcordService.Listener,
                 DeploymentAction.RegisterEventSource,
                 $"Register the '{EventSource}' source in the Application event log",
                 "both services report there a start they cannot log to their file"));
@@ -351,12 +355,14 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
         if (start is not null)
         {
             steps.Add(new DeploymentStep(
+                RipcordService.Listener,
                 DeploymentAction.StartService, $"Start the '{ServiceName}' service", start));
         }
 
         if (restart is not null)
         {
             steps.Add(new DeploymentStep(
+                RipcordService.Listener,
                 DeploymentAction.RestartService, $"Restart the '{ServiceName}' service", restart));
         }
 
@@ -403,6 +409,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
         if (observed.InstallFolderGrantBroad)
         {
             yield return new DeploymentStep(
+                RipcordService.Listener,
                 DeploymentAction.NarrowConfigurationAccess,
                 $"Narrow {ServiceAccount}'s access to '{desired.InstallFolder}' to its own files",
                 "it reads ripcord.yaml there; the snapshot moved to state\\, and the rest of the "
@@ -419,6 +426,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
                 string name = key[folder.Length..].TrimStart('\\');
 
                 yield return new DeploymentStep(
+                    RipcordService.Listener,
                     DeploymentAction.RevokeStaleKeyAccess,
                     $"Remove {ServiceAccount}'s access to key file {name}",
                     $"it is in {folder}, and no configured certificate uses it any more",
@@ -429,6 +437,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
         foreach (string folder in observed.FoldersGranted ?? [])
         {
             yield return new DeploymentStep(
+                RipcordService.Listener,
                 DeploymentAction.RevokeStaleFolderAccess,
                 $"Remove {ServiceAccount}'s access to '{folder}'",
                 "the configuration no longer uses it",
@@ -451,11 +460,12 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
 
         // The publisher first, and all of it while its service still exists: the account's
         // name only resolves as long as it does.
-        List<DeploymentStep> steps = [.. PublisherSteps.Remove(observed.PublisherOrNothing)];
+        List<DeploymentStep> steps = [.. PublisherSteps.Remove(observed.Publisher)];
 
         if (observed.EventSourceRegistered)
         {
             steps.Add(new DeploymentStep(
+                RipcordService.Listener,
                 DeploymentAction.RemoveEventSource,
                 $"Remove the '{EventSource}' source from the Application event log",
                 "nothing will report under it any more"));
@@ -464,6 +474,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
         if (observed.KeyReadableByService == true)
         {
             steps.Add(new DeploymentStep(
+                RipcordService.Listener,
                 DeploymentAction.RevokeKeyAccess,
                 $"Revoke {ServiceAccount}'s access to the certificate's private key",
                 "the service account no longer needs it"));
@@ -473,6 +484,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
         if (observed.LogsWritableByService)
         {
             steps.Add(new DeploymentStep(
+                RipcordService.Listener,
                 DeploymentAction.RevokeLogsAccess,
                 $"Revoke {ServiceAccount}'s access to the logs folder",
                 "the service account no longer needs it"));
@@ -481,6 +493,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
         if (observed.SnapshotReadableByService)
         {
             steps.Add(new DeploymentStep(
+                RipcordService.Listener,
                 DeploymentAction.RevokeSnapshotAccess,
                 $"Revoke {ServiceAccount}'s access to the snapshot folder",
                 "the service account no longer needs it"));
@@ -489,6 +502,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
         if (observed.InstallFolderGrantedToService)
         {
             steps.Add(new DeploymentStep(
+                RipcordService.Listener,
                 DeploymentAction.RevokeConfigurationAccess,
                 $"Revoke {ServiceAccount}'s access to the install folder",
                 "the service account no longer needs to read ripcord.yaml"));
@@ -497,6 +511,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
         if (observed.FirewallRuleInstalled)
         {
             steps.Add(new DeploymentStep(
+                RipcordService.Listener,
                 DeploymentAction.RemoveFirewallRule,
                 $"Remove the '{FirewallRuleName}' firewall rule",
                 $"it currently allows inbound TCP {observed.FirewallPort}"));
@@ -505,6 +520,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
         if (observed.ServiceInstalled)
         {
             steps.Add(new DeploymentStep(
+                RipcordService.Listener,
                 DeploymentAction.RemoveService,
                 $"Stop and delete the '{ServiceName}' service",
                 $"it currently runs '{observed.ServiceBinaryPath}'"));

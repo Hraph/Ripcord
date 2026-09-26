@@ -21,7 +21,7 @@ public class DeploymentPlanTests
     {
         DeploymentPlan plan = DeploymentPlan.For(
             Desired with { CertificateThumbprint = "AB12" },
-            ObservedDeployment.Nothing with { KeyReadableByService = false });
+            FreshHost with { KeyReadableByService = false });
 
         List<DeploymentAction> actions = [.. plan.Steps.Select(step => step.Action)];
 
@@ -63,7 +63,7 @@ public class DeploymentPlanTests
     [Fact]
     public void On_a_fresh_host_everything_is_created()
     {
-        DeploymentPlan plan = DeploymentPlan.For(Desired, ObservedDeployment.Nothing);
+        DeploymentPlan plan = DeploymentPlan.For(Desired, FreshHost);
 
         Assert.Equal(
             [DeploymentAction.CreateService, DeploymentAction.ConfigureRecovery,
@@ -84,7 +84,7 @@ public class DeploymentPlanTests
             Desired, Matching() with { ListenerRecovers = false }).Steps);
 
         Assert.Equal(DeploymentAction.ConfigureRecovery, step.Action);
-        Assert.Null(step.Service);
+        Assert.Equal(RipcordService.Listener, step.Service);
         Assert.Contains("actions= restart/60000", step.Description, StringComparison.Ordinal);
         Assert.DoesNotContain("failureflag", step.Description, StringComparison.Ordinal);
     }
@@ -264,7 +264,7 @@ public class DeploymentPlanTests
     [Fact]
     public void The_port_is_never_open_without_a_service_behind_it()
     {
-        List<DeploymentAction> install = [.. Listener(DeploymentPlan.For(Desired, ObservedDeployment.Nothing))];
+        List<DeploymentAction> install = [.. Listener(DeploymentPlan.For(Desired, FreshHost))];
 
         List<DeploymentAction> remove = [.. Listener(DeploymentPlan.ToRemove(Matching()))];
 
@@ -281,7 +281,7 @@ public class DeploymentPlanTests
     [Fact]
     public void Every_step_states_what_it_changes_and_why()
     {
-        foreach (DeploymentStep step in DeploymentPlan.For(Desired, ObservedDeployment.Nothing).Steps)
+        foreach (DeploymentStep step in DeploymentPlan.For(Desired, FreshHost).Steps)
         {
             Assert.False(string.IsNullOrWhiteSpace(step.Description));
             Assert.False(string.IsNullOrWhiteSpace(step.Reason));
@@ -311,7 +311,7 @@ public class DeploymentPlanTests
     [Fact]
     public void A_bare_host_is_given_the_service_and_then_told_to_start_it()
     {
-        DeploymentPlan plan = DeploymentPlan.For(Desired, ObservedDeployment.Nothing);
+        DeploymentPlan plan = DeploymentPlan.For(Desired, FreshHost);
 
         Assert.Equal(
             [DeploymentAction.CreateService, DeploymentAction.StartService],
@@ -412,6 +412,10 @@ public class DeploymentPlanTests
         Assert.Contains(@"C:\ProgramData\Microsoft\Crypto\RSA\MachineKeys,", revoke.Reason, StringComparison.Ordinal);
     }
 
+    /// Nothing deployed, on a host whose Hyper-V Administrators group this test names.
+    internal static readonly ObservedDeployment FreshHost =
+        ObservedDeployment.Nothing with { Publisher = ObservedPublisher.Absent("Hyper-V Administrators") };
+
     private static ObservedDeployment Matching() => new(
         ServiceInstalled: true,
         ServiceBinaryPath: @"D:\Ripcord\ripcord.exe",
@@ -423,11 +427,13 @@ public class DeploymentPlanTests
         LogsWritableByService: true,
         EventSourceRegistered: true,
         ConfigurationReadableByService: true,
-        Publisher: PublisherInPlace(@"D:\Ripcord\ripcord.exe"),
-        ListenerRecovers: true);
+        ListenerRecovers: true)
+    {
+        Publisher = PublisherInPlace(@"D:\Ripcord\ripcord.exe"),
+    };
 
     private static List<DeploymentAction> Listener(DeploymentPlan plan) =>
-        [.. plan.Steps.Where(step => step.Service is null).Select(step => step.Action)];
+        [.. plan.Steps.Where(step => step.Service == RipcordService.Listener).Select(step => step.Action)];
 
     /// A publisher that needs nothing: running this binary, granted everything, in the group.
     internal static ObservedPublisher PublisherInPlace(string binaryPath, NamespaceGrant encryption = NamespaceGrant.Missing) =>
@@ -534,7 +540,7 @@ public class DeploymentPlanTests
     [Fact]
     public void The_grant_step_says_what_the_snapshot_is()
     {
-        DeploymentStep grant = DeploymentPlan.For(Desired, ObservedDeployment.Nothing).Steps
+        DeploymentStep grant = DeploymentPlan.For(Desired, FreshHost).Steps
             .Single(step => step.Action == DeploymentAction.GrantSnapshotAccess);
 
         Assert.Contains("state.json", grant.Reason, StringComparison.Ordinal);

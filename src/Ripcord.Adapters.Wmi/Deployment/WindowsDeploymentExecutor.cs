@@ -65,10 +65,12 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
                 Run("icacls", $"\"{WindowsPath.Join(desired.InstallFolder, "ripcord.yaml")}\"").Output,
                 RipcordService.Listener.Account),
             AccessControl.GrantsExplicitly(installFolder, RipcordService.Listener.Account),
-            this.ObservePublisher(desired),
             ServiceRecovery.Restarts(FailureActions(RipcordService.Listener)),
             InstallFolderGrantBroad: AccessControl.GrantsExplicitlyBelow(
-                installFolder, RipcordService.Listener.Account));
+                installFolder, RipcordService.Listener.Account))
+        {
+            Publisher = this.ObservePublisher(desired),
+        };
     }
 
     /// `/c` because without it icacls stops at the first key it cannot read (SYSTEM-only keys,
@@ -268,7 +270,7 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         if (change.Action is DeploymentAction.GrantEncryptionNamespaceAccess
             or DeploymentAction.RevokeEncryptionNamespaceAccess)
         {
-            EditEncryptionNamespace(change.Subject, change.Action == DeploymentAction.GrantEncryptionNamespaceAccess);
+            EditEncryptionNamespace(change.Service, change.Action == DeploymentAction.GrantEncryptionNamespaceAccess);
             return;
         }
 
@@ -306,11 +308,11 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
 
         if (DeploymentPlan.StartsTheService(change.Action))
         {
-            this.WatchTheStart(change.Subject);
+            this.WatchTheStart(change.Service);
         }
         else if (change.Action == DeploymentAction.StopService)
         {
-            this.WaitForTheStop(change.Subject);
+            this.WaitForTheStop(change.Service);
         }
     }
 
@@ -362,7 +364,7 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
     private static IEnumerable<(string File, string Arguments)> CommandsFor(
         DeploymentStep change, DesiredDeployment desired)
     {
-        RipcordService service = change.Subject;
+        RipcordService service = change.Service;
         string name = service.Name;
         string account = service.Account;
         string binPath = $"binPath= \"\\\"{desired.BinaryPath}\\\" {service.Verb}\"";
@@ -671,7 +673,7 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         Convert.ToInt64(result.ReturnValue?.Value ?? -1, CultureInfo.InvariantCulture);
 
     private static string LogsOf(DeploymentStep change, DesiredDeployment desired) =>
-        change.Subject == RipcordService.Publisher ? desired.PublisherLogsFolder : desired.LogsFolder;
+        change.Service == RipcordService.Publisher ? desired.PublisherLogsFolder : desired.LogsFolder;
 
     /// Read only, on the key file only: the account signs with the key, it never replaces it.
     private static IEnumerable<(string File, string Arguments)> KeyCommands(

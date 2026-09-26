@@ -39,7 +39,7 @@ public class ListenerDeploymentTests
             .Plan(new DeploymentRequest(@"C:\Ripcord\ripcord.yaml", ValidDocument.MachineName, Binary, false));
 
         Assert.Equal(restarted, outcome.Observed!.ListenerOutdated);
-        Assert.Equal(restarted, outcome.Observed.PublisherOrNothing.Outdated);
+        Assert.Equal(restarted, outcome.Observed.Publisher.Outdated);
         Assert.Equal(
             restarted ? 2 : 0,
             outcome.Plan!.Steps.Count(step => step.Action == DeploymentAction.RestartService));
@@ -75,9 +75,11 @@ public class ListenerDeploymentTests
                 EventSourceRegistered: true,
                 KeyReadableByService: true,
                 ConfigurationReadableByService: true,
-                Publisher: Deployment.DeploymentPlanTests.PublisherInPlace(Binary, NamespaceGrant.Granted)
+                ListenerRecovers: true)
+            {
+                Publisher = Deployment.DeploymentPlanTests.PublisherInPlace(Binary, NamespaceGrant.Granted)
                     with { Service = Publishing },
-                ListenerRecovers: true);
+            };
 
         public ObservedService ObserveService(RipcordService which) =>
             which == RipcordService.Publisher ? Publishing : Running;

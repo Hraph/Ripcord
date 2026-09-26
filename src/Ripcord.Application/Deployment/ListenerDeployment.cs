@@ -84,7 +84,7 @@ public sealed class ListenerDeployment(
             return observed;
         }
 
-        ObservedPublisher publisher = observed.PublisherOrNothing;
+        ObservedPublisher publisher = observed.Publisher;
 
         return observed with
         {
