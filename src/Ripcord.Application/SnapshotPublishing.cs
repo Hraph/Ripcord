@@ -23,8 +23,8 @@ public sealed class SnapshotPublishing(
             {
                 DateTimeOffset started = clock.UtcNow;
 
-                Publication publication = await pairReader
-                    .PublishAsync(configuration, cancellationToken)
+                Publication publication = await this
+                    .PublishOnceAsync(configuration, cancellationToken)
                     .ConfigureAwait(false);
 
                 // Nothing would be served: stopping says so, where running empty would not.
@@ -54,6 +54,30 @@ public sealed class SnapshotPublishing(
             {
                 diagnostics.Write(line);
             }
+        }
+    }
+
+    /// One attempt never ends the loop: an exception nobody foresaw is a failed publication,
+    /// said once and retried, because a service that dies on it brings back the stale peer
+    /// view it exists to prevent.
+    private async Task<Publication> PublishOnceAsync(
+        RipcordConfiguration configuration, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await pairReader.PublishAsync(configuration, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            diagnostics.Write(DiagnosticEntry.Of(
+                PublishJournal.Operation, "publishing failed unexpectedly", exception.ToString()));
+
+            return new Publication(
+                PublicationKind.NotRead,
+                configuration.Listener.SnapshotPath,
+                clock.UtcNow,
+                $"{exception.GetType().Name}: {exception.Message}",
+                []);
         }
     }
 }
