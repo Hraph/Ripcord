@@ -143,10 +143,15 @@ than blaming the caller.
 service account can read other than the configured certificate's — the ones left by `pair` or a
 renewal, however many — and, once the service moved, the old install folder and its `logs`.
 Only entries of the account's own are touched, never inherited ones, and never recursively
-into a folder that still holds the logs or the snapshot in use. With the configured
-certificate's key not found, no key is touched: which one is current cannot be told. A snapshot
+into a folder that still holds the install folder, the logs or the snapshot in use. With the
+configured certificate's key not found, no key is touched: which one is current cannot be told.
+Nor when the machine keys take longer than the command timeout to list. A snapshot
 folder left behind by an older `snapshot_path` elsewhere is not looked for; `ripcord service
 remove` run before moving it is what takes that one back.
+
+After `pair` or a renewal, a listener still running reads the old key on every connection: once
+`install` has taken that key back, it serves nothing until `ripcord service restart`. Run the
+restart right after the install.
 
 The logs folder is the only place the service account may write. Modify rather than write,
 because pruning an old log deletes it; on that folder only, never on the install folder or the

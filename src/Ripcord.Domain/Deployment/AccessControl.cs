@@ -41,13 +41,17 @@ public static class AccessControl
             && !rights.Contains("(I)", StringComparison.OrdinalIgnoreCase));
     }
 
-    /// `icacls "<folder>\*"` lists every file, each block opening with its path at column 0.
-    /// The files that give this account an entry of its own. Machine key paths hold no space,
-    /// so the path is the text before the first space.
-    public static IReadOnlyList<string> FilesGrantingExplicitly(string? icaclsOutput, string account)
+    /// `icacls "<folder>\*"` lists every file, each block opening at column 0 with the path as
+    /// `<folder>\<name>`. The files that give this account an entry of its own. Only a block
+    /// under `folder` counts, so a path printed in another form is left out rather than taken
+    /// for another file; a key file name holds no space and no colon.
+    public static IReadOnlyList<string> FilesGrantingExplicitly(
+        string? icaclsOutput, string folder, string account)
     {
+        ArgumentNullException.ThrowIfNull(folder);
         ArgumentNullException.ThrowIfNull(account);
 
+        string prefix = folder.TrimEnd('\\') + "\\";
         List<string> files = [];
         string? current = null;
 
@@ -55,10 +59,17 @@ public static class AccessControl
         {
             string line = raw.TrimEnd('\r');
 
-            if (line.Length > 0 && !char.IsWhiteSpace(line[0]) && line.Contains('\\'))
+            if (line.Length > 0 && !char.IsWhiteSpace(line[0]))
             {
-                int space = line.IndexOf(' ', StringComparison.Ordinal);
-                current = space < 0 ? line : line[..space];
+                // Any other line at column 0 ends the block: an error, the summary.
+                current = null;
+
+                if (line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    int end = line.IndexOfAny([' ', ':'], prefix.Length);
+                    string name = end < 0 ? line[prefix.Length..] : line[prefix.Length..end];
+                    current = name.Length > 0 ? prefix + name : null;
+                }
             }
 
             if (current is not null && !files.Contains(current) && GrantsExplicitly(line, account))

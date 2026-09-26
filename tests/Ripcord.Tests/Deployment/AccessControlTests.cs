@@ -131,6 +131,23 @@ public class AccessControlTests
                 "C:\\ProgramData\\Microsoft\\Crypto\\Keys\\aaa_guid",
                 "C:\\ProgramData\\Microsoft\\Crypto\\Keys\\ddd_guid",
             ],
-            AccessControl.FilesGrantingExplicitly(Output, Account));
+            AccessControl.FilesGrantingExplicitly(
+                Output, "C:\\ProgramData\\Microsoft\\Crypto\\Keys", Account));
+    }
+
+    /// A folder with a space in it, and a block printed in another form than the folder given:
+    /// that one is left out, and its entries are not taken for the previous file's.
+    [Fact]
+    public void Only_blocks_under_the_folder_listed_are_named()
+    {
+        const string Output =
+            "D:\\Program Data\\Keys\\aaa_guid NT AUTHORITY\\SYSTEM:(F)\r\n"
+            + "                             NT SERVICE\\ripcord:(R)\r\n"
+            + "D:\\PROGRA~1\\Keys\\bbb_guid NT AUTHORITY\\SYSTEM:(F)\r\n"
+            + "                          NT SERVICE\\ripcord:(R)\r\n";
+
+        Assert.Equal(
+            ["D:\\Program Data\\Keys\\aaa_guid"],
+            AccessControl.FilesGrantingExplicitly(Output, "D:\\Program Data\\Keys\\", Account));
     }
 }

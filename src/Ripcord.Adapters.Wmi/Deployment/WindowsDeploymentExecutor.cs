@@ -32,6 +32,8 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
 
         bool ruleInstalled = ruleCode == 0;
 
+        string? keyFile = KeyFile(desired);
+
         // Unreadable is reported as not running: the opposite default would leave a stopped
         // listener alone and call the deployment correct. The cost is one redundant `sc start`,
         // which `ServiceCommand` reads as the state the step was asking for.
@@ -47,20 +49,34 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             EventSourceRegistered(),
             desired.SnapshotVolume.Length == 0 || Directory.Exists(desired.SnapshotVolume),
             SnapshotWrittenAt(desired),
-            KeyFile(desired) is { } key
-                ? AccessControl.GrantsRead(Run("icacls", $"\"{key}\"").Output, DeploymentPlan.ServiceAccount)
+            keyFile is not null
+                ? AccessControl.GrantsRead(Run("icacls", $"\"{keyFile}\"").Output, DeploymentPlan.ServiceAccount)
                 : null,
-            KeyFile(desired),
-            [.. KeyFolders.SelectMany(folder => AccessControl.FilesGrantingExplicitly(
-                Run("icacls", $"\"{folder}\\*\"").Output, DeploymentPlan.ServiceAccount))],
+            keyFile,
+            KeyFilesGranted(),
             [.. DeploymentPlan.StaleFolderCandidates(desired, service.BinaryPath)
                 .Where(folder => Directory.Exists(folder)
                     && AccessControl.GrantsExplicitly(
                         Run("icacls", $"\"{folder}\"").Output, DeploymentPlan.ServiceAccount))]);
     }
 
-    /// Where machine keys live: CNG, then legacy CSP. Listed with a wildcard, one `icacls` each;
-    /// entries it cannot read (SYSTEM-only keys) fail on their own and are not ours anyway.
+    /// `/c` because without it icacls stops at the first key it cannot read (SYSTEM-only keys,
+    /// not ours anyway). A folder of thousands of keys can outlast the timeout: nothing is then
+    /// known, so nothing is revoked, and the rest of the deployment is not held up for it.
+    private static IReadOnlyList<string>? KeyFilesGranted()
+    {
+        try
+        {
+            return [.. KeyFolders.SelectMany(folder => AccessControl.FilesGrantingExplicitly(
+                Run("icacls", $"\"{folder}\\*\" /c").Output, folder, DeploymentPlan.ServiceAccount))];
+        }
+        catch (TimeoutException)
+        {
+            return null;
+        }
+    }
+
+    /// Where machine keys live: CNG, then legacy CSP.
     private static readonly string[] KeyFolders =
     [
         Path.Combine(

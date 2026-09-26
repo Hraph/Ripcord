@@ -361,10 +361,14 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
         {
             if (!SamePath(key, observed.KeyFile))
             {
+                // The name alone fits on a line at 75 columns; the full path would be cut in two.
+                string folder = WindowsPath.FolderOf(key);
+                string name = key[folder.Length..].TrimStart('\\');
+
                 yield return new DeploymentStep(
                     DeploymentAction.RevokeStaleKeyAccess,
-                    $"Remove {ServiceAccount}'s access to the private key file '{key}'",
-                    "no configured certificate uses it any more",
+                    $"Remove {ServiceAccount}'s access to key file {name}",
+                    $"it is in {folder}, and no configured certificate uses it any more",
                     key);
             }
         }
@@ -376,7 +380,9 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
                 $"Remove {ServiceAccount}'s access to '{folder}'",
                 "the configuration no longer uses it",
                 folder,
-                !Holds(folder, desired.LogsFolder) && !Holds(folder, desired.SnapshotFolder));
+                !Holds(folder, desired.LogsFolder)
+                    && !Holds(folder, desired.SnapshotFolder)
+                    && !Holds(folder, WindowsPath.FolderOf(desired.BinaryPath)));
         }
     }
 

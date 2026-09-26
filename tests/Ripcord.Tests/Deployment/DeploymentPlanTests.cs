@@ -322,6 +322,35 @@ public class DeploymentPlanTests
         Assert.True(revokes.Single(step => step.Target == @"C:\Other").Recursive);
     }
 
+    /// Moved into a folder below the old one: `/t` would reach the new install folder.
+    [Fact]
+    public void A_stale_folder_holding_the_install_folder_is_not_revoked_recursively()
+    {
+        DeploymentStep revoke = DeploymentPlan.For(
+                Desired, Matching() with { FoldersGranted = [@"D:\"] })
+            .Steps.Single(step => step.Action == DeploymentAction.RevokeStaleFolderAccess);
+
+        Assert.False(revoke.Recursive);
+    }
+
+    /// A real key path is over 100 characters. The step names the file alone, which fits the
+    /// 70 columns after the step number, and keeps the full path as its target.
+    [Fact]
+    public void A_stale_key_step_names_the_file_on_a_line_of_its_own()
+    {
+        const string Key = @"C:\ProgramData\Microsoft\Crypto\RSA\MachineKeys\"
+            + "0123456789abcdef0123456789abcdef_01234567-89ab-cdef-0123-456789abcdef";
+
+        DeploymentStep revoke = DeploymentPlan.For(
+                Desired, Matching() with { KeyFile = CurrentKey, KeyFilesGranted = [Key] })
+            .Steps.Single(step => step.Action == DeploymentAction.RevokeStaleKeyAccess);
+
+        Assert.Equal(Key, revoke.Target);
+        Assert.All(revoke.Description.Split(' '), word => Assert.True(word.Length <= 70));
+        Assert.EndsWith(Key[(Key.LastIndexOf('\\') + 1)..], revoke.Description, StringComparison.Ordinal);
+        Assert.Contains(@"C:\ProgramData\Microsoft\Crypto\RSA\MachineKeys,", revoke.Reason, StringComparison.Ordinal);
+    }
+
     private static ObservedDeployment Matching() => new(
         ServiceInstalled: true,
         ServiceBinaryPath: @"D:\Ripcord\ripcord.exe",
