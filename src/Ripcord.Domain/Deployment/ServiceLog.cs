@@ -25,9 +25,11 @@ public static class ServiceLog
     /// Today's file, then yesterday's: a service that stopped at 23:59 UTC left its reason in
     /// a file that is no longer today's a minute later.
     public static IReadOnlyList<string> Candidates(
-        string logsFolder, DateTimeOffset now, RipcordService? service = null)
+        RipcordService service, string logsFolder, DateTimeOffset now)
     {
-        DiagnosticOrigin origin = (service ?? RipcordService.Listener).Origin;
+        ArgumentNullException.ThrowIfNull(service);
+
+        DiagnosticOrigin origin = service.Origin;
 
         return
         [

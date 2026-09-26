@@ -47,7 +47,7 @@ public sealed class ServiceInspection(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        ObservedService service = ServiceReading.Read(executor);
+        ObservedService service = ServiceReading.Read(executor, RipcordService.Listener);
 
         DeploymentOutcome deployment =
             new ListenerDeployment(configStore, executor).Plan(request, service);
@@ -58,7 +58,7 @@ public sealed class ServiceInspection(
 
         LogReading? log = null;
 
-        foreach (string candidate in ServiceLog.Candidates(logsFolder, now))
+        foreach (string candidate in ServiceLog.Candidates(RipcordService.Listener, logsFolder, now))
         {
             if (logReader.Tail(candidate, ServiceLog.ReadLines) is { } reading)
             {
@@ -68,7 +68,7 @@ public sealed class ServiceInspection(
         }
 
         RunningBuild? build = ServiceProcessReading.Judge(
-            logReader, service, logsFolder, thisBuild, request.BinaryPath);
+            logReader, service, logsFolder, thisBuild, request.BinaryPath, RipcordService.Listener);
 
         HostCertificates certificates = HostCertificateReading.Read(certificateStore, request.MachineName, now);
 
@@ -80,6 +80,7 @@ public sealed class ServiceInspection(
             logsFolder,
             log,
             ServiceDiagnosis.Diagnose(
+                RipcordService.Listener,
                 service,
                 LogsWritable(deployment, logsFolder),
                 log,
@@ -103,7 +104,7 @@ public sealed class ServiceInspection(
         string logsFolder = LogFolder.For(
             publisher.Origin, LogFolder.Beside(service.BinaryPath ?? request.BinaryPath));
 
-        LogReading? log = ServiceLog.Candidates(logsFolder, now, publisher)
+        LogReading? log = ServiceLog.Candidates(publisher, logsFolder, now)
             .Select(candidate => logReader.Tail(candidate, ServiceLog.ReadLines))
             .FirstOrDefault(reading => reading is not null);
 
@@ -112,11 +113,11 @@ public sealed class ServiceInspection(
             logsFolder,
             log,
             ServiceDiagnosis.Diagnose(
+                publisher,
                 service,
                 deployment.Observed?.Publisher?.LogsWritable,
                 log,
-                listenerDisabled: deployment.Desired is { ListenerEnabled: false },
-                which: publisher),
+                listenerDisabled: deployment.Desired is { ListenerEnabled: false }),
             ServiceProcessReading.Judge(logReader, service, logsFolder, thisBuild, request.BinaryPath, publisher));
     }
 

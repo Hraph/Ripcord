@@ -14,14 +14,14 @@ public static class ServiceProcessReading
         string logsFolder,
         string thisBuild,
         string thisBinary,
-        RipcordService? recording = null)
+        RipcordService recording)
     {
         ArgumentNullException.ThrowIfNull(logReader);
         ArgumentNullException.ThrowIfNull(service);
 
         ServiceProcess? recorded =
             service.State == ServiceRunState.Running
-            && logReader.Tail(WindowsPath.Join(logsFolder, (recording ?? RipcordService.Listener).ProcessFile), 4) is
+            && logReader.Tail(WindowsPath.Join(logsFolder, recording.ProcessFile), 4) is
                 { Unreadable: null } record
                 ? ServiceProcess.Parse(record.Lines)
                 : null;

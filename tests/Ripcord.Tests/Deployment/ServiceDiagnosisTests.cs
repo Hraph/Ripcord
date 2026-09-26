@@ -23,7 +23,7 @@ public class ServiceDiagnosisTests
         DiagnosticEntry.Of(operation, message).Render(At)[0];
 
     private static string Banner() =>
-        ServiceStartup.Banner("0.4.1", @"C:\Program Files\Ripcord\ripcord.yaml").Render(At)[0];
+        ServiceStartup.Banner(RipcordService.Listener, "0.4.1", @"C:\Program Files\Ripcord\ripcord.yaml").Render(At)[0];
 
     private static string Exit(ExitCode code) => CommandEntries.Exited("serve", code).Render(At)[0];
 
@@ -32,7 +32,7 @@ public class ServiceDiagnosisTests
     [Fact]
     public void Not_installed_names_the_install_dry_run()
     {
-        ServiceVerdict verdict = ServiceDiagnosis.Diagnose(ObservedService.Absent, null, null);
+        ServiceVerdict verdict = ServiceDiagnosis.Diagnose(RipcordService.Listener, ObservedService.Absent, null, null);
 
         Assert.Equal("it is not installed", verdict.Why);
         Assert.Equal(["ripcord service install --dry-run"], verdict.Next);
@@ -43,12 +43,14 @@ public class ServiceDiagnosisTests
         Assert.Equal(
             ServiceVerdict.None,
             ServiceDiagnosis.Diagnose(
+                RipcordService.Listener,
                 Stopped with { State = ServiceRunState.Running }, true, null));
 
     [Fact]
     public void Unknown_state_is_never_read_as_stopped()
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            RipcordService.Listener,
             Stopped with { State = ServiceRunState.Unknown, Unreadable = "RPC unavailable" },
             false,
             null);
@@ -61,6 +63,7 @@ public class ServiceDiagnosisTests
     public void Disabled_start_mode_is_said_before_anything_else()
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            RipcordService.Listener,
             Stopped with { StartMode = "Disabled" },
             true,
             Log(Banner(), Exit(ExitCode.InvalidConfiguration)));
@@ -73,6 +76,7 @@ public class ServiceDiagnosisTests
     public void Logged_exit_after_the_last_banner_is_believed_when_windows_agrees()
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            RipcordService.Listener,
             Stopped with { Win32ExitCode = ServiceExitCode.ToWindows(ExitCode.InvalidConfiguration) },
             true,
             Log(Banner(), Line("serve", "listening"), Exit(ExitCode.InvalidConfiguration)));
@@ -85,6 +89,7 @@ public class ServiceDiagnosisTests
     public void Logged_exit_is_believed_when_windows_recorded_a_clean_stop()
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            RipcordService.Listener,
             Stopped, true, Log(Banner(), Exit(ExitCode.InvalidConfiguration)));
 
         Assert.Equal("it stopped with exit 2: the configuration did not load", verdict.Why);
@@ -94,6 +99,7 @@ public class ServiceDiagnosisTests
     public void A_stale_exit_in_the_log_gives_way_to_a_different_ripcord_code_from_windows()
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            RipcordService.Listener,
             Stopped with { Win32ExitCode = ServiceExitCode.ToWindows(ExitCode.LocalAccessFailure) },
             true,
             Log(Banner(), Exit(ExitCode.InvalidConfiguration)));
@@ -111,6 +117,7 @@ public class ServiceDiagnosisTests
     public void A_clean_log_never_hides_a_failed_start_windows_recorded(bool cancelled)
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            RipcordService.Listener,
             Stopped with { Win32ExitCode = ServiceExitCode.ToWindows(ExitCode.LocalAccessFailure) },
             true,
             Log(
@@ -124,6 +131,7 @@ public class ServiceDiagnosisTests
     public void A_clean_log_and_logs_not_writable_blames_the_logs_folder()
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            RipcordService.Listener,
             Stopped with { Win32ExitCode = ServiceExitCode.ToWindows(ExitCode.LocalAccessFailure) },
             false,
             Log(Banner(), Exit(ExitCode.Success)));
@@ -138,6 +146,7 @@ public class ServiceDiagnosisTests
     public void A_clean_log_never_hides_a_code_windows_set_after_it(int win32, string expected)
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            RipcordService.Listener,
             Stopped with { Win32ExitCode = win32 }, true, Log(Banner(), Exit(ExitCode.Success)));
 
         Assert.Equal(expected + "; its log is from an earlier run", verdict.Why);
@@ -148,6 +157,7 @@ public class ServiceDiagnosisTests
     public void A_windows_code_with_no_log_does_not_mention_an_earlier_run()
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            RipcordService.Listener,
             Stopped with { Win32ExitCode = 1053 }, true, null);
 
         Assert.Equal("Windows recorded 1053: it did not answer the start request in time", verdict.Why);
@@ -157,6 +167,7 @@ public class ServiceDiagnosisTests
     public void Aborted_after_a_logged_exit_is_the_process_dying_after_reporting()
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            RipcordService.Listener,
             Stopped with { Win32ExitCode = ServiceExitCode.Aborted },
             true,
             Log(Banner(), Exit(ExitCode.InvalidConfiguration)));
@@ -168,6 +179,7 @@ public class ServiceDiagnosisTests
     public void A_crash_logged_agrees_with_the_exit_3_the_host_sets()
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            RipcordService.Listener,
             Stopped with { Win32ExitCode = ServiceExitCode.ToWindows(ExitCode.LocalAccessFailure) },
             true,
             Log(Banner(), CommandEntries.Crashed("serve", "boom").Render(At)[0]));
@@ -179,6 +191,7 @@ public class ServiceDiagnosisTests
     public void Never_started_says_so_and_names_the_restart()
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            RipcordService.Listener,
             Stopped with { Win32ExitCode = ServiceDiagnosis.NeverStarted },
             true,
             Log(Banner(), Exit(ExitCode.Success)));
@@ -191,6 +204,7 @@ public class ServiceDiagnosisTests
     public void A_disabled_listener_is_said_before_the_clean_stop_and_points_to_remove()
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            RipcordService.Listener,
             Stopped, true, Log(Banner(), Exit(ExitCode.Success)), listenerDisabled: true);
 
         Assert.Equal(
@@ -202,6 +216,7 @@ public class ServiceDiagnosisTests
     public void Access_denied_asks_for_an_elevated_console()
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            RipcordService.Listener,
             Stopped with { State = ServiceRunState.Unknown, Unreadable = ObservedService.AccessDenied },
             null,
             null);
@@ -213,6 +228,7 @@ public class ServiceDiagnosisTests
     public void An_exit_before_the_last_banner_is_ignored()
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            RipcordService.Listener,
             Stopped,
             true,
             Log(Banner(), Exit(ExitCode.InvalidConfiguration), Banner(), Line("serve", "listening")));
@@ -225,6 +241,7 @@ public class ServiceDiagnosisTests
     public void Windows_code_is_read_when_the_log_says_nothing()
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            RipcordService.Listener,
             Stopped with { Win32ExitCode = ServiceExitCode.ToWindows(ExitCode.InvalidConfiguration) },
             true,
             null);
@@ -236,6 +253,7 @@ public class ServiceDiagnosisTests
     public void A_service_specific_error_carries_ripcords_code()
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            RipcordService.Listener,
             Stopped with { Win32ExitCode = 1066, ServiceSpecificExitCode = 2 }, true, null);
 
         Assert.Equal("Windows recorded exit 2: the configuration did not load", verdict.Why);
@@ -245,6 +263,7 @@ public class ServiceDiagnosisTests
     public void Crash_line_says_the_error_is_in_the_log()
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            RipcordService.Listener,
             Stopped with { Win32ExitCode = ServiceExitCode.ToWindows(ExitCode.LocalAccessFailure) },
             true,
             Log(Banner(), CommandEntries.Crashed("serve", "boom").Render(At)[0], "    boom"));
@@ -258,6 +277,7 @@ public class ServiceDiagnosisTests
     public void A_clean_stop_or_a_cancel_reads_as_an_operator_stop(bool cancelled)
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            RipcordService.Listener,
             Stopped,
             true,
             Log(
@@ -274,6 +294,7 @@ public class ServiceDiagnosisTests
     public void No_log_and_logs_not_writable_blames_the_logs_folder()
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            RipcordService.Listener,
             Stopped with { Win32ExitCode = ServiceExitCode.ToWindows(ExitCode.LocalAccessFailure) },
             false,
             null);
@@ -285,7 +306,7 @@ public class ServiceDiagnosisTests
     [Fact]
     public void No_log_at_all_says_it_died_before_logging_and_prints_the_event_log_commands()
     {
-        ServiceVerdict verdict = ServiceDiagnosis.Diagnose(Stopped, true, null);
+        ServiceVerdict verdict = ServiceDiagnosis.Diagnose(RipcordService.Listener, Stopped, true, null);
 
         Assert.StartsWith("no log today or yesterday", verdict.Why, StringComparison.Ordinal);
         Assert.Equal(ServiceDiagnosis.EventLogCommands, verdict.Next);
@@ -295,6 +316,7 @@ public class ServiceDiagnosisTests
     public void Process_aborted_points_to_the_event_log()
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            RipcordService.Listener,
             Stopped with { Win32ExitCode = ServiceExitCode.Aborted }, true, Log(Banner()));
 
         Assert.Equal("the process ended without reporting to Windows", verdict.Why);
@@ -305,6 +327,7 @@ public class ServiceDiagnosisTests
     public void An_unreadable_log_says_so()
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            RipcordService.Listener,
             Stopped, true, new LogReading(LogPath, [], "Access is denied."));
 
         Assert.Equal("its log could not be read: Access is denied.", verdict.Why);

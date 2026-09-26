@@ -82,7 +82,7 @@ public sealed class ListenerAvailabilityTests
             true, null, ServiceRunState.Unknown, null, null, null, ObservedService.AccessDenied);
 
         Assert.Equal(
-            ServiceDiagnosis.Diagnose(unreadable, null, null).Why,
+            ServiceDiagnosis.Diagnose(RipcordService.Listener, unreadable, null, null).Why,
             Judge(Enabled, unreadable)!.Reason);
     }
 

@@ -1145,7 +1145,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         }
 
         ListenerDeployment deployment = new(ports.ConfigStore, ports.DeploymentExecutor);
-        ObservedService service = ServiceReading.Read(ports.DeploymentExecutor);
+        ObservedService service = ServiceReading.Read(ports.DeploymentExecutor, RipcordService.Listener);
 
         DeploymentOutcome outcome = deployment.Plan(
             new DeploymentRequest(

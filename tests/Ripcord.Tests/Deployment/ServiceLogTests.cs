@@ -13,6 +13,7 @@ public class ServiceLogTests
     public void Candidates_are_today_then_yesterday_in_utc()
     {
         IReadOnlyList<string> candidates = ServiceLog.Candidates(
+            RipcordService.Listener,
             @"C:\Program Files\Ripcord\logs", At.ToOffset(TimeSpan.FromHours(-5)));
 
         Assert.Equal(
@@ -28,7 +29,7 @@ public class ServiceLogTests
     {
         ServiceLogSummary summary = ServiceLog.Summarise(
         [
-            .. ServiceStartup.Banner("0.4.1", "ripcord.yaml").Render(At),
+            .. ServiceStartup.Banner(RipcordService.Listener, "0.4.1", "ripcord.yaml").Render(At),
             .. CommandEntries.Exited("serve", ExitCode.InvalidConfiguration).Render(At),
         ]);
 
@@ -48,7 +49,7 @@ public class ServiceLogTests
     public void A_banner_with_nothing_after_it_ended_silently()
     {
         ServiceLogSummary summary = ServiceLog.Summarise(
-            ServiceStartup.Banner("0.4.1", "ripcord.yaml").Render(At));
+            ServiceStartup.Banner(RipcordService.Listener, "0.4.1", "ripcord.yaml").Render(At));
 
         Assert.True(summary.EndedSilently);
     }

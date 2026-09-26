@@ -103,15 +103,16 @@ public static class ServiceDiagnosis
     }
 
     public static ServiceVerdict Diagnose(
+        RipcordService which,
         ObservedService service,
         bool? logsWritable,
         LogReading? log,
 
         /// `listener.enabled: false` in the configuration this run read.
         bool listenerDisabled = false,
-        RunningBuild? build = null,
-        RipcordService? which = null)
+        RunningBuild? build = null)
     {
+        ArgumentNullException.ThrowIfNull(which);
         ArgumentNullException.ThrowIfNull(service);
 
         if (!service.Installed)
@@ -129,7 +130,7 @@ public static class ServiceDiagnosis
             ServiceRunState.Paused =>
                 new ServiceVerdict("it is paused, which Ripcord never does itself", []),
             ServiceRunState.Stopped =>
-                Stopped(service, logsWritable, log, listenerDisabled, which ?? RipcordService.Listener),
+                Stopped(service, logsWritable, log, listenerDisabled, which),
             _ => Unknown(service.Unreadable),
         };
     }

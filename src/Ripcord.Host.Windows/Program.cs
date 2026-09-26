@@ -307,11 +307,11 @@ internal static class Program
             // The first line decides whether there is a log at all. Nothing else can say so
             // but the event log: a service has no console.
             if (setup.Diagnostics.TryWrite(ServiceStartup.Banner(
-                    BuildInfo.VersionWithCommit, setup.ConfigurationPath, role)) is { } reason)
+                    role, BuildInfo.VersionWithCommit, setup.ConfigurationPath)) is { } reason)
             {
                 Stopped(
                     logger,
-                    ServiceStartup.LogUnavailable(setup.Diagnostics.CurrentFile, reason, role),
+                    ServiceStartup.LogUnavailable(role, setup.Diagnostics.CurrentFile, reason),
                     null);
                 this.Stop(ExitCode.LocalAccessFailure, stoppingToken);
                 return;

@@ -42,8 +42,8 @@ public class RipcordServiceTests
     [Fact]
     public void Each_banner_names_its_role_and_both_are_recognised()
     {
-        DiagnosticEntry publisher = ServiceStartup.Banner("0.8.0+abc", "ripcord.yaml", RipcordService.Publisher);
-        DiagnosticEntry listener = ServiceStartup.Banner("0.8.0+abc", "ripcord.yaml");
+        DiagnosticEntry publisher = ServiceStartup.Banner(RipcordService.Publisher, "0.8.0+abc", "ripcord.yaml");
+        DiagnosticEntry listener = ServiceStartup.Banner(RipcordService.Listener, "0.8.0+abc", "ripcord.yaml");
 
         Assert.EndsWith("publisher starting", publisher.Message, StringComparison.Ordinal);
         Assert.EndsWith("listener starting", listener.Message, StringComparison.Ordinal);
@@ -55,7 +55,8 @@ public class RipcordServiceTests
     public void A_publisher_that_cannot_log_names_its_own_account()
     {
         string text = ServiceStartup.LogUnavailable(
-            @"C:\Program Files\Ripcord\logs\publish\publish-2026-09-26.log", "Access is denied.", RipcordService.Publisher);
+            RipcordService.Publisher,
+            @"C:\Program Files\Ripcord\logs\publish\publish-2026-09-26.log", "Access is denied.");
 
         Assert.Contains("The Ripcord publisher stopped", text, StringComparison.Ordinal);
         Assert.Contains(@"NT SERVICE\ripcord-publish", text, StringComparison.Ordinal);
@@ -65,7 +66,7 @@ public class RipcordServiceTests
     public void The_publishers_log_candidates_are_its_own_files() =>
         Assert.Equal(
             [@"C:\R\logs\publish\publish-2026-09-26.log", @"C:\R\logs\publish\publish-2026-09-25.log"],
-            ServiceLog.Candidates(@"C:\R\logs\publish", At, RipcordService.Publisher));
+            ServiceLog.Candidates(RipcordService.Publisher, @"C:\R\logs\publish", At));
 
     /// Both services keep writing where install granted them, whatever the configuration says.
     [Theory]

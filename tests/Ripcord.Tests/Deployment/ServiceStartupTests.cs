@@ -11,7 +11,7 @@ public class ServiceStartupTests
     [Fact]
     public void An_unwritable_log_names_the_file_the_reason_the_account_and_the_fix()
     {
-        string text = ServiceStartup.LogUnavailable(LogPath, "Access is denied.");
+        string text = ServiceStartup.LogUnavailable(RipcordService.Listener, LogPath, "Access is denied.");
 
         Assert.Contains(LogPath, text, StringComparison.Ordinal);
         Assert.Contains("Access is denied.", text, StringComparison.Ordinal);
@@ -25,7 +25,7 @@ public class ServiceStartupTests
     [Fact]
     public void Every_line_of_it_fits_the_console() =>
         Assert.All(
-            ServiceStartup.LogUnavailable(LogPath, "Access is denied.").Split(Environment.NewLine),
+            ServiceStartup.LogUnavailable(RipcordService.Listener, LogPath, "Access is denied.").Split(Environment.NewLine),
             line => Assert.True(line.Length <= 75, line));
 
     [Fact]
@@ -33,7 +33,7 @@ public class ServiceStartupTests
     {
         string banner = string.Join(
             "\n",
-            ServiceStartup.Banner("0.4.0+32aac02", @"C:\Program Files\Ripcord\ripcord.yaml")
+            ServiceStartup.Banner(RipcordService.Listener, "0.4.0+32aac02", @"C:\Program Files\Ripcord\ripcord.yaml")
                 .Render(new DateTimeOffset(2026, 9, 25, 8, 30, 0, TimeSpan.FromHours(2))));
 
         Assert.Contains("2026-09-25 06:30:00.000Z", banner, StringComparison.Ordinal);

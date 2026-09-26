@@ -101,6 +101,7 @@ public class ServiceProcessTests
     public void An_outdated_listener_is_told_to_restart()
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
+            RipcordService.Listener,
             Running, logsWritable: true, log: null,
             build: RunningBuild.Judge(Running, new ServiceProcess(Old, 4812), New, Binary));
 
@@ -118,5 +119,5 @@ public class ServiceProcessTests
             },
             build => Assert.Equal(
                 ServiceVerdict.None,
-                ServiceDiagnosis.Diagnose(Running, logsWritable: true, log: null, build: build)));
+                ServiceDiagnosis.Diagnose(RipcordService.Listener, Running, logsWritable: true, log: null, build: build)));
 }

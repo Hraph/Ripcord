@@ -71,7 +71,7 @@ public sealed class StatusQuery(
                 ExitCode.LocalAccessFailure, null, [], read.FailureMessage, read.Notes);
         }
 
-        ObservedService service = ServiceReading.Read(executor);
+        ObservedService service = ServiceReading.Read(executor, RipcordService.Listener);
 
         return new StatusOutcome(
             ExitCode.Success,
@@ -88,7 +88,8 @@ public sealed class StatusQuery(
                         service,
                         LogFolder.Beside(service.BinaryPath ?? request.ThisBinary),
                         request.ThisBuild,
-                        request.ThisBinary))),
+                        request.ThisBinary,
+                        RipcordService.Listener))),
             [],
             null,
             [.. ConfigurationNotes.Of(configuration), .. read.Notes]);

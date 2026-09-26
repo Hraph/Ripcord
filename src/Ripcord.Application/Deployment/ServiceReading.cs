@@ -6,13 +6,14 @@ namespace Ripcord.Application.Deployment;
 public static class ServiceReading
 {
     /// Never throws: a service Windows would not describe is "cannot tell", with the reason.
-    public static ObservedService Read(IDeploymentExecutor executor, RipcordService? service = null)
+    public static ObservedService Read(IDeploymentExecutor executor, RipcordService service)
     {
         ArgumentNullException.ThrowIfNull(executor);
+        ArgumentNullException.ThrowIfNull(service);
 
         try
         {
-            return executor.ObserveService(service ?? RipcordService.Listener);
+            return executor.ObserveService(service);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {

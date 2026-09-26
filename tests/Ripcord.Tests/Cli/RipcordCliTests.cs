@@ -534,7 +534,7 @@ public class RipcordCliTests
     {
         StubLogReader logs = new(
         [
-            .. ServiceStartup.Banner("0.4.1", "ripcord.yaml").Render(Now),
+            .. ServiceStartup.Banner(RipcordService.Listener, "0.4.1", "ripcord.yaml").Render(Now),
             .. CommandEntries.Exited("serve", ExitCode.InvalidConfiguration).Render(Now),
         ]);
 
@@ -597,7 +597,7 @@ public class RipcordCliTests
     {
         StubLogReader logs = new(
         [
-            .. ServiceStartup.Banner("0.4.1", "ripcord.yaml").Render(Now),
+            .. ServiceStartup.Banner(RipcordService.Listener, "0.4.1", "ripcord.yaml").Render(Now),
             DiagnosticEntry.Of("serve", new string('x', 200)).Render(Now)[0],
             .. CommandEntries.Exited("serve", ExitCode.LocalAccessFailure).Render(Now),
         ]);
