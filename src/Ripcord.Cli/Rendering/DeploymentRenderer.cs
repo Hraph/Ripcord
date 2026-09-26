@@ -30,8 +30,8 @@ public static class DeploymentRenderer
         StringBuilder output = new();
 
         output.AppendLine(heading ?? (removing
-            ? "RIPCORD LISTENER REMOVAL"
-            : "RIPCORD LISTENER DEPLOYMENT"));
+            ? "RIPCORD SERVICES REMOVAL"
+            : "RIPCORD SERVICES DEPLOYMENT"));
         output.AppendLine();
 
         if (observed is not null)
@@ -81,9 +81,9 @@ public static class DeploymentRenderer
 
         StringBuilder output = new();
 
-        output.AppendLine(Ink.Bold("RIPCORD LISTENER"));
+        output.AppendLine(Ink.Bold("RIPCORD SERVICES"));
         output.AppendLine();
-        output.AppendLine("  ON THIS HOST");
+        output.AppendLine("  LISTENER");
 
         ObservedService service = report.Service;
         DeploymentOutcome deployment = report.Deployment;
@@ -298,6 +298,9 @@ public static class DeploymentRenderer
 
         if (deployment.Observed?.Publisher is { } observed && publisher.Service.Installed)
         {
+            output.AppendLine(observed.ConfigurationReadable
+                ? $"    config     readable by {service.Account}"
+                : $"    config     NOT readable by {service.Account}");
             output.AppendLine(observed.InHyperVAdministrators switch
             {
                 true => $"    hyper-v    member of {observed.HyperVAdministrators}",

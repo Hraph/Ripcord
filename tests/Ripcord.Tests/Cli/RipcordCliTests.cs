@@ -794,7 +794,7 @@ public class RipcordCliTests
         CliRun run = await Run(["service"], deploymentExecutor: executor);
 
         Assert.Equal(ExitCode.Success, run.Code);
-        Assert.Contains("RIPCORD LISTENER", run.Output, StringComparison.Ordinal);
+        Assert.Contains("RIPCORD SERVICES", run.Output, StringComparison.Ordinal);
         Assert.Contains("service    running", run.Output, StringComparison.Ordinal);
         Assert.Contains("It matches the configuration", run.Output, StringComparison.Ordinal);
         Assert.Empty(executor.Applied);
@@ -1070,6 +1070,22 @@ public class RipcordCliTests
         Assert.Contains(
             @"key        NOT readable by NT SERVICE\ripcord", run.Output, StringComparison.Ordinal);
         Assert.Contains("1 step(s) would change it", run.Output, StringComparison.Ordinal);
+    }
+
+    /// The publisher's section lists what it was granted, row by row, like the listener's.
+    [Fact]
+    public async Task Service_shows_the_publishers_section_with_its_grants()
+    {
+        CliRun run = await Run(["service"], deploymentExecutor: new FakeDeploymentExecutor(Deployed()));
+        string[] lines = run.Output.ReplaceLineEndings("\n").Split('\n');
+
+        int publisher = Array.IndexOf(lines, "  PUBLISHER");
+
+        Assert.True(publisher > 0);
+        Assert.Contains(@"    config     readable by NT SERVICE\ripcord-publish", lines[publisher..]);
+        Assert.Contains("    hyper-v    member of Hyper-V Administrators", lines[publisher..]);
+        Assert.Contains(@"    snapshot   writable by NT SERVICE\ripcord-publish", lines[publisher..]);
+        Assert.Contains("    logs       writable by it alone", lines[publisher..]);
     }
 
     /// With the BitLocker check off, the publisher needs no access to that namespace: the row
