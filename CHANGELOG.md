@@ -22,6 +22,12 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 - **`ripcord service remove` is now `ripcord service uninstall`**, the counterpart of `install`.
   `remove` changes nothing and says what to type instead.
 
+### Fixed
+
+- **A snapshot write that met another one is retried**, up to 80 ms, instead of failing: Windows
+  refuses a replace while another one of the same file is under way, so the publisher and an
+  administrator's `ripcord status` could have `status` report *could not publish its snapshot*.
+
 ## 0.9.0 — 2026-09-26
 
 ### Changed

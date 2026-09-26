@@ -28,12 +28,35 @@ public sealed class FileSnapshotStore : ISnapshotStore
         try
         {
             File.WriteAllText(temporary, payload);
-            File.Move(temporary, path, overwrite: true);
+            Replace(temporary, path);
         }
         finally
         {
             // A failed write is retried every 15 s: each one must not leave its own file behind.
             Discard(temporary);
+        }
+    }
+
+    private const int ReplaceAttempts = 5;
+
+    private static readonly TimeSpan ReplaceRetryDelay = TimeSpan.FromMilliseconds(20);
+
+    /// Windows refuses a replace, access denied, while another writer's replace of the same file
+    /// is under way: the publisher and an administrator's `status` meet here.
+    private static void Replace(string temporary, string path)
+    {
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                File.Move(temporary, path, overwrite: true);
+                return;
+            }
+            catch (Exception exception) when (
+                attempt < ReplaceAttempts && exception is IOException or UnauthorizedAccessException)
+            {
+                Thread.Sleep(ReplaceRetryDelay);
+            }
         }
     }
 
