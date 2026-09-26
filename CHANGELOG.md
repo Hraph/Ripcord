@@ -9,7 +9,7 @@ half-updated pair depends on.
 
 A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binary.
 
-## Unreleased
+## 0.10.0 — 2026-09-26
 
 ### Changed
 
