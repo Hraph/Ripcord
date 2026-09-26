@@ -9,9 +9,9 @@ public interface IDeploymentExecutor
     /// Around a service already read, so one report never holds two readings of it.
     ObservedDeployment Observe(DesiredDeployment desired, ObservedService service);
 
-    /// The service alone, which needs no configuration: `ripcord service` still shows it when
-    /// `ripcord.yaml` does not load, the likeliest reason a listener stopped.
-    ObservedService ObserveService();
+    /// One service alone, which needs no configuration: `ripcord service` still shows it when
+    /// `ripcord.yaml` does not load, the likeliest reason a service stopped.
+    ObservedService ObserveService(RipcordService which);
 
     void Apply(DeploymentStep change, DesiredDeployment desired);
 }

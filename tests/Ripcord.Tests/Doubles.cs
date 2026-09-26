@@ -48,7 +48,7 @@ public sealed class NoOpDeploymentExecutor : IDeploymentExecutor
 {
     public ObservedDeployment Observe(DesiredDeployment desired, ObservedService service) => ObservedDeployment.Nothing;
 
-    public ObservedService ObserveService() => ObservedService.Absent;
+    public ObservedService ObserveService(RipcordService which) => ObservedService.Absent;
 
     public void Apply(DeploymentStep change, DesiredDeployment desired)
     {
@@ -217,7 +217,7 @@ public sealed class UntouchedHost : IDeploymentExecutor
     public ObservedDeployment Observe(DesiredDeployment desired, ObservedService service) =>
         new(false, null, false, null, null, false, false);
 
-    public ObservedService ObserveService() => ObservedService.Absent;
+    public ObservedService ObserveService(RipcordService which) => ObservedService.Absent;
 
     public void Apply(DeploymentStep change, DesiredDeployment desired)
     {

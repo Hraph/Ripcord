@@ -380,7 +380,7 @@ internal sealed class ListenerService(ObservedService? service, string? failure 
     public ObservedDeployment Observe(DesiredDeployment desired, ObservedService observed) =>
         ObservedDeployment.Nothing;
 
-    public ObservedService ObserveService() =>
+    public ObservedService ObserveService(RipcordService which) =>
         service ?? throw new InvalidOperationException(failure);
 
     public void Apply(DeploymentStep change, DesiredDeployment desired)

@@ -19,6 +19,7 @@ public static class DesiredDeploymentFactory
             LogFolder.Beside(binaryPath),
             configuration.Listener.Enabled,
             configuration.Peer.OfflineAfter,
-            configuration.Listener.LocalCertificateThumbprint);
+            configuration.Listener.LocalCertificateThumbprint,
+            configuration.Storage.CheckBitLockerAutoUnlock);
     }
 }

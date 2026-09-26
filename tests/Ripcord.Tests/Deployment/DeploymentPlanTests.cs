@@ -70,7 +70,7 @@ public class DeploymentPlanTests
              DeploymentAction.GrantConfigurationAccess,
              DeploymentAction.GrantSnapshotAccess, DeploymentAction.GrantLogsAccess,
              DeploymentAction.RegisterEventSource, DeploymentAction.StartService],
-            plan.Steps.Select(step => step.Action));
+            Listener(plan));
         Assert.True(plan.ChangesAnything);
     }
 
@@ -192,7 +192,7 @@ public class DeploymentPlanTests
             [DeploymentAction.RemoveEventSource, DeploymentAction.RevokeLogsAccess,
              DeploymentAction.RevokeSnapshotAccess, DeploymentAction.RemoveFirewallRule,
              DeploymentAction.RemoveService],
-            plan.Steps.Select(step => step.Action));
+            Listener(plan));
     }
 
     [Fact]
@@ -220,12 +220,9 @@ public class DeploymentPlanTests
     [Fact]
     public void The_port_is_never_open_without_a_service_behind_it()
     {
-        List<DeploymentAction> install =
-            [.. DeploymentPlan.For(Desired, ObservedDeployment.Nothing).Steps
-                .Select(step => step.Action)];
+        List<DeploymentAction> install = [.. Listener(DeploymentPlan.For(Desired, ObservedDeployment.Nothing))];
 
-        List<DeploymentAction> remove =
-            [.. DeploymentPlan.ToRemove(Matching()).Steps.Select(step => step.Action)];
+        List<DeploymentAction> remove = [.. Listener(DeploymentPlan.ToRemove(Matching()))];
 
         Assert.True(
             install.IndexOf(DeploymentAction.CreateService)
@@ -274,12 +271,12 @@ public class DeploymentPlanTests
 
         Assert.Equal(
             [DeploymentAction.CreateService, DeploymentAction.StartService],
-            plan.Steps.Select(step => step.Action).Where(action =>
+            Listener(plan).Where(action =>
                 action is DeploymentAction.CreateService or DeploymentAction.StartService));
 
-        // And the start is last of all: after the firewall rule and after the access it needs
-        // to the file it serves.
-        Assert.Equal(DeploymentAction.StartService, plan.Steps[^1].Action);
+        // And the start is last of the listener's: after the firewall rule and after the access
+        // it needs to the file it serves.
+        Assert.Equal(DeploymentAction.StartService, Listener(plan)[^1]);
     }
 
     private const string CurrentKey = @"C:\ProgramData\Microsoft\Crypto\Keys\current_key";
@@ -381,7 +378,25 @@ public class DeploymentPlanTests
         ServiceRunning: true,
         LogsWritableByService: true,
         EventSourceRegistered: true,
-        ConfigurationReadableByService: true);
+        ConfigurationReadableByService: true,
+        Publisher: PublisherInPlace(@"D:\Ripcord\ripcord.exe"));
+
+    private static List<DeploymentAction> Listener(DeploymentPlan plan) =>
+        [.. plan.Steps.Where(step => step.Service is null).Select(step => step.Action)];
+
+    /// A publisher that needs nothing: running this binary, granted everything, in the group.
+    internal static ObservedPublisher PublisherInPlace(string binaryPath, NamespaceGrant encryption = NamespaceGrant.Missing) =>
+        new(
+            new ObservedService(true, $"\"{binaryPath}\" publish", ServiceRunState.Running, "Auto", 0, 0),
+            ConfigurationReadable: true,
+            SnapshotWritable: true,
+            LogsWritable: true,
+            ListenerCanWriteItsLogs: false,
+            InstallFolderGranted: true,
+            HyperVAdministrators: "Hyper-V Administrators",
+            InHyperVAdministrators: true,
+            Encryption: encryption,
+            EncryptionNote: null);
 
     /// The field failure: the service account could write nowhere, so the listener died
     /// before it answered Windows. The grant is on the logs folder and only there — never on

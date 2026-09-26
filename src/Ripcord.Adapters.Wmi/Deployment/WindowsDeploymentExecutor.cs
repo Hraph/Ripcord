@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Security.Principal;
 using Microsoft.Management.Infrastructure;
 using Microsoft.Management.Infrastructure.Options;
 using Ripcord.Domain;
@@ -62,7 +64,8 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
                 Run("icacls", $"\"{WindowsPath.Join(desired.InstallFolder, "ripcord.yaml")}\"").Output,
                 RipcordService.Listener.Account),
             AccessControl.GrantsExplicitly(
-                Run("icacls", $"\"{desired.InstallFolder}\"").Output, RipcordService.Listener.Account));
+                Run("icacls", $"\"{desired.InstallFolder}\"").Output, RipcordService.Listener.Account),
+            this.ObservePublisher(desired));
     }
 
     /// `/c` because without it icacls stops at the first key it cannot read (SYSTEM-only keys,
@@ -172,9 +175,11 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
     ///
     /// The registry says whether it is installed and what it runs when CIM cannot be read, so
     /// an unreadable WMI still shows the service rather than "not installed".
-    public ObservedService ObserveService()
+    public ObservedService ObserveService(RipcordService which)
     {
-        string? imagePath = ServiceImagePath();
+        ArgumentNullException.ThrowIfNull(which);
+
+        string? imagePath = ServiceImagePath(which);
 
         try
         {
@@ -186,7 +191,7 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
                     @"root\cimv2",
                     "WQL",
                     "SELECT State, StartMode, ExitCode, ServiceSpecificExitCode, PathName, ProcessId "
-                    + $"FROM Win32_Service WHERE Name = '{RipcordService.Listener.Name}'",
+                    + $"FROM Win32_Service WHERE Name = '{which.Name}'",
                     options)
                 .FirstOrDefault();
 
@@ -249,7 +254,19 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
 
         if (change.Action == DeploymentAction.GrantLogsAccess)
         {
-            Directory.CreateDirectory(desired.LogsFolder);
+            Directory.CreateDirectory(LogsOf(change, desired));
+        }
+
+        if (change.Action == DeploymentAction.GrantSnapshotWriteAccess)
+        {
+            Directory.CreateDirectory(desired.SnapshotFolder);
+        }
+
+        if (change.Action is DeploymentAction.GrantEncryptionNamespaceAccess
+            or DeploymentAction.RevokeEncryptionNamespaceAccess)
+        {
+            EditEncryptionNamespace(change.Subject, change.Action == DeploymentAction.GrantEncryptionNamespaceAccess);
+            return;
         }
 
         foreach ((string file, string arguments) in change.Action switch
@@ -262,12 +279,17 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
                     $"\"{change.Target}\" /remove \"{RipcordService.Listener.Account}\""
                     + (change.Recursive ? " /t" : "")),
             ],
-            _ => CommandsFor(change.Action, desired),
+            _ => CommandsFor(change, desired),
         })
         {
             (int code, string output) = Run(file, arguments);
 
-            if (code != 0 && ServiceCommand.LeavesNothingToDo(change.Action, code))
+            if (code != 0
+                && (ServiceCommand.LeavesNothingToDo(change.Action, code)
+                    || (change.Action is DeploymentAction.AddToHyperVAdministrators
+                            or DeploymentAction.RemoveFromHyperVAdministrators
+                        && LocalGroup.LeavesNothingToDo(
+                            change.Action == DeploymentAction.AddToHyperVAdministrators, output))))
             {
                 continue;
             }
@@ -281,26 +303,26 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
 
         if (DeploymentPlan.StartsTheService(change.Action))
         {
-            this.WatchTheStart();
+            this.WatchTheStart(change.Subject);
         }
         else if (change.Action == DeploymentAction.StopService)
         {
-            this.WaitForTheStop();
+            this.WaitForTheStop(change.Subject);
         }
     }
 
     private static readonly TimeSpan StopWait = TimeSpan.FromSeconds(30);
 
     /// `sc stop` returns while the stop is still pending: the step is done once Windows says so.
-    private void WaitForTheStop()
+    private void WaitForTheStop(RipcordService which)
     {
         Stopwatch watch = Stopwatch.StartNew();
-        ObservedService service = this.ObserveService();
+        ObservedService service = this.ObserveService(which);
 
         while (service.State != ServiceRunState.Stopped && watch.Elapsed < StopWait)
         {
             Thread.Sleep(StartWatchInterval);
-            service = this.ObserveService();
+            service = this.ObserveService(which);
         }
 
         if (service.State != ServiceRunState.Stopped)
@@ -316,7 +338,7 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
 
     /// `sc start` returns once the process has answered the service manager. Every failure the
     /// listener can report comes after that, so the step watches it for a few seconds.
-    private void WatchTheStart()
+    private void WatchTheStart(RipcordService which)
     {
         Stopwatch watch = Stopwatch.StartNew();
 
@@ -324,132 +346,318 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         {
             Thread.Sleep(StartWatchInterval);
 
-            if (ServiceDiagnosis.StartFailure(this.ObserveService()) is { } failure)
+            if (ServiceDiagnosis.StartFailure(this.ObserveService(which)) is { } failure)
             {
                 throw new InvalidOperationException(failure);
             }
         }
     }
 
-    /// The service runs as a virtual account, which has no password to manage and no rights
-    /// beyond what it is granted — it is never a member of Hyper-V Administrators.
+    /// Each service runs as its own virtual account, which has no password to manage and no
+    /// rights beyond what it is granted. Only the publisher is ever put in Hyper-V
+    /// Administrators; the listener, which faces the network, never is.
     private static IEnumerable<(string File, string Arguments)> CommandsFor(
-        DeploymentAction action, DesiredDeployment desired) => action switch
+        DeploymentStep change, DesiredDeployment desired)
     {
-        DeploymentAction.CreateService =>
-        [
-            ("sc.exe",
-                $"create {RipcordService.Listener.Name} "
-                + $"binPath= \"\\\"{desired.BinaryPath}\\\" serve\" start= auto "
-                + $"obj= \"{RipcordService.Listener.Account}\""),
-        ],
+        RipcordService service = change.Subject;
+        string name = service.Name;
+        string account = service.Account;
+        string binPath = $"binPath= \"\\\"{desired.BinaryPath}\\\" {service.Verb}\"";
+        bool publisher = service == RipcordService.Publisher;
 
-        DeploymentAction.StartService =>
-        [
-            ("sc.exe", $"start {RipcordService.Listener.Name}"),
-        ],
+        return change.Action switch
+        {
+            DeploymentAction.CreateService =>
+            [
+                ("sc.exe", $"create {name} {binPath} start= auto obj= \"{account}\""),
+            ],
 
-        DeploymentAction.RestartService =>
-        [
-            ("sc.exe", $"stop {RipcordService.Listener.Name}"),
-            ("sc.exe", $"start {RipcordService.Listener.Name}"),
-        ],
+            DeploymentAction.StartService => [("sc.exe", $"start {name}")],
 
-        DeploymentAction.UpdateService =>
-        [
-            ("sc.exe", $"stop {RipcordService.Listener.Name}"),
-            ("sc.exe",
-                $"config {RipcordService.Listener.Name} "
-                + $"binPath= \"\\\"{desired.BinaryPath}\\\" serve\""),
-            ("sc.exe", $"start {RipcordService.Listener.Name}"),
-        ],
+            DeploymentAction.RestartService =>
+            [
+                ("sc.exe", $"stop {name}"),
+                ("sc.exe", $"start {name}"),
+            ],
 
-        DeploymentAction.StopService =>
-        [
-            ("sc.exe", $"stop {RipcordService.Listener.Name}"),
-        ],
+            DeploymentAction.UpdateService =>
+            [
+                ("sc.exe", $"stop {name}"),
+                ("sc.exe", $"config {name} {binPath}"),
+                ("sc.exe", $"start {name}"),
+            ],
 
-        DeploymentAction.RemoveService =>
-        [
-            ("sc.exe", $"stop {RipcordService.Listener.Name}"),
-            ("sc.exe", $"delete {RipcordService.Listener.Name}"),
-        ],
+            DeploymentAction.StopService => [("sc.exe", $"stop {name}")],
 
-        DeploymentAction.CreateFirewallRule =>
-        [
-            ("netsh", FirewallRule("add", desired)),
-        ],
+            DeploymentAction.RemoveService =>
+            [
+                ("sc.exe", $"stop {name}"),
+                ("sc.exe", $"delete {name}"),
+            ],
 
-        DeploymentAction.UpdateFirewallRule =>
-        [
-            ("netsh", $"advfirewall firewall delete rule name=\"{DeploymentPlan.FirewallRuleName}\""),
-            ("netsh", FirewallRule("add", desired)),
-        ],
+            DeploymentAction.CreateFirewallRule =>
+            [
+                ("netsh", FirewallRule("add", desired)),
+            ],
 
-        DeploymentAction.RemoveFirewallRule =>
-        [
-            ("netsh", $"advfirewall firewall delete rule name=\"{DeploymentPlan.FirewallRuleName}\""),
-        ],
+            DeploymentAction.UpdateFirewallRule =>
+            [
+                ("netsh", $"advfirewall firewall delete rule name=\"{DeploymentPlan.FirewallRuleName}\""),
+                ("netsh", FirewallRule("add", desired)),
+            ],
 
-        DeploymentAction.GrantSnapshotAccess =>
-        [
-            ("icacls",
-                $"\"{desired.SnapshotFolder}\" /grant \"{RipcordService.Listener.Account}\":(OI)(CI)(R)"),
-        ],
+            DeploymentAction.RemoveFirewallRule =>
+            [
+                ("netsh", $"advfirewall firewall delete rule name=\"{DeploymentPlan.FirewallRuleName}\""),
+            ],
 
-        // `(OI)(NP)`: the files directly in the folder, so a `ripcord.yaml` rewritten by
-        // moving a new file into place is covered too; nothing in the folders below it.
-        DeploymentAction.GrantConfigurationAccess =>
-        [
-            ("icacls",
-                $"\"{desired.InstallFolder}\" /grant \"{RipcordService.Listener.Account}\":(OI)(NP)(R)"),
-        ],
+            DeploymentAction.GrantSnapshotAccess =>
+            [
+                ("icacls", $"\"{desired.SnapshotFolder}\" /grant \"{account}\":(OI)(CI)(R)"),
+            ],
 
-        // Never `/t`: that would also strip the explicit grants on `logs` below it.
-        DeploymentAction.RevokeConfigurationAccess =>
-        [
-            ("icacls", $"\"{desired.InstallFolder}\" /remove \"{RipcordService.Listener.Account}\""),
-        ],
+            // Modify on the snapshot folder, which holds nothing but the snapshot.
+            DeploymentAction.GrantSnapshotWriteAccess =>
+            [
+                ("icacls", $"\"{desired.SnapshotFolder}\" /grant \"{account}\":(OI)(CI)(M)"),
+            ],
 
-        DeploymentAction.RevokeSnapshotAccess =>
-        [
+            // `(OI)(NP)`: the files directly in the folder, so a `ripcord.yaml` rewritten by
+            // moving a new file into place is covered too; nothing in the folders below it.
+            DeploymentAction.GrantConfigurationAccess =>
+            [
+                ("icacls", $"\"{desired.InstallFolder}\" /grant \"{account}\":(OI)(NP)(R)"),
+            ],
+
+            // Never `/t`: that would also strip the explicit grants on `logs` below it.
+            DeploymentAction.RevokeConfigurationAccess =>
+            [
+                ("icacls", $"\"{desired.InstallFolder}\" /remove \"{account}\""),
+            ],
+
             // `/t` because the grant was inheritable: it has already propagated to the
             // snapshot file, and removing it from the folder alone would leave the account
             // still able to read what is in there.
-            ("icacls",
-                $"\"{desired.SnapshotFolder}\" /remove \"{RipcordService.Listener.Account}\" /t"),
-        ],
+            DeploymentAction.RevokeSnapshotAccess =>
+            [
+                ("icacls", $"\"{desired.SnapshotFolder}\" /remove \"{account}\" /t"),
+            ],
 
-        // Modify on this folder only, never on the install folder or the binary beside it.
-        DeploymentAction.GrantLogsAccess =>
-        [
-            ("icacls",
-                $"\"{desired.LogsFolder}\" /grant \"{RipcordService.Listener.Account}\":(OI)(CI)(M)"),
-        ],
+            // The publisher's folder stops inheriting from `logs`, where the listener may
+            // modify, before the publisher is granted modify on it.
+            DeploymentAction.GrantLogsAccess when publisher =>
+            [
+                ("icacls", $"\"{desired.PublisherLogsFolder}\" /inheritance:d"),
+                ("icacls", $"\"{desired.PublisherLogsFolder}\" /remove \"{RipcordService.Listener.Account}\""),
+                ("icacls", $"\"{desired.PublisherLogsFolder}\" /grant \"{account}\":(OI)(CI)(M)"),
+            ],
 
-        DeploymentAction.RevokeLogsAccess =>
-        [
-            ("icacls",
-                $"\"{desired.LogsFolder}\" /remove \"{RipcordService.Listener.Account}\" /t"),
-        ],
+            // Modify on this folder only, never on the install folder or the binary beside it.
+            DeploymentAction.GrantLogsAccess =>
+            [
+                ("icacls", $"\"{desired.LogsFolder}\" /grant \"{account}\":(OI)(CI)(M)"),
+            ],
 
-        // What EventLog.CreateEventSource writes, as a command an operator could type. The
-        // message file is the framework's, present on every Windows Server.
-        DeploymentAction.RegisterEventSource =>
-        [
-            ("reg.exe",
-                $"add \"HKLM\\{EventSourceKey}\" /v EventMessageFile /t REG_EXPAND_SZ "
-                + $"/d \"{EventMessageFile}\" /f"),
-        ],
+            DeploymentAction.RevokeLogsAccess =>
+            [
+                ("icacls", $"\"{LogsOf(change, desired)}\" /remove \"{account}\" /t"),
+            ],
 
-        DeploymentAction.RemoveEventSource =>
-        [
-            ("reg.exe", $"delete \"HKLM\\{EventSourceKey}\" /f"),
-        ],
+            DeploymentAction.AddToHyperVAdministrators =>
+            [
+                ("net.exe", $"localgroup \"{change.Target}\" \"{account}\" /add"),
+            ],
 
-        // A new action nobody mapped must fail loudly, not run some other step's command.
-        _ => throw new ArgumentOutOfRangeException(nameof(action), action, null),
-    };
+            DeploymentAction.RemoveFromHyperVAdministrators =>
+            [
+                ("net.exe", $"localgroup \"{change.Target}\" \"{account}\" /delete"),
+            ],
+
+            // What EventLog.CreateEventSource writes, as a command an operator could type. The
+            // message file is the framework's, present on every Windows Server.
+            DeploymentAction.RegisterEventSource =>
+            [
+                ("reg.exe",
+                    $"add \"HKLM\\{EventSourceKey}\" /v EventMessageFile /t REG_EXPAND_SZ "
+                    + $"/d \"{EventMessageFile}\" /f"),
+            ],
+
+            DeploymentAction.RemoveEventSource =>
+            [
+                ("reg.exe", $"delete \"HKLM\\{EventSourceKey}\" /f"),
+            ],
+
+            // A new action nobody mapped must fail loudly, not run some other step's command.
+            _ => throw new ArgumentOutOfRangeException(nameof(change), change.Action, null),
+        };
+    }
+
+    private const string EncryptionNamespace = @"root\cimv2\Security\MicrosoftVolumeEncryption";
+
+    /// The publisher's side of the deployment. It looks and reports; the Domain decides.
+    private ObservedPublisher ObservePublisher(DesiredDeployment desired)
+    {
+        RipcordService publisher = RipcordService.Publisher;
+        ObservedService service = this.ObserveService(publisher);
+        string? group = HyperVAdministratorsName();
+
+        bool? member = null;
+
+        if (group is not null && Run("net.exe", $"localgroup \"{group}\"") is (0, string members))
+        {
+            member = LocalGroup.HasMember(members, publisher.Account);
+        }
+
+        (NamespaceGrant? encryption, string? note) = EncryptionAccess(publisher);
+        string yaml = WindowsPath.Join(desired.InstallFolder, "ripcord.yaml");
+        string logs = desired.PublisherLogsFolder;
+        string logsAccess = Directory.Exists(logs) ? Run("icacls", $"\"{logs}\"").Output : "";
+
+        return new ObservedPublisher(
+            service,
+            AccessControl.GrantsRead(Run("icacls", $"\"{yaml}\"").Output, publisher.Account),
+            Directory.Exists(desired.SnapshotFolder)
+                && AccessControl.GrantsModify(
+                    Run("icacls", $"\"{desired.SnapshotFolder}\"").Output, publisher.Account),
+            AccessControl.GrantsModify(logsAccess, publisher.Account),
+            AccessControl.GrantsModify(logsAccess, RipcordService.Listener.Account),
+            AccessControl.GrantsExplicitly(
+                Run("icacls", $"\"{desired.InstallFolder}\"").Output, publisher.Account),
+            group,
+            member,
+            encryption,
+            note);
+    }
+
+    /// Hyper-V Administrators by its SID: "Administrateurs Hyper-V" on a French host. Null
+    /// when this host has no such group.
+    private static string? HyperVAdministratorsName()
+    {
+        try
+        {
+            string qualified = new SecurityIdentifier(LocalGroup.HyperVAdministratorsSid)
+                .Translate(typeof(NTAccount)).Value;
+
+            return qualified[(qualified.IndexOf('\\', StringComparison.Ordinal) + 1)..];
+        }
+        catch (IdentityNotMappedException)
+        {
+            return null;
+        }
+    }
+
+    /// The account's SID from Windows, checked against the formula the plan named it by.
+    private static string SidOf(RipcordService service)
+    {
+        string computed = VirtualAccount.Sid(service.Name);
+
+        try
+        {
+            string actual = new NTAccount(service.Account).Translate(typeof(SecurityIdentifier)).Value;
+
+            return string.Equals(actual, computed, StringComparison.OrdinalIgnoreCase)
+                ? actual
+                : throw new InvalidOperationException(
+                    $"Windows gives {service.Account} the SID {actual}, not {computed}: nothing was changed");
+        }
+        catch (IdentityNotMappedException)
+        {
+            // The service does not exist, so its account does not resolve; the SID is still its.
+            return computed;
+        }
+    }
+
+    private static (NamespaceGrant? State, string? Note) EncryptionAccess(RipcordService service)
+    {
+        try
+        {
+            (NamespaceGrant state, string? why) = NamespaceAcl.Read(Sddl(ReadEncryptionSd()), SidOf(service));
+            return (state, why);
+        }
+        catch (CimException exception) when (exception.NativeErrorCode
+            is NativeErrorCode.InvalidNamespace or NativeErrorCode.NotFound or NativeErrorCode.InvalidClass)
+        {
+            return (null, "BitLocker is not installed on this host");
+        }
+        catch (Exception exception) when (exception is CimException or InvalidOperationException)
+        {
+            return (null, $"the BitLocker namespace's access list could not be read: {exception.Message}");
+        }
+    }
+
+    /// One ACE added or taken back, as the Domain edited it; read back after writing, and the
+    /// original bytes restored if what was written is not what was meant.
+    private static void EditEncryptionNamespace(RipcordService service, bool grant)
+    {
+        string sid = SidOf(service);
+        byte[] original = ReadEncryptionSd();
+        string before = Sddl(original);
+
+        NamespaceEdit edit = grant ? NamespaceAcl.WithGrant(before, sid) : NamespaceAcl.WithoutGrant(before, sid);
+
+        if (edit.Sddl is not { } after)
+        {
+            throw new InvalidOperationException(
+                $"the BitLocker namespace was left as it was: {edit.Refusal}");
+        }
+
+        if (after == before)
+        {
+            return;
+        }
+
+        RawSecurityDescriptor descriptor = new(after);
+        byte[] written = new byte[descriptor.BinaryLength];
+        descriptor.GetBinaryForm(written, 0);
+        WriteEncryptionSd(written);
+
+        if (NamespaceAcl.Read(Sddl(ReadEncryptionSd()), sid).State
+            != (grant ? NamespaceGrant.Granted : NamespaceGrant.Missing))
+        {
+            WriteEncryptionSd(original);
+            throw new InvalidOperationException(
+                "the BitLocker namespace did not read back as written, and was restored");
+        }
+    }
+
+    private static string Sddl(byte[] descriptor) =>
+        new RawSecurityDescriptor(descriptor, 0).GetSddlForm(
+            AccessControlSections.Owner | AccessControlSections.Group | AccessControlSections.Access);
+
+    private static byte[] ReadEncryptionSd()
+    {
+        using CimSession session = CimSession.Create(computerName: null);
+        using CimOperationOptions options = new() { Timeout = CimTimeout };
+        using CimMethodResult result = session.InvokeMethod(
+            EncryptionNamespace, "__SystemSecurity", "GetSD", new CimMethodParametersCollection(), options);
+
+        return ReturnValue(result) == 0 && result.OutParameters["SD"]?.Value is byte[] descriptor
+            ? descriptor
+            : throw new InvalidOperationException($"GetSD returned {ReturnValue(result)}");
+    }
+
+    private static void WriteEncryptionSd(byte[] descriptor)
+    {
+        using CimSession session = CimSession.Create(computerName: null);
+        using CimOperationOptions options = new() { Timeout = CimTimeout };
+        using CimMethodParametersCollection parameters = new()
+        {
+            CimMethodParameter.Create("SD", descriptor, CimType.UInt8Array, CimFlags.In),
+        };
+        using CimMethodResult result = session.InvokeMethod(
+            EncryptionNamespace, "__SystemSecurity", "SetSD", parameters, options);
+
+        if (ReturnValue(result) != 0)
+        {
+            throw new InvalidOperationException($"SetSD returned {ReturnValue(result)}");
+        }
+    }
+
+    private static long ReturnValue(CimMethodResult result) =>
+        Convert.ToInt64(result.ReturnValue?.Value ?? -1, CultureInfo.InvariantCulture);
+
+    private static string LogsOf(DeploymentStep change, DesiredDeployment desired) =>
+        change.Subject == RipcordService.Publisher ? desired.PublisherLogsFolder : desired.LogsFolder;
 
     /// Read only, on the key file only: the account signs with the key, it never replaces it.
     private static IEnumerable<(string File, string Arguments)> KeyCommands(
@@ -503,10 +711,10 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
     }
 
     /// From the registry, not from `sc qc`, whose labels are localised.
-    private static string? ServiceImagePath()
+    private static string? ServiceImagePath(RipcordService which)
     {
         using Microsoft.Win32.RegistryKey? key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
-            $@"SYSTEM\CurrentControlSet\Services\{RipcordService.Listener.Name}");
+            $@"SYSTEM\CurrentControlSet\Services\{which.Name}");
 
         return key?.GetValue("ImagePath") as string;
     }

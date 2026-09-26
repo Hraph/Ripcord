@@ -297,7 +297,7 @@ public class ServiceInspectionTests
             };
         }
 
-        public ObservedService ObserveService()
+        public ObservedService ObserveService(RipcordService which)
         {
             this.Readings++;
             return service ?? throw new InvalidOperationException("WMI refused");

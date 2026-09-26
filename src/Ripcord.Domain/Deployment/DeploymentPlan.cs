@@ -21,7 +21,10 @@ public sealed record DesiredDeployment(
 
     /// `listener.local_certificate_thumbprint`: the certificate whose private key the
     /// listener signs its handshake with.
-    string? CertificateThumbprint = null)
+    string? CertificateThumbprint = null,
+
+    /// `storage.check_bitlocker_autounlock`: only then may the publisher read BitLocker.
+    bool CheckBitLocker = false)
 {
     /// Access is granted on the folder, never on the snapshot file. `ripcord` rewrites the
     /// snapshot by moving a temporary file over it, and a move brings the new file's access
@@ -40,6 +43,9 @@ public sealed record DesiredDeployment(
 
     /// Where the binary is, and so `ripcord.yaml`: services run with no `--config`.
     public string InstallFolder => WindowsPath.FolderOf(BinaryPath);
+
+    public string PublisherLogsFolder =>
+        Diagnostics.LogFolder.For(Diagnostics.DiagnosticOrigin.Publisher, LogsFolder);
 }
 
 /// What is on the host already. Filled in by the Windows adapter, which looks and reports;
@@ -85,10 +91,15 @@ public sealed record ObservedDeployment(
 
     /// Whether the account has an entry of its own on the install folder: only that one is
     /// Ripcord's to take back, whatever else lets it read there.
-    bool InstallFolderGrantedToService = false)
+    bool InstallFolderGrantedToService = false,
+
+    /// The publishing service and what it was granted; null reads as none of it there.
+    ObservedPublisher? Publisher = null)
 {
     public static ObservedDeployment Nothing { get; } =
         new(false, null, false, null, null, false);
+
+    public ObservedPublisher PublisherOrNothing => this.Publisher ?? ObservedPublisher.Nothing;
 }
 
 public enum DeploymentAction
@@ -130,6 +141,17 @@ public enum DeploymentAction
     /// of a certificate since replaced, a folder since moved. The path is the step's `Target`.
     RevokeStaleKeyAccess,
     RevokeStaleFolderAccess,
+
+    /// Modify on the snapshot folder, for the publishing service alone.
+    GrantSnapshotWriteAccess,
+
+    /// The group is the step's `Target`, by the name this host gives it.
+    AddToHyperVAdministrators,
+    RemoveFromHyperVAdministrators,
+
+    /// One ACE on the BitLocker WMI namespace, for the publishing service alone.
+    GrantEncryptionNamespaceAccess,
+    RevokeEncryptionNamespaceAccess,
 }
 
 /// One change, and why it is needed. The reason is what `--dry-run` prints, so it is written
@@ -144,7 +166,13 @@ public sealed record DeploymentStep(
 
     /// Whether the revoke reaches into the folder's contents. Never for a folder that holds the
     /// logs or the snapshot still in use: `/t` would strip their grants too.
-    bool Recursive = false);
+    bool Recursive = false,
+
+    /// Which service the step is about; null is the listener.
+    RipcordService? Service = null)
+{
+    public RipcordService Subject => this.Service ?? RipcordService.Listener;
+}
 
 /// The difference between what is on the host and what should be. Deployment and removal are
 /// the same list read in two directions, so an uninstaller cannot drift from its installer.
@@ -222,6 +250,13 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
             return new DeploymentPlan([], ListenerDisabled);
         }
 
+        ObservedPublisher publisher = observed.PublisherOrNothing;
+
+        if (publisher.HyperVAdministrators is null)
+        {
+            return new DeploymentPlan([], PublisherSteps.NoHyperVAdministrators);
+        }
+
         List<DeploymentStep> steps = [];
 
         // Set when the service will need starting, and acted on last — see below.
@@ -255,6 +290,9 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
             // operator expects of a command that reconciles.
             start = "it is installed and not running";
         }
+
+        // Created before any grant: its account only exists once the service does.
+        steps.AddRange(PublisherSteps.Create(desired, publisher));
 
         if (!observed.FirewallRuleInstalled)
         {
@@ -314,8 +352,10 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
             steps.Add(new DeploymentStep(
                 DeploymentAction.RegisterEventSource,
                 $"Register the '{EventSource}' source in the Application event log",
-                "the listener reports there a start it cannot log to its file"));
+                "both services report there a start they cannot log to their file"));
         }
+
+        steps.AddRange(PublisherSteps.Grants(desired, publisher));
 
         // Started last, after the rule that lets the peer in, the access it needs to the file
         // it serves and the folder it logs to. Starting it first would bring up a listener that
@@ -331,6 +371,9 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
             steps.Add(new DeploymentStep(
                 DeploymentAction.StartService, $"Start the '{ServiceName}' service", start));
         }
+
+        // After the listener: a publisher that fails to start still leaves something served.
+        steps.AddRange(PublisherSteps.Starts(desired, publisher));
 
         // Last: the listener runs on what it needs before anything it no longer needs is taken.
         steps.AddRange(Stale(desired, observed));
@@ -405,7 +448,9 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
     {
         ArgumentNullException.ThrowIfNull(observed);
 
-        List<DeploymentStep> steps = [];
+        // The publisher first, and all of it while its service still exists: the account's
+        // name only resolves as long as it does.
+        List<DeploymentStep> steps = [.. PublisherSteps.Remove(observed.PublisherOrNothing)];
 
         if (observed.EventSourceRegistered)
         {

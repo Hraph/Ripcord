@@ -383,10 +383,13 @@ public class RipcordCliTests
 
         Assert.Equal(ExitCode.Success, run.Code);
         Assert.Equal(
-            [DeploymentAction.CreateService, DeploymentAction.CreateFirewallRule,
-             DeploymentAction.GrantConfigurationAccess,
+            [DeploymentAction.CreateService, DeploymentAction.CreateService,
+             DeploymentAction.CreateFirewallRule, DeploymentAction.GrantConfigurationAccess,
              DeploymentAction.GrantSnapshotAccess, DeploymentAction.GrantLogsAccess,
-             DeploymentAction.RegisterEventSource, DeploymentAction.StartService],
+             DeploymentAction.RegisterEventSource, DeploymentAction.GrantConfigurationAccess,
+             DeploymentAction.GrantSnapshotWriteAccess, DeploymentAction.GrantLogsAccess,
+             DeploymentAction.AddToHyperVAdministrators, DeploymentAction.GrantEncryptionNamespaceAccess,
+             DeploymentAction.StartService, DeploymentAction.StartService],
             executor.Applied);
     }
 
@@ -417,7 +420,11 @@ public class RipcordCliTests
 
         Assert.Equal(ExitCode.Success, run.Code);
         Assert.Equal(
-            [DeploymentAction.RemoveEventSource, DeploymentAction.RevokeKeyAccess,
+            [DeploymentAction.StopService, DeploymentAction.RevokeEncryptionNamespaceAccess,
+             DeploymentAction.RemoveFromHyperVAdministrators, DeploymentAction.RevokeLogsAccess,
+             DeploymentAction.RevokeSnapshotAccess, DeploymentAction.RevokeConfigurationAccess,
+             DeploymentAction.RemoveService,
+             DeploymentAction.RemoveEventSource, DeploymentAction.RevokeKeyAccess,
              DeploymentAction.RevokeLogsAccess, DeploymentAction.RevokeSnapshotAccess,
              DeploymentAction.RemoveFirewallRule, DeploymentAction.RemoveService],
             executor.Applied);
@@ -460,12 +467,12 @@ public class RipcordCliTests
     [Fact]
     public async Task Service_install_whose_start_fails_points_to_ripcord_service()
     {
-        FakeDeploymentExecutor executor = new(failOnStep: 6);
+        FakeDeploymentExecutor executor = new(failOnStep: 12);
 
         CliRun run = await Run(
             ["service", "install"], deploymentExecutor: executor, typed: "y");
 
-        Assert.Equal(DeploymentAction.RegisterEventSource, executor.Applied[^1]);
+        Assert.Equal(DeploymentAction.GrantEncryptionNamespaceAccess, executor.Applied[^1]);
         Assert.Contains(
             "Run 'ripcord service' to see why it did not start.", run.Output, StringComparison.Ordinal);
     }
@@ -1095,7 +1102,8 @@ public class RipcordCliTests
         LogsWritableByService: true,
         EventSourceRegistered: true,
         KeyReadableByService: true,
-        ConfigurationReadableByService: true);
+        ConfigurationReadableByService: true,
+        Publisher: Deployment.DeploymentPlanTests.PublisherInPlace(BinaryPath, NamespaceGrant.Granted));
 
     private const string DefaultConfigPath = "/opt/ripcord/ripcord.yaml";
 
@@ -1439,7 +1447,7 @@ public class RipcordCliTests
             observed ?? ObservedDeployment.Nothing;
 
         /// Agrees with `Observe` unless a test says otherwise.
-        public ObservedService ObserveService() =>
+        public ObservedService ObserveService(RipcordService which) =>
             service ?? (observed is { ServiceInstalled: true } deployed
                 ? new ObservedService(
                     true,

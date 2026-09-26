@@ -52,7 +52,7 @@ public sealed class ListenerDeployment(IConfigStore configStore, IDeploymentExec
         try
         {
             ObservedDeployment observed =
-                executor.Observe(desired, service ?? executor.ObserveService());
+                executor.Observe(desired, service ?? executor.ObserveService(RipcordService.Listener));
 
             return new DeploymentOutcome(
                 ExitCode.Success,
