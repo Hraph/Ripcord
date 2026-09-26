@@ -281,7 +281,7 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             DeploymentAction.RevokeStaleKeyAccess or DeploymentAction.RevokeStaleFolderAccess =>
             [
                 ("icacls",
-                    $"\"{change.Target}\" /remove \"{RipcordService.Listener.Account}\""
+                    $"\"{change.Target}\" /remove \"{change.Service.Account}\""
                     + (change.Recursive ? " /t" : "")),
             ],
             _ => CommandsFor(change, desired),
@@ -541,7 +541,12 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             member,
             encryption,
             note,
-            ServiceRecovery.Restarts(FailureActions(publisher)));
+            ServiceRecovery.Restarts(FailureActions(publisher)),
+            FoldersGranted:
+            [.. DeploymentPlan.StaleFolderCandidates(desired, service.BinaryPath)
+                .Where(folder => Directory.Exists(folder)
+                    && AccessControl.GrantsExplicitly(
+                        Run("icacls", $"\"{folder}\"").Output, publisher.Account))]);
     }
 
     /// Hyper-V Administrators by its SID: "Administrateurs Hyper-V" on a French host. Null

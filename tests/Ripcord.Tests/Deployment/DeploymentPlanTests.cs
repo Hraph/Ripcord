@@ -361,12 +361,37 @@ public class DeploymentPlanTests
     public void The_old_install_folder_is_a_candidate_once_the_service_moved()
     {
         Assert.Equal(
-            [@"C:\Old", @"C:\Old\logs"],
+            [@"C:\Old", @"C:\Old\state", @"C:\Old\logs", @"C:\Old\logs\publish"],
             DeploymentPlan.StaleFolderCandidates(Desired, @"C:\Old\ripcord.exe"));
         Assert.Empty(DeploymentPlan.StaleFolderCandidates(Desired, Desired.BinaryPath));
-        Assert.Empty(DeploymentPlan.StaleFolderCandidates(
-            Desired with { LogsFolder = @"C:\Old\logs", SnapshotPath = @"C:\Old\state.json" },
-            @"C:\Old\ripcord.exe"));
+        Assert.Equal(
+            [@"C:\Old\state"],
+            DeploymentPlan.StaleFolderCandidates(
+                Desired with { LogsFolder = @"C:\Old\logs", SnapshotPath = @"C:\Old\state.json" },
+                @"C:\Old\ripcord.exe"));
+    }
+
+    /// The publisher moved with the binary: its old read, snapshot and log grants go too, under
+    /// its own account, never the listener's.
+    [Fact]
+    public void A_moved_publishers_old_folders_are_revoked_for_its_account()
+    {
+        DeploymentPlan plan = DeploymentPlan.For(
+            Desired,
+            Matching() with
+            {
+                Publisher = PublisherInPlace(@"D:\Ripcord\ripcord.exe") with
+                {
+                    FoldersGranted = [@"C:\Old", @"C:\Old\state"],
+                },
+            });
+
+        DeploymentStep[] revokes =
+            [.. plan.Steps.Where(step => step.Action == DeploymentAction.RevokeStaleFolderAccess)];
+
+        Assert.Equal(2, revokes.Length);
+        Assert.All(revokes, step => Assert.Equal(RipcordService.Publisher, step.Service));
+        Assert.Contains(@"NT SERVICE\ripcord-publish", revokes[0].Description, StringComparison.Ordinal);
     }
 
     [Fact]

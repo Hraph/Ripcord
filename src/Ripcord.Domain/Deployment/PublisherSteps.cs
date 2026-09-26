@@ -28,7 +28,10 @@ public sealed record ObservedPublisher(
     bool Recovers = false,
 
     /// Running another build than the binary on disk, as its process record says.
-    bool Outdated = false)
+    bool Outdated = false,
+
+    /// Those of `StaleFolderCandidates` giving its account an entry of its own, once it moved.
+    IReadOnlyList<string>? FoldersGranted = null)
 {
     /// None of it there. The group's name is this host's to give, never assumed: null, as when
     /// it could not be found, blocks an install rather than naming a group that is not there.

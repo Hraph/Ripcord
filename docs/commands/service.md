@@ -147,7 +147,7 @@ with it.
 
 **Access nothing uses any more is taken back**, as the last steps: every machine key file the
 service account can read other than the configured certificate's — the ones left by `pair` or a
-renewal, however many — and, once the service moved, the old install folder and its `logs`.
+renewal, however many — and, once a service moved, what either account was granted in the old install folder, its `state`, its `logs` and `logs\\publish`.
 Only entries of the account's own are touched, never inherited ones, and never recursively
 into a folder that still holds the install folder, the logs or the snapshot in use. With the
 configured certificate's key not found, no key is touched: which one is current cannot be told.

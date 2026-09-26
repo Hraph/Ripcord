@@ -398,15 +398,19 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
         if (serviceBinaryPath is { Length: > 0 } running && !SamePath(running, desired.BinaryPath))
         {
             string old = WindowsPath.FolderOf(running);
+            string oldLogs = WindowsPath.Join(old, Diagnostics.LogFolder.Name);
             candidates.Add(old);
-            candidates.Add(WindowsPath.Join(old, "logs"));
+            candidates.Add(WindowsPath.Join(old, ListenerSettings.SnapshotFolderName));
+            candidates.Add(oldLogs);
+            candidates.Add(Diagnostics.LogFolder.For(Diagnostics.DiagnosticOrigin.Publisher, oldLogs));
         }
 
         return [.. candidates
             .Where(folder => folder.Length > 0
                 && !SamePath(folder, WindowsPath.FolderOf(desired.BinaryPath))
                 && !SamePath(folder, desired.SnapshotFolder)
-                && !SamePath(folder, desired.LogsFolder))
+                && !SamePath(folder, desired.LogsFolder)
+                && !SamePath(folder, desired.PublisherLogsFolder))
             .Distinct(StringComparer.OrdinalIgnoreCase)];
     }
 
@@ -443,17 +447,25 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
 
         foreach (string folder in observed.FoldersGranted ?? [])
         {
-            yield return new DeploymentStep(
-                RipcordService.Listener,
-                DeploymentAction.RevokeStaleFolderAccess,
-                $"Remove {ServiceAccount}'s access to '{folder}'",
-                "the configuration no longer uses it",
-                folder,
-                !Holds(folder, desired.LogsFolder)
-                    && !Holds(folder, desired.SnapshotFolder)
-                    && !Holds(folder, WindowsPath.FolderOf(desired.BinaryPath)));
+            yield return StaleFolder(RipcordService.Listener, folder, desired);
+        }
+
+        foreach (string folder in observed.Publisher.FoldersGranted ?? [])
+        {
+            yield return StaleFolder(RipcordService.Publisher, folder, desired);
         }
     }
+
+    private static DeploymentStep StaleFolder(RipcordService service, string folder, DesiredDeployment desired) =>
+        new(
+            service,
+            DeploymentAction.RevokeStaleFolderAccess,
+            $"Remove {service.Account}'s access to '{folder}'",
+            "the configuration no longer uses it",
+            folder,
+            !Holds(folder, desired.LogsFolder)
+                && !Holds(folder, desired.SnapshotFolder)
+                && !Holds(folder, WindowsPath.FolderOf(desired.BinaryPath)));
 
     private static bool Holds(string folder, string path) =>
         path.StartsWith(folder.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase);
