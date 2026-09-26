@@ -48,13 +48,13 @@ public sealed record DiagnosticDestination(bool Enabled, string Folder, long Max
             (long)megabytes * 1024 * 1024);
     }
 
-    /// The listener service writes only to the folder `service install` granted it, whatever
-    /// the configuration asks: a folder it cannot write is a service with no log at all.
+    /// A service writes only to the folder `service install` granted it, whatever the
+    /// configuration asks: a folder it cannot write is a service with no log at all.
     public DiagnosticDestination Applied(DiagnosticOrigin origin, DiagnosticDestination asked)
     {
         ArgumentNullException.ThrowIfNull(asked);
 
-        return origin == DiagnosticOrigin.Listener ? this : asked;
+        return origin == DiagnosticOrigin.Command ? asked : this;
     }
 
     /// Rotation is decided before the write, not after: a file allowed past its limit and

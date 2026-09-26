@@ -61,4 +61,15 @@ public class RepeatedEntriesTests
             [DiagnosticEntry.Of("x", "value 0")],
             repeated.Admit(DiagnosticEntry.Of("x", "value 0"), Start.AddSeconds(RepeatedEntries.MaxKinds * 3)));
     }
+
+    /// The publishing journal's own lines are summaries already: never held back.
+    [Fact]
+    public void An_exempt_operation_is_always_written()
+    {
+        RepeatedEntries repeated = new(TimeSpan.FromHours(1), ["publish"]);
+        DiagnosticEntry line = DiagnosticEntry.Of("publish", "not published: WMI is down");
+
+        Assert.Equal([line], repeated.Admit(line, Start));
+        Assert.Equal([line], repeated.Admit(line, Start.AddSeconds(15)));
+    }
 }

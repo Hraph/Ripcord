@@ -8,7 +8,9 @@ namespace Ripcord.Domain.Diagnostics;
 /// hour is counted, not written. The first one after the hour is written in full again, after
 /// a line saying how many were held back. A failure that lasts all day is then one full entry
 /// an hour, not five thousand.
-public sealed class RepeatedEntries(TimeSpan window)
+/// Operations in `exempt` are always written: a line that is itself a summary must not be
+/// summarised again.
+public sealed class RepeatedEntries(TimeSpan window, IReadOnlyList<string>? exempt = null)
 {
     public const int MaxKinds = 256;
 
@@ -17,6 +19,11 @@ public sealed class RepeatedEntries(TimeSpan window)
     public IReadOnlyList<DiagnosticEntry> Admit(DiagnosticEntry entry, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(entry);
+
+        if (exempt?.Contains(entry.Operation, StringComparer.Ordinal) == true)
+        {
+            return [entry];
+        }
 
         (string, string) key = (entry.Operation, entry.Message);
 

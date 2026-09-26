@@ -57,7 +57,9 @@ public sealed record CliEnvironment(
     Palette? Palette = null,
     /// The same answer for the error stream, which is redirected separately: `2> errors.log`
     /// on a live console leaves one a console and the other a file.
-    Palette? ErrorPalette = null);
+    Palette? ErrorPalette = null,
+    /// Started by the service control manager: `publish` then loops instead of running once.
+    bool RunsAsService = false);
 
 /// Every port the command surface reaches the machine through. Grouped rather than listed one
 /// by one, because each milestone adds another and a composition root nobody can read is a
@@ -764,6 +766,16 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             this.WriteFailure(error, new StatusOutcome(
                 ExitCode.InvalidConfiguration, null, validation.Errors, null, []));
             return ExitCode.InvalidConfiguration;
+        }
+
+        if (environment.RunsAsService)
+        {
+            await new SnapshotPublishing(
+                    this.Pair(), ports.Clock, ports.Diagnostics, HostSnapshot.RepublishEvery)
+                .RunAsync(configuration, cancellationToken)
+                .ConfigureAwait(false);
+
+            return ExitCode.Success;
         }
 
         Publication publication = await this.Pair()

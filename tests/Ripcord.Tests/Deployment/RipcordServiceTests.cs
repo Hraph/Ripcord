@@ -66,4 +66,24 @@ public class RipcordServiceTests
         Assert.Equal(
             [@"C:\R\logs\publish\publish-2026-09-26.log", @"C:\R\logs\publish\publish-2026-09-25.log"],
             ServiceLog.Candidates(@"C:\R\logs\publish", At, RipcordService.Publisher));
+
+    /// Both services keep writing where install granted them, whatever the configuration says.
+    [Theory]
+    [InlineData(DiagnosticOrigin.Listener, true)]
+    [InlineData(DiagnosticOrigin.Publisher, true)]
+    [InlineData(DiagnosticOrigin.Command, false)]
+    public void Only_a_command_follows_the_configured_log_folder(DiagnosticOrigin origin, bool keeps)
+    {
+        DiagnosticDestination granted = DiagnosticDestination.Default(@"C:\R\logs");
+        DiagnosticDestination asked = DiagnosticDestination.Default(@"D:\elsewhere");
+
+        Assert.Equal(keeps ? granted : asked, granted.Applied(origin, asked));
+    }
+
+    [Fact]
+    public void The_publisher_logs_in_a_folder_of_its_own_below_logs()
+    {
+        Assert.Equal(@"C:\R\logs\publish", LogFolder.For(DiagnosticOrigin.Publisher, @"C:\R\logs"));
+        Assert.Equal(@"C:\R\logs", LogFolder.For(DiagnosticOrigin.Listener, @"C:\R\logs"));
+    }
 }

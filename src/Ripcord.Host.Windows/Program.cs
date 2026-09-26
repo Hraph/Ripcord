@@ -20,6 +20,7 @@ using Ripcord.Domain;
 using Ripcord.Domain.Deployment;
 using Ripcord.Domain.Diagnostics;
 using Ripcord.Domain.Pairing;
+using Ripcord.Ports.Diagnostics;
 
 namespace Ripcord.Host.Windows;
 
@@ -105,6 +106,10 @@ internal static class Program
     private static async Task<int> Main(string[] args)
     {
         bool asService = WindowsServiceHelpers.IsWindowsService();
+
+        // Which service this is, from the verb the service manager starts it with. A service
+        // started with anything else is refused once it has answered the manager.
+        RipcordService? role = asService ? RipcordService.ForVerb(args.FirstOrDefault()) : null;
         Palette palette = PaletteFor(args, asService, Console.IsOutputRedirected);
         Palette errorPalette = PaletteFor(args, asService, Console.IsErrorRedirected);
 
@@ -125,16 +130,25 @@ internal static class Program
         // Starts in the logs folder and, for a command, is moved to wherever `ripcord.yaml`
         // asks once that file has been read. The first thing worth logging is often the reason
         // it cannot be, so the log cannot wait for it.
+        DiagnosticOrigin origin = role?.Origin ?? DiagnosticOrigin.Command;
+
         FileDiagnosticLog diagnostics = new(
             clock,
-            asService ? DiagnosticOrigin.Listener : DiagnosticOrigin.Command,
-            DiagnosticDestination.Default(
-                Path.Combine(AppContext.BaseDirectory, LogFolder.Name)));
+            origin,
+            DiagnosticDestination.Default(LogFolder.For(
+                origin, Path.Combine(AppContext.BaseDirectory, LogFolder.Name))));
+
+        // The publisher repeats its reads every fifteen seconds: a failure among them is
+        // written once an hour, not every time. Its own journal lines are never held back.
+        IDiagnosticLog portsLog = role == RipcordService.Publisher
+            ? new RepeatLimitedDiagnosticLog(
+                diagnostics, clock, PublishJournal.SummaryEvery, [PublishJournal.Operation])
+            : diagnostics;
 
         RipcordCli cli = new(
             new RipcordPorts(
                 new YamlConfigStore(),
-                new WmiHypervProvider(Environment.MachineName, WmiTimeout, diagnostics),
+                new WmiHypervProvider(Environment.MachineName, WmiTimeout, portsLog),
                 new WmiHostSystemProvider(WmiTimeout),
                 certificates,
                 new MutualTlsPeerChannel(
@@ -165,7 +179,7 @@ internal static class Program
                     Path.Combine(AppContext.BaseDirectory, "update-notice.json")),
                 new FileBinarySwap(),
                 clock,
-                diagnostics,
+                portsLog,
                 new FileDiagnosticLogReader()),
             new CliEnvironment(
                 Environment.MachineName,
@@ -176,7 +190,8 @@ internal static class Program
                 null,
                 ReleaseSigningKey,
                 palette,
-                errorPalette));
+                errorPalette,
+                asService));
 
         // Started by the service control manager rather than by a person. `sc start` waits for
         // a handshake — ServiceBase.Run — and a console loop never sends one, so the manager
@@ -186,7 +201,7 @@ internal static class Program
         // The same binary and the same verb either way; only who is asking changes.
         if (asService)
         {
-            ServiceSetup setup = new(cli, args, diagnostics, defaultConfigPath);
+            ServiceSetup setup = new(cli, args, diagnostics, defaultConfigPath, role);
 
             return (int)await RunAsServiceAsync(setup).ConfigureAwait(false);
         }
@@ -221,7 +236,7 @@ internal static class Program
             Microsoft.Extensions.Hosting.Host.CreateApplicationBuilder();
 
         builder.Services.AddWindowsService(options =>
-            options.ServiceName = RipcordService.Listener.Name);
+            options.ServiceName = (setup.Role ?? RipcordService.Listener).Name);
 
         // Named rather than taken from the assembly: it is the source `service install`
         // registers, and an unregistered one cannot be written to by a virtual account.
@@ -230,11 +245,11 @@ internal static class Program
 
         ServiceOutcome outcome = new();
 
-        builder.Services.AddHostedService(provider => new ListenerService(
+        builder.Services.AddHostedService(provider => new VerbService(
             setup,
             outcome,
             provider.GetRequiredService<IHostLifetime>(),
-            provider.GetRequiredService<ILogger<ListenerService>>(),
+            provider.GetRequiredService<ILogger<VerbService>>(),
             provider.GetRequiredService<IHostApplicationLifetime>()));
 
         await builder.Build().RunAsync().ConfigureAwait(false);
@@ -242,11 +257,13 @@ internal static class Program
         return outcome.Code;
     }
 
+    /// `Role` is null for a verb no Ripcord service runs.
     private sealed record ServiceSetup(
         RipcordCli Cli,
         string[] Args,
         FileDiagnosticLog Diagnostics,
-        string ConfigurationPath);
+        string ConfigurationPath,
+        RipcordService? Role);
 
     /// What the verb decided, carried back out of the hosted service.
     ///
@@ -263,36 +280,47 @@ internal static class Program
     /// has been answered. A verb that returns on its own — a configuration the listener is
     /// disabled in, a file that will not load — stops the service rather than leaving it
     /// reported as running with nothing behind it.
-    private sealed class ListenerService(
+    private sealed class VerbService(
         ServiceSetup setup,
         ServiceOutcome outcome,
         IHostLifetime hostLifetime,
-        ILogger<ListenerService> logger,
+        ILogger<VerbService> logger,
         IHostApplicationLifetime lifetime) : BackgroundService
     {
         private static readonly Action<ILogger, string, Exception?> Stopped =
             LoggerMessage.Define<string>(
-                LogLevel.Error, new EventId(1, "ListenerStopped"), "{Message}");
+                LogLevel.Error, new EventId(1, "ServiceStopped"), "{Message}");
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            // The first line decides whether there is a log at all. Nothing else can say so
-            // but the event log: a service has no console.
-            if (setup.Diagnostics.TryWrite(ServiceStartup.Banner(
-                    BuildInfo.VersionWithCommit, setup.ConfigurationPath)) is { } reason)
+            if (setup.Role is not { } role)
             {
                 Stopped(
                     logger,
-                    ServiceStartup.LogUnavailable(setup.Diagnostics.CurrentFile, reason),
+                    $"A Ripcord service was started with '{setup.Args.FirstOrDefault()}', which "
+                        + "no Ripcord service runs. Run 'ripcord service install'.",
+                    null);
+                this.Stop(ExitCode.InvalidConfiguration, stoppingToken);
+                return;
+            }
+
+            // The first line decides whether there is a log at all. Nothing else can say so
+            // but the event log: a service has no console.
+            if (setup.Diagnostics.TryWrite(ServiceStartup.Banner(
+                    BuildInfo.VersionWithCommit, setup.ConfigurationPath, role)) is { } reason)
+            {
+                Stopped(
+                    logger,
+                    ServiceStartup.LogUnavailable(setup.Diagnostics.CurrentFile, reason, role),
                     null);
                 this.Stop(ExitCode.LocalAccessFailure, stoppingToken);
                 return;
             }
 
-            this.RecordProcess();
+            this.RecordProcess(role);
 
             // What the verb would have printed on a console becomes lines of the same log.
-            using DiagnosticTextWriter writer = new(setup.Diagnostics, "serve");
+            using DiagnosticTextWriter writer = new(setup.Diagnostics, role.Verb);
 
             try
             {
@@ -307,20 +335,19 @@ internal static class Program
                 // Not rethrown: the host would stop cleanly and report 0 anyway. The exit code
                 // set here is what makes the stop abnormal to Windows. The verb has already
                 // written the exception to the log.
-                Stopped(logger, "The Ripcord listener stopped on an error.", exception);
+                Stopped(logger, $"The Ripcord {role.Role} stopped on an error.", exception);
                 this.Stop(ExitCode.LocalAccessFailure, stoppingToken);
             }
         }
 
         /// Read back by `ripcord service`: after an update, the build on disk is not the build
         /// running. Failing to write it stops nothing, and is logged.
-        private void RecordProcess()
+        private void RecordProcess(RipcordService role)
         {
             try
             {
                 File.WriteAllText(
-                    Path.Combine(
-                        Path.GetDirectoryName(setup.Diagnostics.CurrentFile)!, RipcordService.Listener.ProcessFile),
+                    Path.Combine(Path.GetDirectoryName(setup.Diagnostics.CurrentFile)!, role.ProcessFile),
                     new ServiceProcess(BuildInfo.VersionWithCommit, Environment.ProcessId).Text());
             }
             // Outside the verb's try: anything escaping here would stop the listener.

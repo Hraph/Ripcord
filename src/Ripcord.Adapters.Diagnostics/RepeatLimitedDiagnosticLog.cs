@@ -6,10 +6,11 @@ namespace Ripcord.Adapters.Diagnostics;
 
 /// The publishing service's log: every line goes through `RepeatedEntries`, so a failure that
 /// comes back every fifteen seconds is written once an hour rather than every time.
-public sealed class RepeatLimitedDiagnosticLog(IDiagnosticLog inner, IClock clock, TimeSpan window)
+public sealed class RepeatLimitedDiagnosticLog(
+    IDiagnosticLog inner, IClock clock, TimeSpan window, IReadOnlyList<string>? exempt = null)
     : IDiagnosticLog
 {
-    private readonly RepeatedEntries repeated = new(window);
+    private readonly RepeatedEntries repeated = new(window, exempt);
 
     private readonly Lock gate = new();
 

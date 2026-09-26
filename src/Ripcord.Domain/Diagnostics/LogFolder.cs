@@ -25,6 +25,13 @@ public static class LogFolder
     public static string Beside(string binaryPath) =>
         WindowsPath.Join(WindowsPath.FolderOf(binaryPath), Name);
 
+    /// The publishing service writes in a folder of its own below `logs`: the listener, which
+    /// faces the network, can modify `logs` and must not be able to rewrite this one's story.
+    public static string For(DiagnosticOrigin origin, string logsFolder) =>
+        origin == DiagnosticOrigin.Publisher
+            ? WindowsPath.Join(logsFolder, origin.Prefix())
+            : logsFolder;
+
     public static string Prefix(this DiagnosticOrigin origin) => origin switch
     {
         DiagnosticOrigin.Listener => "listener",
