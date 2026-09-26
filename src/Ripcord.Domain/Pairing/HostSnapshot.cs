@@ -16,4 +16,7 @@ public sealed record HostSnapshot(
     /// The threshold is the one the operator already configured: `peer.offline_after_sec`,
     /// the same duration that decides when silence becomes an outage.
     public bool IsFreshAt(DateTimeOffset now, TimeSpan threshold) => AgeAt(now) < threshold;
+
+    /// How often the publishing service writes it.
+    public static readonly TimeSpan RepublishEvery = TimeSpan.FromSeconds(15);
 }

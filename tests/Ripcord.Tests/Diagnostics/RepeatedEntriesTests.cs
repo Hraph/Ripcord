@@ -1,0 +1,64 @@
+using Ripcord.Domain.Diagnostics;
+
+namespace Ripcord.Tests.Diagnostics;
+
+/// The same failure every fifteen seconds is written once an hour, with what was held back.
+public class RepeatedEntriesTests
+{
+    private static readonly DateTimeOffset Start = new(2026, 9, 26, 8, 0, 0, TimeSpan.Zero);
+
+    private static readonly DiagnosticEntry Failure =
+        DiagnosticEntry.Of("hyper-v", "the local Hyper-V state could not be read", "System.Exception: boom");
+
+    [Fact]
+    public void The_first_is_written_the_repeats_within_the_hour_are_not()
+    {
+        RepeatedEntries repeated = new(TimeSpan.FromHours(1));
+
+        Assert.Equal([Failure], repeated.Admit(Failure, Start));
+        Assert.Empty(repeated.Admit(Failure, Start.AddSeconds(15)));
+        Assert.Empty(repeated.Admit(Failure, Start.AddMinutes(59)));
+    }
+
+    [Fact]
+    public void After_the_hour_it_is_written_again_after_how_many_were_held_back()
+    {
+        RepeatedEntries repeated = new(TimeSpan.FromHours(1));
+        repeated.Admit(Failure, Start);
+        repeated.Admit(Failure, Start.AddSeconds(15));
+        repeated.Admit(Failure, Start.AddSeconds(30));
+
+        IReadOnlyList<DiagnosticEntry> written = repeated.Admit(Failure, Start.AddHours(1));
+
+        Assert.Equal(2, written.Count);
+        Assert.Equal("the next line came 2 more time(s) since 08:00:00 UTC", written[0].Message);
+        Assert.Equal(Failure, written[1]);
+    }
+
+    [Fact]
+    public void A_different_line_is_never_held_back()
+    {
+        RepeatedEntries repeated = new(TimeSpan.FromHours(1));
+        repeated.Admit(Failure, Start);
+
+        DiagnosticEntry other = DiagnosticEntry.Of("snapshot", "this host could not publish its snapshot");
+
+        Assert.Equal([other], repeated.Admit(other, Start.AddSeconds(15)));
+    }
+
+    /// A message carrying a changing value must not grow the table without end.
+    [Fact]
+    public void The_table_never_grows_past_its_cap()
+    {
+        RepeatedEntries repeated = new(TimeSpan.FromHours(1));
+
+        for (int index = 0; index < RepeatedEntries.MaxKinds * 3; index++)
+        {
+            repeated.Admit(DiagnosticEntry.Of("x", $"value {index}"), Start.AddSeconds(index));
+        }
+
+        Assert.Equal(
+            [DiagnosticEntry.Of("x", "value 0")],
+            repeated.Admit(DiagnosticEntry.Of("x", "value 0"), Start.AddSeconds(RepeatedEntries.MaxKinds * 3)));
+    }
+}
