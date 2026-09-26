@@ -431,11 +431,11 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
                 ("icacls", $"\"{desired.InstallFolder}\" /grant \"{account}\":(OI)(NP)(R)"),
             ],
 
-            // Removed then granted narrower, never `/t`: the explicit grants below it stay.
+            // `/grant:r` replaces the account's explicit entry in one call, so it is never left
+            // without one; never `/t`: the explicit grants below it stay.
             DeploymentAction.NarrowConfigurationAccess =>
             [
-                ("icacls", $"\"{desired.InstallFolder}\" /remove \"{account}\""),
-                ("icacls", $"\"{desired.InstallFolder}\" /grant \"{account}\":(OI)(NP)(R)"),
+                ("icacls", $"\"{desired.InstallFolder}\" /grant:r \"{account}\":(OI)(NP)(R)"),
             ],
 
             // Never `/t`: that would also strip the explicit grants on `logs` below it.
