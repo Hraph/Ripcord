@@ -39,8 +39,17 @@ public class DocumentedNamesTests
 
         string[] installed = [.. RipcordService.All.Select(service => service.Name)];
 
-        foreach (Match command in Regex.Matches(
-            File.ReadAllText(path), @"(?:Stop|Start)-Service\s+((?:[A-Za-z0-9._-]+\s*,\s*)*[A-Za-z0-9._-]+)"))
+        MatchCollection commands = Regex.Matches(
+            File.ReadAllText(path), @"(?:Stop|Start)-Service\s+((?:[A-Za-z0-9._-]+\s*,\s*)*[A-Za-z0-9._-]+)");
+
+        // The update procedure stops and starts the services: reworded out of the pattern, this
+        // test would pass on nothing at all (D72).
+        if (document == Path.Combine("docs", "RELEASING.md"))
+        {
+            Assert.NotEmpty(commands);
+        }
+
+        foreach (Match command in commands)
         {
             string[] named = [.. command.Groups[1].Value.Split(',').Select(name => name.Trim())];
 
