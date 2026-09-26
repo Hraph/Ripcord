@@ -30,6 +30,12 @@ of them is a report about the deployment rather than about the tool.
   enforces: nothing in Ripcord sets that ACL, and the shape it should take is still an open
   question on this project's own list. Do not read the trail as evidence against the
   administrator of the host that wrote it.
+- **The network-facing process holds no Hyper-V right.** The listener (`NT SERVICE\ripcord`)
+  serves one file and reads nothing else of the host. What reads Hyper-V to write that file is a
+  second service, `ripcord-publish`, with no socket at all: a member of Hyper-V Administrators —
+  which is control over the VMs, so it is a high-value process — granted modify on `state\` and
+  its own log folder only, never beside `ripcord.exe`, and one ACE on the BitLocker namespace
+  while the configuration checks BitLocker. `service remove` takes all of it back.
 - **The two hosts authenticate each other, and nothing else is trusted.** The pair channel is
   mutual TLS with both certificates pinned by thumbprint, restricted to the peer's address by
   both the firewall rule and the tool itself. The peer is trusted to *be* the peer, not to be

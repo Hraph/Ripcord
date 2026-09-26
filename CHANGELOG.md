@@ -11,6 +11,22 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ## Unreleased
 
+### Added
+
+- **A second service, `ripcord-publish`, republishes this host's snapshot every 15 seconds.**
+  The other host's view no longer ages until somebody runs `ripcord status` here. The
+  network-facing listener still reads nothing of Hyper-V; the publisher, which has no socket,
+  runs as `NT SERVICE\ripcord-publish` in Hyper-V Administrators, with modify on `state\` and
+  on its own `logs\publish\` only, and one ACE on the BitLocker namespace while
+  `storage.check_bitlocker_autounlock` is on. BitLocker it still cannot read is carried from
+  the last administrator's read, dated. `ripcord publish` does it once by hand.
+- **`service install` and `service remove` handle both services**; `restart`, `start` and
+  `stop` act on both, and `ripcord service` shows the publisher with the last lines of its log.
+
+**Upgrading a host**, in this order: `ripcord update`, then `ripcord service install` (creates
+the publisher and `state\`, and starts it), then `ripcord service restart` (the listener then
+serves `state\state.json`). `ripcord service` names the next command if the order is not kept.
+
 ### Changed
 
 - **The snapshot moves to `state\state.json` beside `ripcord.yaml`, and is no longer

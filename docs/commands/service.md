@@ -81,6 +81,7 @@ running two versions.
 | `key` | whether the service account can read the private key of `listener.local_certificate_thumbprint`, or that no key was found for it in `LocalMachine\My`. Machine keys are readable by SYSTEM and Administrators only. |
 | `snapshot`, third line | how long ago `state.json` was written, `STALE` past `peer.offline_after_sec`, or `NOT written yet`. When missing or stale, the report ends by naming `ripcord status`: until it runs, the peer shows this host offline or stale. |
 | `THIS HOST'S CERTIFICATE` | each certificate in `LocalMachine\My` with a private key, whose first CN is this host's name — what the other host checks, whatever O, OU or DC follow — and not expired, latest expiry first, marked `in ripcord.yaml` when it is the configured one, or `None of these is the one in ripcord.yaml` after a renewal. The other host must also trust its issuer. Shown even when `ripcord.yaml` does not load. Under it, the one line to run on the other host — `ripcord pair <this host>:<thumbprint>` — which writes both thumbprints there: see [`pair`](pair.md). `NONE` when no certificate qualifies. |
+| `PUBLISHER` | the publishing service: its state, command, last exit and version like the listener's, then `hyper-v` (membership), `bitlocker` (its ACE, or why BitLocker is carried from an administrator's read), `snapshot` (modify), `logs` (its own, and whether the listener is kept out), and the last 10 lines of `logs\publish\publish-YYYY-MM-DD.log`. |
 | `log` | the day's `logs\listener-YYYY-MM-DD.log` (UTC date) beside the service's binary, or yesterday's when today has none, and its last 20 lines. |
 
 The service is shown even when `ripcord.yaml` does not load — the likeliest reason it stopped.
@@ -97,9 +98,10 @@ leaves a way to take off a service installed while it was on.
 
 ## What the snapshot is
 
-`state.json` is this host's own state — its VMs, their replication, its build — written by
-`ripcord status` (and by `check`, `failover` and `fence`) and served read-only by the listener
-to the peer over mutual TLS. It is how the other host sees this one: it holds no secret, and
+`state.json` is this host's own state — its VMs, their replication, its build — written every
+15 seconds by the publishing service ([`publish`](publish.md)), and by `ripcord status`,
+`check`, `failover` and `fence`, and served read-only by the listener to the peer over mutual
+TLS. It is how the other host sees this one: it holds no secret, and
 nothing reads it back on this host.
 
 It is always `state\state.json` beside `ripcord.yaml` —
@@ -118,12 +120,20 @@ correct host does nothing. A moved binary, a changed port or a changed peer addr
 update rather than a teardown. `remove` is the same list read backwards — and it leaves the
 snapshot file alone, because an uninstaller that deletes data is one people are afraid to run.
 
-Seven steps at most, in this order: create the service, open the port to the peer only, grant
-the service account read access to the folder holding the snapshot, create `logs` beside the
-binary and grant the service account **modify** access to it, grant it read access to the
-private key of this host's certificate, register the `ripcord` source in the Application event
-log, **and start or repoint the service last** — after the rule that lets
-the peer in and the access it needs to the file it serves and the folder it logs to.
+Two services: the listener `ripcord` and the publisher `ripcord-publish`. In this order:
+create both (a virtual account exists only once its service does), open the port to the peer
+only, grant the listener read on the files of the install folder, read on `state\`, **modify**
+on `logs\`, read on its certificate's private key, register the `ripcord` event source; grant
+the publisher read on the files of the install folder, **modify on `state\`** and on
+`logs\publish\` — which stops inheriting from `logs\` so the listener cannot write it — add it
+to Hyper-V Administrators and, while `storage.check_bitlocker_autounlock` is on, give it one ACE
+on the BitLocker WMI namespace; **then start the listener, then the publisher** (restarted
+instead when it was just added to the group: membership reaches a process at its next start).
+
+`remove` takes the publisher down first, and everything it was granted **while its service
+still exists** — stopped, the ACE, the group, the folders, then deleted — because a virtual
+account's name only resolves as long as its service does. A service deleted by hand leaves its
+membership and ACE behind as a bare SID that no name matches; take those off by hand.
 
 The key grant is read, on the key file only. Without it the handshake fails on this host's own
 key, and the listener logs the refusal as *this host could not use its own private key* rather

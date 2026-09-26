@@ -27,6 +27,7 @@ day and per writer, named by the UTC date, and appended to:
 |---|---|
 | `logs\ripcord-YYYY-MM-DD.log` | every command run by hand or by the scheduler |
 | `logs\listener-YYYY-MM-DD.log` | the listener service: a start line with the version and the configuration it read, what `serve` would have printed on a console, and one line per peer connection served or refused |
+| `logs\publish\publish-YYYY-MM-DD.log` | the publishing service: a start line, every change between published and not, one line an hour, the stop; a failure repeated every 15 s is written once an hour. Its own folder, which the listener cannot write |
 
 The date is UTC on both hosts, so a moment is in the same file name on each of them.
 
