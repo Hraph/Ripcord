@@ -20,12 +20,15 @@ public sealed class RepeatedEntries(TimeSpan window, IReadOnlyList<string>? exem
     {
         ArgumentNullException.ThrowIfNull(entry);
 
+        (string, string) key = (entry.Operation, entry.Message);
+        List<DiagnosticEntry> lines = [];
+
         if (exempt?.Contains(entry.Operation, StringComparer.Ordinal) == true)
         {
-            return [entry];
+            lines.AddRange(this.Forget(now, key));
+            lines.Add(entry);
+            return lines;
         }
-
-        (string, string) key = (entry.Operation, entry.Message);
 
         if (this.seen.TryGetValue(key, out (DateTimeOffset Since, int Held) known) && now - known.Since < window)
         {
@@ -33,31 +36,55 @@ public sealed class RepeatedEntries(TimeSpan window, IReadOnlyList<string>? exem
             return [];
         }
 
-        this.Forget(now);
+        this.seen.Remove(key);
+        lines.AddRange(this.Forget(now, key));
         this.seen[key] = (now, 0);
 
-        return known.Held > 0
-            ? [DiagnosticEntry.Of(entry.Operation, HeldBack(known.Held, known.Since)), entry]
-            : [entry];
+        if (known.Held > 0)
+        {
+            lines.Add(DiagnosticEntry.Of(entry.Operation, HeldBack(known.Held, known.Since)));
+        }
+
+        lines.Add(entry);
+        return lines;
     }
 
-    /// Kinds past their window with nothing held back are dropped, and the table never grows
-    /// past `MaxKinds`: a message that embeds a changing value must not become a leak.
-    private void Forget(DateTimeOffset now)
+    /// Kinds past their window are dropped, and the table never grows past `MaxKinds`: a
+    /// message that embeds a changing value must not become a leak. A kind dropped with repeats
+    /// held back says how many first, so a failure that stopped coming back is not left looking
+    /// like a single occurrence.
+    private List<DiagnosticEntry> Forget(DateTimeOffset now, (string, string) keep)
     {
-        foreach ((string, string) stale in this.seen
-            .Where(pair => now - pair.Value.Since >= window && pair.Value.Held == 0)
-            .Select(pair => pair.Key)
+        List<DiagnosticEntry> said = [];
+
+        foreach (((string Operation, string Message) key, (DateTimeOffset Since, int Held) value) in this.seen
+            .Where(pair => now - pair.Value.Since >= window && !pair.Key.Equals(keep))
             .ToList())
         {
-            this.seen.Remove(stale);
+            said.AddRange(Dropped(key, value));
+            this.seen.Remove(key);
         }
 
         while (this.seen.Count >= MaxKinds)
         {
-            this.seen.Remove(this.seen.MinBy(pair => pair.Value.Since).Key);
+            KeyValuePair<(string Operation, string Message), (DateTimeOffset Since, int Held)> oldest =
+                this.seen.MinBy(pair => pair.Value.Since);
+            said.AddRange(Dropped(oldest.Key, oldest.Value));
+            this.seen.Remove(oldest.Key);
         }
+
+        return said;
     }
+
+    private static IEnumerable<DiagnosticEntry> Dropped(
+        (string Operation, string Message) key, (DateTimeOffset Since, int Held) value) =>
+        value.Held > 0
+            ? [DiagnosticEntry.Of(
+                key.Operation,
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"'{key.Message}' came {value.Held} more time(s) after {value.Since.UtcDateTime:HH:mm:ss} UTC"))]
+            : [];
 
     private static string HeldBack(int held, DateTimeOffset since) =>
         string.Create(

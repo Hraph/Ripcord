@@ -72,4 +72,41 @@ public class RepeatedEntriesTests
         Assert.Equal([line], repeated.Admit(line, Start));
         Assert.Equal([line], repeated.Admit(line, Start.AddSeconds(15)));
     }
+
+    /// A failure that stopped coming back still says how often it came, the next time anything
+    /// is written — it used to vanish with its count.
+    [Fact]
+    public void A_kind_that_stopped_says_what_was_held_back_when_it_is_dropped()
+    {
+        RepeatedEntries repeated = new(TimeSpan.FromHours(1));
+        repeated.Admit(Failure, Start);
+        repeated.Admit(Failure, Start.AddSeconds(15));
+        repeated.Admit(Failure, Start.AddSeconds(30));
+
+        DiagnosticEntry other = DiagnosticEntry.Of("publish", "published again");
+        IReadOnlyList<DiagnosticEntry> written = repeated.Admit(other, Start.AddHours(2));
+
+        Assert.Equal(2, written.Count);
+        Assert.Equal("hyper-v", written[0].Operation);
+        Assert.Contains("came 2 more time(s)", written[0].Message, StringComparison.Ordinal);
+        Assert.Equal(other, written[1]);
+    }
+
+    /// Evicted at the cap with repeats held back: said, not lost.
+    [Fact]
+    public void A_kind_evicted_at_the_cap_says_what_was_held_back()
+    {
+        RepeatedEntries repeated = new(TimeSpan.FromHours(1));
+        repeated.Admit(Failure, Start);
+        repeated.Admit(Failure, Start.AddSeconds(1));
+
+        IReadOnlyList<DiagnosticEntry> last = [];
+
+        for (int index = 0; index < RepeatedEntries.MaxKinds; index++)
+        {
+            last = repeated.Admit(DiagnosticEntry.Of("wmi", $"line {index}"), Start.AddSeconds(2 + index));
+        }
+
+        Assert.Contains(last, entry => entry.Message.Contains("came 1 more time(s)", StringComparison.Ordinal));
+    }
 }
