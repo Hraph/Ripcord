@@ -16,7 +16,7 @@ public sealed record ServiceStateChange(DeploymentPlan Plan, string? Unchanged, 
 {
     /// The listener alone.
     public static ServiceStateChange For(ServiceChange change, ObservedService service) =>
-        Of(change, service, RipcordService.Listener);
+        Concluded(Of(change, service, RipcordService.Listener));
 
     /// Both services: started listener first, so the peer is served before it is refreshed;
     /// stopped publisher first, so nothing is written for a listener that no longer serves.
@@ -41,11 +41,18 @@ public sealed record ServiceStateChange(DeploymentPlan Plan, string? Unchanged, 
 
         string[] unchanged = [.. new[] { first.Unchanged, second.Unchanged }.OfType<string>()];
 
-        return new ServiceStateChange(
+        return Concluded(new ServiceStateChange(
             new DeploymentPlan([.. first.Plan.Steps, .. second.Plan.Steps]),
             unchanged.Length == 0 ? null : string.Join('\n', unchanged),
-            null);
+            null));
     }
+
+    /// "Nothing was changed" only when nothing is planned: a sentence about one service must
+    /// not read as the outcome of a command that restarts the other.
+    private static ServiceStateChange Concluded(ServiceStateChange change) =>
+        change is { Unchanged: { } said, Plan.ChangesAnything: false }
+            ? change with { Unchanged = $"{said}\nNothing was changed." }
+            : change;
 
     private static ServiceStateChange Of(ServiceChange change, ObservedService service, RipcordService which)
     {
@@ -106,5 +113,5 @@ public sealed record ServiceStateChange(DeploymentPlan Plan, string? Unchanged, 
             null);
 
     private static ServiceStateChange Said(RipcordService which, string what) =>
-        new(new DeploymentPlan([]), $"The '{which.Name}' service {what}. Nothing was changed.", null);
+        new(new DeploymentPlan([]), $"The '{which.Name}' service {what}.", null);
 }

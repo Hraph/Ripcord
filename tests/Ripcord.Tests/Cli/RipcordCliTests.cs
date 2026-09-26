@@ -737,7 +737,8 @@ public class RipcordCliTests
 
         Assert.Equal(ExitCode.Success, run.Code);
         Assert.Empty(executor.Applied);
-        Assert.Contains("is not running. Nothing was changed.", run.Output, StringComparison.Ordinal);
+        Assert.Contains("is not running.", run.Output, StringComparison.Ordinal);
+        Assert.EndsWith("Nothing was changed.\n", run.Output.ReplaceLineEndings("\n"), StringComparison.Ordinal);
     }
 
     [Theory]

@@ -80,6 +80,9 @@ public class ServiceStateChangeTests
 
         Assert.Equal(RipcordService.Listener, Assert.Single(decided.Plan.Steps).Subject);
         Assert.Contains("'ripcord-publish' service is not installed", decided.Unchanged, StringComparison.Ordinal);
+
+        // The listener is started: saying nothing changed would be the one false line.
+        Assert.DoesNotContain("Nothing was changed", decided.Unchanged, StringComparison.Ordinal);
     }
 
     [Fact]
