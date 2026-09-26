@@ -192,7 +192,7 @@ internal static class Program
                 palette,
                 errorPalette,
                 asService,
-                !asService && !Console.IsOutputRedirected));
+                !asService && !Console.IsOutputRedirected && !Console.IsInputRedirected));
 
         // Started by the service control manager rather than by a person. `sc start` waits for
         // a handshake — ServiceBase.Run — and a console loop never sends one, so the manager

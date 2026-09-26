@@ -1,5 +1,6 @@
 using Ripcord.Adapters.Fake;
 using Ripcord.Cli;
+using Ripcord.Cli.Rendering;
 using Ripcord.Domain;
 using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Updates;
@@ -76,6 +77,18 @@ public sealed class UpdateCliTests
         Assert.Contains("\r  download the release and its signature... 100%", run.Output, StringComparison.Ordinal);
         Assert.Contains("\r  put the new binary where the running one was...", run.Output, StringComparison.Ordinal);
         Assert.Matches(@"\r +\r\r?\n  0\.2\.0 is installed", run.Output);
+    }
+
+    /// A line wider than the console wraps, and `\r` then redraws only its last row.
+    [Fact]
+    public void Every_progress_line_fits_the_console()
+    {
+        Assert.All(UpdatePlan.For(Subjects.Available()).Steps, step =>
+        {
+            Assert.InRange(UpdateRenderer.RenderRunning(step).Length, 1, 75);
+            Assert.InRange(UpdateRenderer.RenderRunning(step, "100%").Length, 1, 75);
+            Assert.InRange(UpdateRenderer.RenderRunning(step, "160 MB").Length, 1, 75);
+        });
     }
 
     [Fact]

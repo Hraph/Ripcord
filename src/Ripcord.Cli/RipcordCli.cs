@@ -60,7 +60,8 @@ public sealed record CliEnvironment(
     Palette? ErrorPalette = null,
     /// Started by the service control manager: `publish` then loops instead of running once.
     bool RunsAsService = false,
-    /// Output is a console a line can be redrawn on, not a file a `\r` would litter.
+    /// A console both ways: a file would keep every `\r` redraw, and piped input echoes no Enter
+    /// to take the redrawn line off the confirmation prompt.
     bool LiveConsole = false);
 
 /// Every port the command surface reaches the machine through. Grouped rather than listed one
@@ -2294,7 +2295,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         DownloadMarks marks = new();
         ProgressLine line = new(output, environment.LiveConsole);
-        string running = "";
+        UpdateStep? running = null;
 
         UpdateInstallation installation = new(
             ports.ReleaseSource,
@@ -2302,14 +2303,14 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             environment.ReleaseSigningKey,
             step =>
             {
-                running = $"  {step.Description}...";
-                line.Show(running);
+                running = step;
+                line.Show(UpdateRenderer.RenderRunning(step));
             },
             bytes =>
             {
-                if (marks.Next(bytes) is { } mark)
+                if (running is not null && marks.Next(bytes) is { } mark)
                 {
-                    line.Show($"{running} {mark}");
+                    line.Show(UpdateRenderer.RenderRunning(running, mark));
                 }
             });
 

@@ -57,6 +57,14 @@ public static class UpdateRenderer
         return Layout.Rendered(output, palette);
     }
 
+    /// The one line redrawn while the update runs.
+    public static string RenderRunning(UpdateStep step, string? mark = null)
+    {
+        ArgumentNullException.ThrowIfNull(step);
+
+        return mark is null ? $"  {step.Description}..." : $"  {step.Description}... {mark}";
+    }
+
     public static string RenderResult(
         UpdateResult result, string version, Palette? palette = null)
     {

@@ -1,8 +1,6 @@
 namespace Ripcord.Cli.Rendering;
 
-/// One console line, redrawn in place and erased when done. Padded with spaces rather than
-/// cleared with an escape code, because the console may have no virtual terminal support.
-/// Draws nothing when the output is not a live console: a file would keep every redraw.
+/// One console line redrawn in place; padded, not escape-cleared, as the console may lack VT.
 public sealed class ProgressLine(TextWriter output, bool live)
 {
     private int shown;
