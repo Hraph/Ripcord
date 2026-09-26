@@ -94,7 +94,10 @@ public sealed record ObservedDeployment(
     bool InstallFolderGrantedToService = false,
 
     /// The publishing service and what it was granted; null reads as none of it there.
-    ObservedPublisher? Publisher = null)
+    ObservedPublisher? Publisher = null,
+
+    /// Whether Windows restarts the listener after a crash (`ServiceRecovery`).
+    bool ListenerRecovers = false)
 {
     public static ObservedDeployment Nothing { get; } =
         new(false, null, false, null, null, false);
@@ -152,6 +155,9 @@ public enum DeploymentAction
     /// One ACE on the BitLocker WMI namespace, for the publishing service alone.
     GrantEncryptionNamespaceAccess,
     RevokeEncryptionNamespaceAccess,
+
+    /// Windows restarts the service after a crash. Deleting the service takes it with it.
+    ConfigureRecovery,
 }
 
 /// One change, and why it is needed. The reason is what `--dry-run` prints, so it is written
@@ -244,6 +250,11 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
             // stopped. Re-running the command is then what starts it, which is what an
             // operator expects of a command that reconciles.
             start = "it is installed and not running";
+        }
+
+        if (!observed.ListenerRecovers)
+        {
+            steps.Add(PublisherSteps.Recovery(RipcordService.Listener));
         }
 
         // Created before any grant: its account only exists once the service does.

@@ -65,7 +65,8 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
                 RipcordService.Listener.Account),
             AccessControl.GrantsExplicitly(
                 Run("icacls", $"\"{desired.InstallFolder}\"").Output, RipcordService.Listener.Account),
-            this.ObservePublisher(desired));
+            this.ObservePublisher(desired),
+            ServiceRecovery.Restarts(FailureActions(RipcordService.Listener)));
     }
 
     /// `/c` because without it icacls stops at the first key it cannot read (SYSTEM-only keys,
@@ -374,6 +375,8 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
 
             DeploymentAction.StartService => [("sc.exe", $"start {name}")],
 
+            DeploymentAction.ConfigureRecovery => [("sc.exe", ServiceRecovery.Arguments(service))],
+
             DeploymentAction.RestartService =>
             [
                 ("sc.exe", $"stop {name}"),
@@ -526,7 +529,8 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             group,
             member,
             encryption,
-            note);
+            note,
+            ServiceRecovery.Restarts(FailureActions(publisher)));
     }
 
     /// Hyper-V Administrators by its SID: "Administrateurs Hyper-V" on a French host. Null
@@ -709,6 +713,15 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             Microsoft.Win32.Registry.LocalMachine.OpenSubKey(EventSourceKey);
 
         return key is not null;
+    }
+
+    /// From the registry, not from `sc qfailure`, whose labels are localised.
+    private static byte[]? FailureActions(RipcordService which)
+    {
+        using Microsoft.Win32.RegistryKey? key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+            $@"SYSTEM\CurrentControlSet\Services\{which.Name}");
+
+        return key?.GetValue("FailureActions") as byte[];
     }
 
     /// From the registry, not from `sc qc`, whose labels are localised.

@@ -22,7 +22,10 @@ public sealed record ObservedPublisher(
 
     /// Null when the namespace is absent or unreadable; `EncryptionNote` then says which.
     NamespaceGrant? Encryption,
-    string? EncryptionNote)
+    string? EncryptionNote,
+
+    /// Whether Windows restarts it after a crash (`ServiceRecovery`).
+    bool Recovers = false)
 {
     public static ObservedPublisher Nothing { get; } = new(
         ObservedService.Absent, false, false, false, false, false, "Hyper-V Administrators", false, NamespaceGrant.Missing, null);
@@ -52,7 +55,21 @@ public static class PublisherSteps
                     + $"as {Publisher.Account}",
                 "it republishes this host's snapshot every 15 s; nothing else writes it unasked");
         }
+
+        if (!observed.Recovers)
+        {
+            yield return Recovery(Publisher);
+        }
     }
+
+    /// Shared with the listener's plan, so both services recover the same way.
+    public static DeploymentStep Recovery(RipcordService service) =>
+        new(
+            DeploymentAction.ConfigureRecovery,
+            $"Restart '{service.Name}' a minute after a crash (sc.exe {ServiceRecovery.Arguments(service)})",
+            "a service that died stays dead until somebody notices; one that stops itself on "
+                + "purpose is left alone",
+            Service: service == RipcordService.Listener ? null : service);
 
     public static IEnumerable<DeploymentStep> Grants(DesiredDeployment desired, ObservedPublisher observed)
     {

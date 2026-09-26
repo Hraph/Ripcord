@@ -26,7 +26,8 @@ public class PublisherStepsTests
         ServiceRunning: true,
         LogsWritableByService: true,
         EventSourceRegistered: true,
-        ConfigurationReadableByService: true);
+        ConfigurationReadableByService: true,
+        ListenerRecovers: true);
 
     private static IReadOnlyList<DeploymentAction> Actions(DeploymentPlan plan) =>
         [.. plan.Steps.Where(step => step.Service == RipcordService.Publisher).Select(step => step.Action)];
@@ -39,7 +40,8 @@ public class PublisherStepsTests
         DeploymentPlan plan = DeploymentPlan.For(Desired, ObservedDeployment.Nothing);
 
         Assert.Equal(
-            [DeploymentAction.CreateService, DeploymentAction.GrantConfigurationAccess,
+            [DeploymentAction.CreateService, DeploymentAction.ConfigureRecovery,
+             DeploymentAction.GrantConfigurationAccess,
              DeploymentAction.GrantSnapshotWriteAccess, DeploymentAction.GrantLogsAccess,
              DeploymentAction.AddToHyperVAdministrators, DeploymentAction.GrantEncryptionNamespaceAccess,
              DeploymentAction.StartService],

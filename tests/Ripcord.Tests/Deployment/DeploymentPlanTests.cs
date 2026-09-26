@@ -66,12 +66,43 @@ public class DeploymentPlanTests
         DeploymentPlan plan = DeploymentPlan.For(Desired, ObservedDeployment.Nothing);
 
         Assert.Equal(
-            [DeploymentAction.CreateService, DeploymentAction.CreateFirewallRule,
+            [DeploymentAction.CreateService, DeploymentAction.ConfigureRecovery,
+             DeploymentAction.CreateFirewallRule,
              DeploymentAction.GrantConfigurationAccess,
              DeploymentAction.GrantSnapshotAccess, DeploymentAction.GrantLogsAccess,
              DeploymentAction.RegisterEventSource, DeploymentAction.StartService],
             Listener(plan));
         Assert.True(plan.ChangesAnything);
+    }
+
+    /// A crash restarts either service a minute later; a service that stops itself with an
+    /// exit code is left alone, or it would refuse a bad configuration once a minute for ever.
+    [Fact]
+    public void A_service_without_recovery_gets_it_and_one_with_it_does_not()
+    {
+        DeploymentStep step = Assert.Single(DeploymentPlan.For(
+            Desired, Matching() with { ListenerRecovers = false }).Steps);
+
+        Assert.Equal(DeploymentAction.ConfigureRecovery, step.Action);
+        Assert.Null(step.Service);
+        Assert.Contains("actions= restart/60000", step.Description, StringComparison.Ordinal);
+        Assert.DoesNotContain("failureflag", step.Description, StringComparison.Ordinal);
+    }
+
+    /// The registry's SERVICE_FAILURE_ACTIONS: reset, two pointers, count, pointer, then pairs.
+    [Fact]
+    public void Recovery_is_read_from_the_registry_blob()
+    {
+        byte[] restart = [.. BitConverter.GetBytes(86_400), .. new byte[8], .. BitConverter.GetBytes(1),
+            .. new byte[4], .. BitConverter.GetBytes(1), .. BitConverter.GetBytes(60_000)];
+        byte[] nothing = [.. restart[..12], .. BitConverter.GetBytes(0), .. restart[16..]];
+        byte[] reboot = [.. restart[..20], .. BitConverter.GetBytes(2), .. restart[24..]];
+
+        Assert.True(ServiceRecovery.Restarts(restart));
+        Assert.False(ServiceRecovery.Restarts(nothing));
+        Assert.False(ServiceRecovery.Restarts(reboot));
+        Assert.False(ServiceRecovery.Restarts(null));
+        Assert.False(ServiceRecovery.Restarts(restart[..20]));
     }
 
     /// The listener reads ripcord.yaml at every start; the grant is read-only, on the files of
@@ -379,7 +410,8 @@ public class DeploymentPlanTests
         LogsWritableByService: true,
         EventSourceRegistered: true,
         ConfigurationReadableByService: true,
-        Publisher: PublisherInPlace(@"D:\Ripcord\ripcord.exe"));
+        Publisher: PublisherInPlace(@"D:\Ripcord\ripcord.exe"),
+        ListenerRecovers: true);
 
     private static List<DeploymentAction> Listener(DeploymentPlan plan) =>
         [.. plan.Steps.Where(step => step.Service is null).Select(step => step.Action)];
@@ -396,7 +428,8 @@ public class DeploymentPlanTests
             HyperVAdministrators: "Hyper-V Administrators",
             InHyperVAdministrators: true,
             Encryption: encryption,
-            EncryptionNote: null);
+            EncryptionNote: null,
+            Recovers: true);
 
     /// The field failure: the service account could write nowhere, so the listener died
     /// before it answered Windows. The grant is on the logs folder and only there — never on

@@ -139,6 +139,12 @@ The key grant is read, on the key file only. Without it the handshake fails on t
 key, and the listener logs the refusal as *this host could not use its own private key* rather
 than blaming the caller.
 
+**Both services restart a minute after a crash**, three times a day at most
+(`sc.exe failure … actions= restart/60000/…`), set right after each is created. Only a crash:
+a service that stops itself with an exit code — a configuration it refuses — stays stopped,
+rather than refusing the same file again every minute. Deleting a service takes its recovery
+with it.
+
 **Access nothing uses any more is taken back**, as the last steps: every machine key file the
 service account can read other than the configured certificate's — the ones left by `pair` or a
 renewal, however many — and, once the service moved, the old install folder and its `logs`.
