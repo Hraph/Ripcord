@@ -19,6 +19,8 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
   `ripcord service install` creates the folder, restarts the listener onto it and then takes
   back its grant on `logs\`. The `listener-*.log` files already in `logs\` stay there and are
   pruned after 30 days like the rest.
+- **`ripcord service remove` is now `ripcord service uninstall`**, the counterpart of `install`.
+  `remove` changes nothing and says what to type instead.
 
 ## 0.9.0 — 2026-09-26
 

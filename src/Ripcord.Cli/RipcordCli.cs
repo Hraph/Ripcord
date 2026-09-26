@@ -1064,7 +1064,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
     /// The listener service: what it is doing, and the things that change it.
     ///
     /// Bare, it reports and changes nothing — rule 3, and the question an operator asks first.
-    /// `install` and `remove` are words rather than flags because both mutate a host that may
+    /// `install` and `uninstall` are words rather than flags because both mutate a host that may
     /// be running a domain controller, and a word is harder to type by accident than a flag
     /// next to the one you meant.
     private ExitCode Service(string[] args, TextWriter output, TextWriter error)
@@ -1077,7 +1077,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             "" => this.ServiceState(args, output, error),
             "status" => this.ServiceState(args[1..], output, error),
             "install" => this.Deploy(args[1..], output, error, removing: false),
-            "remove" => this.Deploy(args[1..], output, error, removing: true),
+            "uninstall" => this.Deploy(args[1..], output, error, removing: true),
             "restart" => this.ChangeState(args[1..], output, error, ServiceChange.Restart),
             "start" => this.ChangeState(args[1..], output, error, ServiceChange.Start),
             "stop" => this.ChangeState(args[1..], output, error, ServiceChange.Stop),
@@ -1089,8 +1089,15 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
     private static ExitCode Unknown(string verb, TextWriter error)
     {
         error.WriteLine($"ripcord: 'service {verb}' is not a service verb.");
+
+        // Renamed after 0.9.0: a runbook written before still says `remove`.
+        if (verb == "remove")
+        {
+            error.WriteLine("  it is now:  ripcord service uninstall");
+        }
+
         error.WriteLine("  to look:    ripcord service");
-        error.WriteLine("  to change:  ripcord service install | remove | restart | start | stop");
+        error.WriteLine("  to change:  ripcord service install | uninstall | restart | start | stop");
 
         return ExitCode.InvalidConfiguration;
     }
@@ -1170,7 +1177,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         if (!desired.ListenerEnabled && change != ServiceChange.Stop)
         {
             error.WriteLine("ripcord: the listener is disabled in ripcord.yaml.");
-            error.WriteLine("  Set listener.enabled: true, or run 'ripcord service remove'.");
+            error.WriteLine("  Set listener.enabled: true, or run 'ripcord service uninstall'.");
             return ExitCode.Refused;
         }
 
@@ -2382,7 +2389,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         writer.WriteLine("  ripcord service [status]           is the listener running, and if");
         writer.WriteLine("                                     not, why: last exit, its log");
         writer.WriteLine("  ripcord service install [--dry-run]");
-        writer.WriteLine("  ripcord service remove [--dry-run]");
+        writer.WriteLine("  ripcord service uninstall [--dry-run]");
         writer.WriteLine("  ripcord service restart [--dry-run]");
         writer.WriteLine("                                     after editing ripcord.yaml: the");
         writer.WriteLine("                                     listener reads it only at start");

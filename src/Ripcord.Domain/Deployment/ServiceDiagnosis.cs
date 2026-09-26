@@ -40,7 +40,7 @@ public static class ServiceDiagnosis
 
     private const string Restart = "ripcord service restart";
 
-    private const string Remove = "ripcord service remove";
+    private const string Uninstall = "ripcord service uninstall";
 
     public static string Meaning(ExitCode code) => code switch
     {
@@ -171,7 +171,7 @@ public static class ServiceDiagnosis
         if (listenerDisabled)
         {
             return new ServiceVerdict(
-                "the listener is disabled in ripcord.yaml (listener.enabled: false)", [Remove]);
+                "the listener is disabled in ripcord.yaml (listener.enabled: false)", [Uninstall]);
         }
 
         // Before the log: a start that cannot open it writes nothing there.

@@ -59,7 +59,7 @@ One page each, in [`docs/commands/`](docs/commands/).
 | [`init`](docs/commands/init.md) | write this host's `ripcord.yaml` by interview | mutating |
 | [`status`](docs/commands/status.md) | what both hosts are doing | read-only |
 | [`check`](docs/commands/check.md) | would a failover work right now | read-only |
-| [`service`](docs/commands/service.md) | the listener: state, install, remove, restart, start, stop | bare form read-only |
+| [`service`](docs/commands/service.md) | the listener: state, install, uninstall, restart, start, stop | bare form read-only |
 | [`pair`](docs/commands/pair.md) | set both certificate thumbprints from the other host's line | yes, `y/n` |
 | [`serve`](docs/commands/serve.md) | the listener itself | read-only |
 | [`publish`](docs/commands/publish.md) | this host's snapshot, published once; the publishing service runs it | read-only |

@@ -35,7 +35,7 @@ of them is a report about the deployment rather than about the tool.
   second service, `ripcord-publish`, with no socket at all: a member of Hyper-V Administrators —
   which is control over the VMs, so it is a high-value process — granted modify on `state\` and
   its own log folder only, never beside `ripcord.exe`, and one ACE on the BitLocker namespace
-  while the configuration checks BitLocker. `service remove` takes all of it back.
+  while the configuration checks BitLocker. `service uninstall` takes all of it back.
 - **The two hosts authenticate each other, and nothing else is trusted.** The pair channel is
   mutual TLS with both certificates pinned by thumbprint, restricted to the peer's address by
   both the firewall rule and the tool itself. The peer is trusted to *be* the peer, not to be

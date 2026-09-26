@@ -589,7 +589,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
 
     public const string ListenerDisabled =
         "the listener is disabled in ripcord.yaml (listener.enabled: false). Set it to true "
-        + "to install the listener, or run 'ripcord service remove' to take it off this host.";
+        + "to install the listener, or run 'ripcord service uninstall' to take it off this host.";
 
     private static RipcordService Listener => RipcordService.Listener;
 

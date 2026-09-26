@@ -412,12 +412,12 @@ public class RipcordCliTests
     }
 
     [Fact]
-    public async Task Service_remove_undoes_the_deployment_in_reverse()
+    public async Task Service_uninstall_undoes_the_deployment_in_reverse()
     {
         FakeDeploymentExecutor executor = new(Deployed());
 
         CliRun run = await Run(
-            ["service", "remove"],
+            ["service", "uninstall"],
             deploymentExecutor: executor,
             typed: "y");
 
@@ -527,7 +527,7 @@ public class RipcordCliTests
         Assert.Equal(
             "ripcord: 'service state' is not a service verb.\n"
                 + "  to look:    ripcord service\n"
-                + "  to change:  ripcord service install | remove | restart | start | stop\n",
+                + "  to change:  ripcord service install | uninstall | restart | start | stop\n",
             run.Error.ReplaceLineEndings("\n"));
     }
 
@@ -815,19 +815,38 @@ public class RipcordCliTests
             "ripcord service install --dry-run", run.Output, StringComparison.Ordinal);
     }
 
-    /// Neither `install` nor `remove` is needed to look, and a word that is neither is refused
+    /// Neither `install` nor `uninstall` is needed to look, and a word that is neither is refused
     /// rather than read as one of them.
     [Theory]
     [InlineData("begin")]
     [InlineData("deploy")]
     [InlineData("instal")]
-    public async Task Service_refuses_a_word_that_is_not_one_of_the_two(string word)
+    public async Task Service_refuses_a_word_that_is_not_a_service_verb(string word)
     {
         FakeDeploymentExecutor executor = new();
 
         CliRun run = await Run(["service", word], deploymentExecutor: executor);
 
         Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
+        Assert.Empty(executor.Applied);
+    }
+
+    /// Renamed to match `install`: the old word, from a runbook or from memory, changes nothing
+    /// and says what to type instead.
+    [Fact]
+    public async Task Service_remove_changes_nothing_and_points_to_uninstall()
+    {
+        FakeDeploymentExecutor executor = new(Deployed());
+
+        CliRun run = await Run(["service", "remove"], typed: "y", deploymentExecutor: executor);
+
+        Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
+        Assert.Equal(
+            "ripcord: 'service remove' is not a service verb.\n"
+                + "  it is now:  ripcord service uninstall\n"
+                + "  to look:    ripcord service\n"
+                + "  to change:  ripcord service install | uninstall | restart | start | stop\n",
+            run.Error.ReplaceLineEndings("\n"));
         Assert.Empty(executor.Applied);
     }
 
@@ -988,7 +1007,7 @@ public class RipcordCliTests
             "the listener is disabled in ripcord.yaml (listener.enabled: false)",
             run.Output,
             StringComparison.Ordinal);
-        Assert.Contains("    ripcord service remove", run.Output, StringComparison.Ordinal);
+        Assert.Contains("    ripcord service uninstall", run.Output, StringComparison.Ordinal);
         Assert.Empty(run.Error);
         Assert.DoesNotContain("served no current snapshot", run.Output, StringComparison.Ordinal);
     }
@@ -1005,17 +1024,17 @@ public class RipcordCliTests
 
         Assert.Equal(ExitCode.Refused, run.Code);
         Assert.Contains("listener.enabled: true", run.Error, StringComparison.Ordinal);
-        Assert.Contains("ripcord service remove", run.Error, StringComparison.Ordinal);
+        Assert.Contains("ripcord service uninstall", run.Error, StringComparison.Ordinal);
         Assert.Empty(executor.Applied);
     }
 
     [Fact]
-    public async Task Remove_on_a_disabled_listener_still_removes()
+    public async Task Uninstall_on_a_disabled_listener_still_removes()
     {
         FakeDeploymentExecutor executor = new(Deployed());
 
         CliRun run = await Run(
-            ["service", "remove"],
+            ["service", "uninstall"],
             configStore: new RecordingConfigStore(listenerEnabled: false),
             deploymentExecutor: executor,
             typed: "y");

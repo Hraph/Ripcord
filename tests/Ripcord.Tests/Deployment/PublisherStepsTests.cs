@@ -2,7 +2,7 @@ using Ripcord.Domain.Deployment;
 
 namespace Ripcord.Tests.Deployment;
 
-/// The publishing service in `service install` and `service remove`: least privilege, step by
+/// The publishing service in `service install` and `service uninstall`: least privilege, step by
 /// step, and everything it was given taken back before its service goes.
 public class PublisherStepsTests
 {

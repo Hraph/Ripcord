@@ -7,7 +7,7 @@ means — in that order, because that is the order they matter in at three in th
 |---|---|---|
 | [`status`](status.md) | what both hosts are doing right now | no |
 | [`check`](check.md) | would a failover work, if it had to happen now | no |
-| [`service`](service.md) | is the listener running, and if not, why (`service status` is the same) | only with `install`, `remove`, `restart`, `start`, `stop` |
+| [`service`](service.md) | is the listener running, and if not, why (`service status` is the same) | only with `install`, `uninstall`, `restart`, `start`, `stop` |
 | [`pair`](pair.md) | set both certificate thumbprints from the line `service` prints on the other host | yes |
 | [`serve`](serve.md) | — it *is* the listener | no |
 | [`publish`](publish.md) | publish this host's snapshot once; as the `ripcord-publish` service, every 15 s | no |
@@ -72,7 +72,7 @@ on the way in. See [the diagnostic log](../diagnostics.md).
 
 **Read-only by default.** Nothing mutates without an explicit answer, and the answer matches the
 stakes. What moves production VMs — `failover`, `failback`, `fence` — takes **the node name
-typed in full**. Everything else that changes something — `service install`, `remove`, `stop`,
+typed in full**. Everything else that changes something — `service install`, `uninstall`, `stop`,
 `test-failover`, `update`, `rollback` — asks **`y/n [n]`**: it is undone by running it again or
 touches only a test VM, and Enter declines. Keeping the typed name for the few commands that
 need it keeps it from becoming a reflex. There is no `--force` anywhere, and no flag that skips

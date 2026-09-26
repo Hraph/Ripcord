@@ -7,17 +7,18 @@ change them.
 ```
 ripcord service [status]            is it running, and if not, why
 ripcord service install [--dry-run]
-ripcord service remove  [--dry-run]
+ripcord service uninstall [--dry-run]
 ripcord service restart [--dry-run]
 ripcord service start   [--dry-run]
 ripcord service stop    [--dry-run]
 ```
 
 Bare, it changes nothing. `ripcord service status` is the same report under the word an
-operator types by habit — one report, two spellings. `install`, `remove`, `restart`, `start`
+operator types by habit — one report, two spellings. `install`, `uninstall`, `restart`, `start`
 and `stop` are words rather than flags, because each mutates a host that may be running a
 domain controller, and a word is harder to type by accident than a flag next to the one you
-meant.
+meant. `remove`, the word up to 0.9.0, changes nothing and prints `ripcord service uninstall`
+(exit 2).
 
 ## `ripcord service` (or `ripcord service status`)
 
@@ -115,7 +116,7 @@ unreadable state is never presented as a stopped one. Access denied means the co
 elevated.
 
 With `listener.enabled: false`, the report still shows the service and exits 0. `install`
-refuses (exit 2), `restart` refuses (exit 4) and `remove` works: switching the listener off
+refuses (exit 2), `restart` refuses (exit 4) and `uninstall` works: switching the listener off
 leaves a way to take off a service installed while it was on.
 
 ## What the snapshot is
@@ -139,7 +140,7 @@ to.
 
 It compares the host with the configuration and applies only the difference. Re-running it on a
 correct host does nothing. A moved binary, a changed port or a changed peer address becomes an
-update rather than a teardown. `remove` is the same list read backwards — and it leaves the
+update rather than a teardown. `uninstall` is the same list read backwards — and it leaves the
 snapshot file alone, because an uninstaller that deletes data is one people are afraid to run.
 
 Two services: the listener `ripcord` and the publisher `ripcord-publish`. In this order: create
@@ -152,7 +153,7 @@ while `storage.check_bitlocker_autounlock` is on, give it one ACE on the BitLock
 namespace; **then start the listener, then the publisher** (restarted instead when it was just
 added to the group: membership reaches a process at its next start).
 
-`remove` takes the publisher down first, and everything it was granted **while its service
+`uninstall` takes the publisher down first, and everything it was granted **while its service
 still exists** — stopped, the ACE, the group, the folders, then deleted — because a virtual
 account's name only resolves as long as its service does. A service deleted by hand leaves its
 membership and ACE behind as a bare SID that no name matches; take those off by hand.
@@ -182,7 +183,7 @@ touched, never inherited ones, and never recursively into a folder that still ho
 folder, the logs or the snapshot in use. With the configured certificate's key not found, no key
 is touched: which one is current cannot be told. Nor when the machine keys take longer than the
 command timeout to list. A snapshot folder left behind by an older `snapshot_path` elsewhere is
-not looked for; `ripcord service remove` run before moving it is what takes that one back.
+not looked for; `ripcord service uninstall` run before moving it is what takes that one back.
 
 After `pair` or a renewal, a listener still running reads the old key on every connection: once
 `install` has taken that key back, it serves nothing until `ripcord service restart`. Run the
@@ -192,7 +193,7 @@ restart right after the install.
 because pruning an old log deletes it; on that folder only, never on `logs\` where the commands
 write, the install folder or the binary. The event source is where the listener reports a start
 it cannot log to its file: a virtual account cannot write to the event log under a source nobody
-registered. `remove` revokes the folder access — and the one on `logs\` a 0.9.0 install left,
+registered. `uninstall` revokes the folder access — and the one on `logs\` a 0.9.0 install left,
 when no install has taken it back since — removes the source, and leaves the logs where they
 are.
 
@@ -215,7 +216,7 @@ report ends with one line on the likely cause, and what to run:
 | It says | Meaning | It suggests |
 |---|---|---|
 | its start mode is Disabled | Windows will not start it | `sc.exe config ripcord start= auto` |
-| the listener is disabled in ripcord.yaml | `listener.enabled: false`: `serve` has nothing to do | `ripcord service remove` |
+| the listener is disabled in ripcord.yaml | `listener.enabled: false`: `serve` has nothing to do | `ripcord service uninstall` |
 | NT SERVICE\ripcord cannot write its logs folder | it cannot open its log, so it stops at once | `ripcord service install --dry-run` |
 | it has not been started since Windows booted | 1077: nothing has started it yet | `ripcord service restart` |
 | Windows recorded 1053, 1069, 2 ... | a code Windows set before the listener could log | the event log |
@@ -277,7 +278,7 @@ Bare `ripcord service` (and `service status`): **0** once the report is printed,
 service is doing; **2** when `ripcord.yaml` cannot be used — the service is still shown above
 the errors; **3** when the host could not be inspected at all.
 
-For `install`, `remove`, `restart`, `start` and `stop`:
+For `install`, `uninstall`, `restart`, `start` and `stop`:
 **2** when the configuration cannot be deployed on this host — a snapshot path on a missing
 drive, a disabled listener for `install`, no service installed for `restart`, `start` or
 `stop` — and nothing was asked or changed. **4** for `restart` or `start` on a disabled

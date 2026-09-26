@@ -201,7 +201,7 @@ public class ServiceDiagnosisTests
     }
 
     [Fact]
-    public void A_disabled_listener_is_said_before_the_clean_stop_and_points_to_remove()
+    public void A_disabled_listener_is_said_before_the_clean_stop_and_points_to_uninstall()
     {
         ServiceVerdict verdict = ServiceDiagnosis.Diagnose(
             RipcordService.Listener,
@@ -209,7 +209,7 @@ public class ServiceDiagnosisTests
 
         Assert.Equal(
             "the listener is disabled in ripcord.yaml (listener.enabled: false)", verdict.Why);
-        Assert.Equal(["ripcord service remove"], verdict.Next);
+        Assert.Equal(["ripcord service uninstall"], verdict.Next);
     }
 
     [Fact]

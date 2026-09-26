@@ -48,7 +48,7 @@ public static class DeploymentRenderer
         if (!plan.ChangesAnything)
         {
             output.AppendLine(removing
-                ? "  Nothing to remove: this host has no listener deployed."
+                ? "  Nothing to uninstall: this host has no listener deployed."
                 : "  Nothing to do: this host already matches the configuration.");
             return Layout.Rendered(output, palette);
         }
