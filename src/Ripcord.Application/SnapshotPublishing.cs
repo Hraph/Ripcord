@@ -67,7 +67,8 @@ public sealed class SnapshotPublishing(
         {
             return await pairReader.PublishAsync(configuration, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        // Only the service's own stop ends it: a cancellation from inside a read is a failure too.
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
             diagnostics.Write(DiagnosticEntry.Of(
                 PublishJournal.Operation, "publishing failed unexpectedly", exception.ToString()));

@@ -45,6 +45,20 @@ public class SnapshotPublishingTests
         Assert.StartsWith("stopping:", log.Written[^1].Message, StringComparison.Ordinal);
     }
 
+    /// A cancellation the service did not ask for is a failure like any other, not a stop.
+    [Fact]
+    public async Task A_cancellation_from_inside_a_publication_does_not_end_the_loop()
+    {
+        using CancellationTokenSource stop = new();
+        StoppingStore store = new(stop, after: 2) { FailFirst = new OperationCanceledException("timed out") };
+        RecordingDiagnosticLog log = new();
+
+        await Publishing(store, log).RunAsync(Configurations.Create(), stop.Token);
+
+        Assert.Equal(2, store.Writes);
+        Assert.Contains(log.Written, entry => entry.Message == "publishing failed unexpectedly");
+    }
+
     /// Counts successful writes and cancels the loop after the last one it was asked for.
     private sealed class StoppingStore(CancellationTokenSource stop, int after) : ISnapshotStore
     {
