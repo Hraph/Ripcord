@@ -61,6 +61,26 @@ public sealed class FileSnapshotStoreTests : IDisposable
         Assert.Empty(Directory.GetFiles(this.directory, "*.tmp"));
     }
 
+    /// The publishing service and an administrator's `status` write the same file. Neither may
+    /// move the other's half-written temporary file into place, and the last complete one wins.
+    [Fact]
+    public async Task Two_writers_at_once_leave_a_complete_snapshot()
+    {
+        FileSnapshotStore store = Store();
+
+        await Task.WhenAll(
+            Enumerable.Range(0, 2).Select(writer => Task.Run(() =>
+            {
+                for (int round = 0; round < 50; round++)
+                {
+                    store.Write(this.Path, Snapshot(Now.AddSeconds(round)));
+                }
+            })));
+
+        Assert.NotNull(store.Read(this.Path));
+        Assert.Empty(Directory.GetFiles(this.directory, "*.tmp"));
+    }
+
     /// The directory is created on first write: on a fresh host nobody has made D:\Ripcord yet,
     /// and failing there would mean `ripcord status` fails on a host that is otherwise fine.
     [Fact]

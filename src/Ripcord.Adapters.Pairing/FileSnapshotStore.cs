@@ -4,8 +4,8 @@ using Ripcord.Ports.Pairing;
 
 namespace Ripcord.Adapters.Pairing;
 
-/// The snapshot on disk. The privileged `ripcord` writes it; the unprivileged listener reads
-/// it and serves nothing else (decision D18).
+/// The snapshot on disk. The publishing service and an administrator's `ripcord` write it; the
+/// unprivileged listener reads it and serves nothing else (decision D18).
 public sealed class FileSnapshotStore : ISnapshotStore
 {
     public void Write(string path, HostSnapshot snapshot)
@@ -21,8 +21,9 @@ public sealed class FileSnapshotStore : ISnapshotStore
         }
 
         // Written aside and moved into place: the listener reads this file while we rewrite
-        // it, and must never see a half-written one.
-        string temporary = path + ".tmp";
+        // it, and must never see a half-written one. A name of its own per write: two writers
+        // sharing one would move each other's half-written file.
+        string temporary = $"{path}.{Guid.NewGuid():N}.tmp";
         File.WriteAllText(temporary, payload);
         File.Move(temporary, path, overwrite: true);
     }
