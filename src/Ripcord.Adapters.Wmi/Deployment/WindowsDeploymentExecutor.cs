@@ -48,7 +48,6 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             service.State == ServiceRunState.Running,
             LogsWritable(desired.LogsFolder),
             EventSourceRegistered(),
-            desired.SnapshotVolume.Length == 0 || Directory.Exists(desired.SnapshotVolume),
             SnapshotWrittenAt(desired),
             keyFile is not null
                 ? AccessControl.GrantsRead(Run("icacls", $"\"{keyFile}\"").Output, RipcordService.Listener.Account)

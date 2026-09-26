@@ -7,10 +7,25 @@ public static class ConfigurationNotes
     public const string NoVmDeclared =
         "no VM is declared, so nothing would fail over: run ripcord init";
 
+    public const string SnapshotPathIgnored =
+        "listener.snapshot_path is no longer used: remove the line";
+
     public static IReadOnlyList<string> Of(RipcordConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
 
-        return configuration.Vms.Count == 0 ? [NoVmDeclared] : [];
+        List<string> notes = [];
+
+        if (configuration.Vms.Count == 0)
+        {
+            notes.Add(NoVmDeclared);
+        }
+
+        if (configuration.Listener.SnapshotPathIgnored)
+        {
+            notes.Add(SnapshotPathIgnored);
+        }
+
+        return notes;
     }
 }

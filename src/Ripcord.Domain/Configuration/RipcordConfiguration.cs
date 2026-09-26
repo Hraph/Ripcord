@@ -93,7 +93,10 @@ public sealed record ListenerSettings(
     int Port,
     string? LocalCertificateThumbprint,
     string? PeerCertificateThumbprint,
-    string SnapshotPath)
+    string SnapshotPath,
+
+    /// `listener.snapshot_path` was set: no longer used, and said rather than refused.
+    bool SnapshotPathIgnored = false)
 {
     public const int DefaultPort = 7443;
 
@@ -105,25 +108,15 @@ public sealed record ListenerSettings(
         "1111AAAA2222BBBB3333CCCC4444DDDD5555EEEE",
     ];
 
-    /// Beside the configuration file, which is beside the binary — with the log, the audit
-    /// trail and the alert state. A default on another volume is a default that does not
-    /// exist on a host that has no such volume, and the listener would be deployed onto a
-    /// path Windows cannot even grant access to.
+    /// In a folder of its own beside the configuration file: the publishing service is granted
+    /// modify there, and a folder holding `ripcord.exe` must never be one it can write.
+    public const string SnapshotFolderName = "state";
+
     public const string DefaultSnapshotFileName = "state.json";
 
     /// What the file is, in the words the operator reads it in.
     public const string SnapshotMeaning =
         "the snapshot 'ripcord status' writes and the listener serves to the peer";
-
-    /// The default up to 0.4: a configuration that still names it was most likely copied
-    /// from an older sample, on a host that may have no D: volume at all.
-    public const string LegacyDefaultSnapshotPath = @"D:\Ripcord\state.json";
-
-    public static bool IsLegacyDefault(string? path) =>
-        string.Equals(
-            path?.Trim().Replace('/', '\\'),
-            LegacyDefaultSnapshotPath,
-            StringComparison.OrdinalIgnoreCase);
 
     public static ListenerSettings Disabled() =>
         new(false, DefaultPort, null, null, DefaultSnapshotFileName);

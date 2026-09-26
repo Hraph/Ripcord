@@ -11,6 +11,16 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ## Unreleased
 
+### Changed
+
+- **The snapshot moves to `state\state.json` beside `ripcord.yaml`, and is no longer
+  configurable.** A folder of its own, so nothing that writes it is ever granted anything
+  beside `ripcord.exe`. A `listener.snapshot_path` line still loads, is ignored, and every
+  command says so. **After updating: `ripcord service install`, then `ripcord service
+  restart`**, so the listener serves the new file. The old `state.json` can be deleted.
+- **`service install` grants the listener read access to `ripcord.yaml` explicitly**, on the
+  files of the install folder only. It used to come from the snapshot grant on that folder.
+
 ### Fixed
 
 - **The peer's lag grew with its snapshot's age.** A snapshot 7 minutes old showed 7m19s of

@@ -35,7 +35,6 @@ internal static class ValidDocument
             Port = 7443,
             LocalCertificateThumbprint = LocalThumbprint,
             PeerCertificateThumbprint = PeerThumbprint,
-            SnapshotPath = @"D:\Ripcord\state.json",
         },
         Storage = new StorageDocument
         {

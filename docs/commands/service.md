@@ -29,7 +29,7 @@ RIPCORD LISTENER
     command    "C:\Program Files\Ripcord\ripcord.exe" serve
     version    0.7.0+def5678
     firewall   inbound TCP 7443 from 192.0.2.11
-    snapshot   C:\Program Files\Ripcord\state.json
+    snapshot   C:\Program Files\Ripcord\state\state.json
                written by 'ripcord status', served to the peer
                written 40s ago
                readable by NT SERVICE\ripcord
@@ -102,20 +102,10 @@ leaves a way to take off a service installed while it was on.
 to the peer over mutual TLS. It is how the other host sees this one: it holds no secret, and
 nothing reads it back on this host.
 
-It defaults to `state.json` beside `ripcord.yaml`, which is the install folder chosen at
-install — `C:\Program Files\Ripcord\state.json` on a default install. An explicit
-`listener.snapshot_path` is kept exactly as written. A path on a drive this host does not have
-refuses `install` before anything changes:
-
-```
-  Cannot be installed as configured:
-    listener.snapshot_path is D:\Ripcord\state.json, the old default, and
-    this host has no D: volume. Remove the line: the snapshot then sits
-    beside ripcord.yaml.
-```
-
-`D:\Ripcord\state.json` was the default up to 0.4. `ripcord service` shows the same message
-in place of its last line.
+It is always `state\state.json` beside `ripcord.yaml` —
+`C:\Program Files\Ripcord\state\state.json` on a default install — in a folder of its own, so
+whatever writes it is never granted anything beside `ripcord.exe`. `listener.snapshot_path` is
+no longer read: a file that still sets it loads, and every command says the line is ignored.
 
 When something is missing, the last line names the command that would show it rather than
 printing a plan: a plan printed by a command that changes nothing reads like one that is about

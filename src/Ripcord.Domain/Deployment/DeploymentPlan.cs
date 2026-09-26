@@ -38,9 +38,6 @@ public sealed record DesiredDeployment(
     /// failed quietly, because the one caller catches that.
     public string SnapshotFolder => WindowsPath.FolderOf(SnapshotPath);
 
-    /// Empty when the path names no drive, which is then never reported missing.
-    public string SnapshotVolume => WindowsPath.RootOf(SnapshotPath);
-
     /// Where the binary is, and so `ripcord.yaml`: services run with no `--config`.
     public string InstallFolder => WindowsPath.FolderOf(BinaryPath);
 }
@@ -65,10 +62,6 @@ public sealed record ObservedDeployment(
     /// The Application event log source the listener reports a failed start under. Without it
     /// registered, a virtual account cannot write there at all.
     bool EventSourceRegistered = false,
-
-    /// Whether the drive the snapshot is on exists here. The folder on it is created by the
-    /// grant, a volume cannot be.
-    bool SnapshotVolumePresent = true,
 
     /// When the snapshot was last written; null when there is no file.
     DateTimeOffset? SnapshotWrittenAt = null,
@@ -227,13 +220,6 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
         if (!desired.ListenerEnabled)
         {
             return new DeploymentPlan([], ListenerDisabled);
-        }
-
-        // Checked before any step: the grant is the third step, and failing there used to leave
-        // a service and an open port behind for a listener that could never serve.
-        if (!observed.SnapshotVolumePresent)
-        {
-            return new DeploymentPlan([], MissingVolume(desired));
         }
 
         List<DeploymentStep> steps = [];
@@ -491,15 +477,6 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
     public const string ListenerDisabled =
         "the listener is disabled in ripcord.yaml (listener.enabled: false). Set it to true "
         + "to install the listener, or run 'ripcord service remove' to take it off this host.";
-
-    private static string MissingVolume(DesiredDeployment desired) =>
-        ListenerSettings.IsLegacyDefault(desired.SnapshotPath)
-            ? $"listener.snapshot_path is {desired.SnapshotPath}, the old default, and this "
-                + $"host has no {desired.SnapshotVolume.TrimEnd('\\', '/')} volume. Remove the "
-                + "line: the snapshot then sits beside ripcord.yaml."
-            : $"listener.snapshot_path is on {desired.SnapshotVolume}, which this host does "
-                + "not have. Point it at a folder on a volume this host has, or remove the "
-                + "line to keep it beside ripcord.yaml.";
 
     private static string SnapshotFileName(DesiredDeployment desired)
     {

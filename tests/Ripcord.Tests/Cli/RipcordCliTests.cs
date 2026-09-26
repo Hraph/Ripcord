@@ -917,46 +917,10 @@ public class RipcordCliTests
     {
         CliRun run = await Run(["service"], deploymentExecutor: new FakeDeploymentExecutor(Deployed()));
 
-        Assert.Contains(@"snapshot   D:\Ripcord\state.json", run.Output, StringComparison.Ordinal);
+        Assert.Contains(@"state\state.json", run.Output, StringComparison.Ordinal);
         Assert.Contains(
             "written by 'ripcord status', served to the peer", run.Output, StringComparison.Ordinal);
         Assert.Contains(@"readable by NT SERVICE\ripcord", run.Output, StringComparison.Ordinal);
-    }
-
-    /// The grant used to fail third, after the service and the port were created. Refused
-    /// before the prompt, so nothing is asked and nothing changes.
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Service_install_is_refused_before_any_prompt_when_the_snapshot_volume_is_absent(
-        bool dryRun)
-    {
-        FakeDeploymentExecutor executor = new(
-            ObservedDeployment.Nothing with { SnapshotVolumePresent = false });
-
-        CliRun run = await Run(
-            dryRun ? ["service", "install", "--dry-run"] : ["service", "install"],
-            deploymentExecutor: executor,
-            typed: "y");
-
-        Assert.Equal(ExitCode.InvalidConfiguration, run.Code);
-        Assert.Empty(executor.Applied);
-        Assert.Contains("Cannot be installed as configured", run.Output, StringComparison.Ordinal);
-        Assert.Contains("the old default", run.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain("This creates a Windows service", run.Output, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Service_on_its_own_says_why_it_cannot_be_installed()
-    {
-        CliRun run = await Run(
-            ["service"],
-            deploymentExecutor: new FakeDeploymentExecutor(
-                ObservedDeployment.Nothing with { SnapshotVolumePresent = false }));
-
-        Assert.Equal(ExitCode.Success, run.Code);
-        Assert.Contains("Cannot be installed as configured", run.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain("step(s) would change it", run.Output, StringComparison.Ordinal);
     }
 
     /// Rule 6: a 1024x768 KVM console.
@@ -1513,7 +1477,6 @@ public class RipcordCliTests
             this.RequestedPath = path;
             ConfigurationDocument document = Tests.Configuration.ValidDocument.Create();
             document.Listener!.Enabled = listenerEnabled;
-            document.Listener.SnapshotPath = @"D:\Ripcord\state.json";
 
             if (alerting)
             {

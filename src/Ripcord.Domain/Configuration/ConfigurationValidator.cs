@@ -772,42 +772,23 @@ public static class ConfigurationValidator
             complete = false;
         }
 
-        string snapshotPath = string.IsNullOrWhiteSpace(listener.SnapshotPath)
-            ? WindowsPath.Join(
-                WindowsPath.FolderOf(configurationPath), ListenerSettings.DefaultSnapshotFileName)
-            : listener.SnapshotPath.Trim();
-
-        // Access is granted on the folder rather than on the file, so there has to be one to
-        // grant on. Refused rather than resolved against something: what a relative path means
-        // depends on the working directory of whoever runs the command, and the service's is
-        // not the operator's.
-        //
-        // Only what the operator wrote. A default with no folder means the caller supplied no
-        // configuration path to place it beside, which is not something to refuse an operator
-        // over — the CLI resolves that path in full before it ever gets here.
-        if (listener.Enabled
-            && listener.SnapshotPath is { Length: > 0 }
-            && WindowsPath.FolderOf(snapshotPath).Length == 0)
-        {
-            errors.Add(new ConfigurationError(
-                "listener.snapshot_path",
-                "must name a folder as well as a file, because the service account is granted "
-                + "access to the folder"));
-
-            complete = false;
-        }
-
-        // It is interpolated into a quoted icacls argument; a quote inside it would break out
-        // of that quoting.
-        if (snapshotPath.Contains('"', StringComparison.Ordinal))
-        {
-            errors.Add(new ConfigurationError(
-                "listener.snapshot_path", "must not contain a quote character"));
-            complete = false;
-        }
+        // Not configurable: the publishing service may write only where nothing else lives. A
+        // configuration with no folder to place it beside keeps the bare name, as before.
+        string folder = WindowsPath.FolderOf(configurationPath);
+        string snapshotPath = folder.Length == 0
+            ? ListenerSettings.DefaultSnapshotFileName
+            : WindowsPath.Join(
+                WindowsPath.Join(folder, ListenerSettings.SnapshotFolderName),
+                ListenerSettings.DefaultSnapshotFileName);
 
         return complete
-            ? new ListenerSettings(listener.Enabled, port, local, peer, snapshotPath)
+            ? new ListenerSettings(
+                listener.Enabled,
+                port,
+                local,
+                peer,
+                snapshotPath,
+                !string.IsNullOrWhiteSpace(listener.SnapshotPath))
             : null;
     }
 

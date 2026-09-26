@@ -470,49 +470,6 @@ public class DeploymentPlanTests
                 or DeploymentAction.UpdateService,
             DeploymentPlan.StartsTheService(action));
 
-    /// Refused before the first step, not at the third: the grant used to fail after the
-    /// service and the port were already there, for a listener that could never serve.
-    [Fact]
-    public void A_snapshot_on_a_volume_the_host_lacks_blocks_the_whole_plan()
-    {
-        DeploymentPlan plan = DeploymentPlan.For(
-            Desired, ObservedDeployment.Nothing with { SnapshotVolumePresent = false });
-
-        Assert.Empty(plan.Steps);
-        Assert.True(plan.IsBlocked);
-        Assert.Contains("old default", plan.BlockedBy, StringComparison.Ordinal);
-        Assert.Contains("no D: volume", plan.BlockedBy, StringComparison.Ordinal);
-        Assert.Contains("Remove the line", plan.BlockedBy, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void A_missing_volume_that_is_not_the_old_default_is_not_called_old()
-    {
-        DeploymentPlan plan = DeploymentPlan.For(
-            Desired with { SnapshotPath = @"E:\snap\state.json" },
-            ObservedDeployment.Nothing with { SnapshotVolumePresent = false });
-
-        Assert.True(plan.IsBlocked);
-        Assert.DoesNotContain("old default", plan.BlockedBy, StringComparison.Ordinal);
-        Assert.Contains(@"E:\", plan.BlockedBy, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void A_present_volume_blocks_nothing() =>
-        Assert.False(DeploymentPlan.For(Desired, ObservedDeployment.Nothing).IsBlocked);
-
-    /// Taking a deployment down must work on the host that cannot hold it.
-    [Fact]
-    public void A_missing_volume_never_blocks_removal()
-    {
-        DeploymentPlan plan = DeploymentPlan.ToRemove(
-            Matching() with { SnapshotVolumePresent = false });
-
-        Assert.False(plan.IsBlocked);
-        Assert.Contains(DeploymentAction.RevokeSnapshotAccess, plan.Steps.Select(s => s.Action));
-        Assert.Contains(DeploymentAction.RemoveService, plan.Steps.Select(s => s.Action));
-    }
-
     [Fact]
     public void The_grant_step_says_what_the_snapshot_is()
     {
@@ -523,8 +480,4 @@ public class DeploymentPlanTests
         Assert.Contains("'ripcord status' writes", grant.Reason, StringComparison.Ordinal);
         Assert.Contains("serves to the peer", grant.Reason, StringComparison.Ordinal);
     }
-
-    [Fact]
-    public void The_snapshot_volume_is_the_drive_of_its_path() =>
-        Assert.Equal(@"D:\", Desired.SnapshotVolume);
 }

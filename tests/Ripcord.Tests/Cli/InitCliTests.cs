@@ -298,7 +298,7 @@ public class InitCliTests
 
         Assert.Contains(
             sections.Single(section => section.Key == "listener").Lines,
-            line => line.StartsWith("  # snapshot_path:", StringComparison.Ordinal));
+            line => line.StartsWith("  # a snapshot_path line is ignored", StringComparison.Ordinal));
         Assert.Contains(
             sections.Single(section => section.Key == "replication").Lines,
             line => line.StartsWith("  # test_failover_switch:", StringComparison.Ordinal));

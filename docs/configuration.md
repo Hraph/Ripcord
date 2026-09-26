@@ -80,9 +80,9 @@ the local-only view rather than failing. Needs both certificate thumbprints; the
 thumbprint on both ends is refused, because it would authenticate a host to itself, and so are
 the samples' two placeholders, by name, unless `enabled: false`. `ripcord service` shows the
 thumbprint to use.
-`snapshot_path` is the snapshot `ripcord status` writes and the listener serves to the peer; it
-defaults to `state.json` beside `ripcord.yaml` and is best left out. A path with no folder in
-it is refused, and one on a drive the host lacks is refused by `service install`.
+The snapshot `ripcord status` writes and the listener serves to the peer is always
+`state\state.json` beside `ripcord.yaml`: not configurable, so nothing that writes it is ever
+granted anything beside `ripcord.exe`. A `snapshot_path` line is ignored, with a note.
 
 **`checks.acknowledgements`** — findings seen and accepted. Every entry needs a reason and an
 expiry: without one, an acknowledgement is a rule deleted by the back door.
