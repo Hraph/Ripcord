@@ -24,8 +24,29 @@ public sealed class FileSnapshotStore : ISnapshotStore
         // it, and must never see a half-written one. A name of its own per write: two writers
         // sharing one would move each other's half-written file.
         string temporary = $"{path}.{Guid.NewGuid():N}.tmp";
-        File.WriteAllText(temporary, payload);
-        File.Move(temporary, path, overwrite: true);
+
+        try
+        {
+            File.WriteAllText(temporary, payload);
+            File.Move(temporary, path, overwrite: true);
+        }
+        finally
+        {
+            // A failed write is retried every 15 s: each one must not leave its own file behind.
+            Discard(temporary);
+        }
+    }
+
+    private static void Discard(string temporary)
+    {
+        try
+        {
+            File.Delete(temporary);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // The write's own failure, if any, is the one worth reporting.
+        }
     }
 
     /// Runs inside the network-facing service, so it never throws: no snapshot, an unreadable

@@ -35,6 +35,20 @@ public class AccessControlTests
             + "                      NT SERVICE\\ripcord:(DENY)(R)\n",
             Account));
 
+    /// The listener's name is the start of the publisher's: an entry for one is never the other's.
+    [Fact]
+    public void The_publisher_entry_is_not_the_listeners()
+    {
+        const string State =
+            "C:\\Ripcord\\state NT SERVICE\\ripcord-publish:(OI)(CI)(M)\n"
+            + "                  BUILTIN\\Administrators:(OI)(CI)(F)\n";
+
+        Assert.False(AccessControl.GrantsRead(State, Account));
+        Assert.False(AccessControl.GrantsModify(State, Account));
+        Assert.False(AccessControl.GrantsExplicitly(State, Account));
+        Assert.True(AccessControl.GrantsModify(State, @"NT SERVICE\ripcord-publish"));
+    }
+
     [Theory]
     [InlineData("(F)")]
     [InlineData("(M)")]

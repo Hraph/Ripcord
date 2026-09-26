@@ -142,6 +142,36 @@ public class PublisherStepsTests
         Assert.True(plan.Steps.TakeWhile(step => step.Service == RipcordService.Publisher).Count() == 7);
     }
 
+    /// Membership that could not be read is tried: once the service is deleted, a member left
+    /// behind stays in the group as a SID nothing resolves.
+    [Fact]
+    public void Removal_leaves_the_group_even_when_membership_could_not_be_read() =>
+        Assert.Contains(
+            DeploymentAction.RemoveFromHyperVAdministrators,
+            Actions(DeploymentPlan.ToRemove(ListenerInPlace with
+            {
+                Publisher = DeploymentPlanTests.PublisherInPlace(Binary) with { InHyperVAdministrators = null },
+            })));
+
+    /// The ACE names a computed SID, so it can still be taken back once the service is gone.
+    [Fact]
+    public void An_ace_outliving_its_service_is_still_taken_back() =>
+        Assert.Equal(
+            [DeploymentAction.RevokeEncryptionNamespaceAccess],
+            Actions(DeploymentPlan.ToRemove(ListenerInPlace with
+            {
+                Publisher = ObservedPublisher.Nothing with { Encryption = NamespaceGrant.Granted },
+            })));
+
+    /// The dry-run shows the exact ACE, SID included.
+    [Fact]
+    public void The_bitlocker_step_names_the_exact_ace() =>
+        Assert.Contains(
+            NamespaceAcl.Ace(VirtualAccount.Sid("ripcord-publish")),
+            DeploymentPlan.For(Desired, ObservedDeployment.Nothing).Steps
+                .Single(step => step.Action == DeploymentAction.GrantEncryptionNamespaceAccess).Description,
+            StringComparison.Ordinal);
+
     [Fact]
     public void A_publisher_that_is_not_installed_has_nothing_to_take_back() =>
         Assert.Empty(Actions(DeploymentPlan.ToRemove(ListenerInPlace)));

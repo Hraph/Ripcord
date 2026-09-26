@@ -97,7 +97,8 @@ public static class PublisherSteps
         {
             yield return Step(
                 DeploymentAction.GrantEncryptionNamespaceAccess,
-                $"Let {Publisher.Account} read BitLocker state ({NamespaceAcl.Ace("<its SID>")})",
+                $"Let {Publisher.Account} read BitLocker state: add "
+                    + NamespaceAcl.Ace(VirtualAccount.Sid(Publisher.Name)),
                 "storage.check_bitlocker_autounlock is on, and that namespace is admin-only");
         }
         else if (!desired.CheckBitLocker && observed.Encryption == NamespaceGrant.Granted)
@@ -145,12 +146,9 @@ public static class PublisherSteps
     {
         ArgumentNullException.ThrowIfNull(observed);
 
-        if (!observed.Service.Installed)
-        {
-            yield break;
-        }
+        bool installed = observed.Service.Installed;
 
-        if (observed.Service.State != ServiceRunState.Stopped)
+        if (installed && observed.Service.State != ServiceRunState.Stopped)
         {
             yield return Step(
                 DeploymentAction.StopService,
@@ -158,6 +156,7 @@ public static class PublisherSteps
                 "nothing it holds is taken back while it runs");
         }
 
+        // Even with the service already gone: the ACE names a computed SID, not a resolved name.
         if (observed.Encryption == NamespaceGrant.Granted)
         {
             yield return Step(
@@ -166,7 +165,14 @@ public static class PublisherSteps
                 "the service is being removed");
         }
 
-        if (observed.InHyperVAdministrators == true)
+        if (!installed)
+        {
+            yield break;
+        }
+
+        // Unknown membership is tried too: 1377 means nothing to do, and a member left behind
+        // stays in the group as an orphan SID once the service is deleted.
+        if (observed.HyperVAdministrators is not null && observed.InHyperVAdministrators != false)
         {
             yield return Step(
                 DeploymentAction.RemoveFromHyperVAdministrators,

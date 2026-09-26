@@ -620,9 +620,10 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         }
     }
 
+    /// Every section, the SACL included: one left out here would be dropped by the write, where
+    /// NamespaceAcl refuses a descriptor that carries one.
     private static string Sddl(byte[] descriptor) =>
-        new RawSecurityDescriptor(descriptor, 0).GetSddlForm(
-            AccessControlSections.Owner | AccessControlSections.Group | AccessControlSections.Access);
+        new RawSecurityDescriptor(descriptor, 0).GetSddlForm(AccessControlSections.All);
 
     private static byte[] ReadEncryptionSd()
     {
