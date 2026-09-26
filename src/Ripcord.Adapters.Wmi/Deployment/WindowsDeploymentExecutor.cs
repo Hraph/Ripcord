@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.Management.Infrastructure;
 using Microsoft.Management.Infrastructure.Options;
+using Ripcord.Domain;
 using Ripcord.Domain.Deployment;
 using Ripcord.Ports.Deployment;
 
@@ -57,7 +58,12 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             [.. DeploymentPlan.StaleFolderCandidates(desired, service.BinaryPath)
                 .Where(folder => Directory.Exists(folder)
                     && AccessControl.GrantsExplicitly(
-                        Run("icacls", $"\"{folder}\"").Output, RipcordService.Listener.Account))]);
+                        Run("icacls", $"\"{folder}\"").Output, RipcordService.Listener.Account))],
+            AccessControl.GrantsRead(
+                Run("icacls", $"\"{WindowsPath.Join(desired.InstallFolder, "ripcord.yaml")}\"").Output,
+                RipcordService.Listener.Account),
+            AccessControl.GrantsExplicitly(
+                Run("icacls", $"\"{desired.InstallFolder}\"").Output, RipcordService.Listener.Account));
     }
 
     /// `/c` because without it icacls stops at the first key it cannot read (SYSTEM-only keys,
@@ -390,6 +396,20 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         [
             ("icacls",
                 $"\"{desired.SnapshotFolder}\" /grant \"{RipcordService.Listener.Account}\":(OI)(CI)(R)"),
+        ],
+
+        // `(OI)(NP)`: the files directly in the folder, so a `ripcord.yaml` rewritten by
+        // moving a new file into place is covered too; nothing in the folders below it.
+        DeploymentAction.GrantConfigurationAccess =>
+        [
+            ("icacls",
+                $"\"{desired.InstallFolder}\" /grant \"{RipcordService.Listener.Account}\":(OI)(NP)(R)"),
+        ],
+
+        // Never `/t`: that would also strip the explicit grants on `logs` below it.
+        DeploymentAction.RevokeConfigurationAccess =>
+        [
+            ("icacls", $"\"{desired.InstallFolder}\" /remove \"{RipcordService.Listener.Account}\""),
         ],
 
         DeploymentAction.RevokeSnapshotAccess =>

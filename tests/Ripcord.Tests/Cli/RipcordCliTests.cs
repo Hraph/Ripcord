@@ -384,6 +384,7 @@ public class RipcordCliTests
         Assert.Equal(ExitCode.Success, run.Code);
         Assert.Equal(
             [DeploymentAction.CreateService, DeploymentAction.CreateFirewallRule,
+             DeploymentAction.GrantConfigurationAccess,
              DeploymentAction.GrantSnapshotAccess, DeploymentAction.GrantLogsAccess,
              DeploymentAction.RegisterEventSource, DeploymentAction.StartService],
             executor.Applied);
@@ -459,7 +460,7 @@ public class RipcordCliTests
     [Fact]
     public async Task Service_install_whose_start_fails_points_to_ripcord_service()
     {
-        FakeDeploymentExecutor executor = new(failOnStep: 5);
+        FakeDeploymentExecutor executor = new(failOnStep: 6);
 
         CliRun run = await Run(
             ["service", "install"], deploymentExecutor: executor, typed: "y");
@@ -1129,7 +1130,8 @@ public class RipcordCliTests
         ServiceRunning: true,
         LogsWritableByService: true,
         EventSourceRegistered: true,
-        KeyReadableByService: true);
+        KeyReadableByService: true,
+        ConfigurationReadableByService: true);
 
     private const string DefaultConfigPath = "/opt/ripcord/ripcord.yaml";
 

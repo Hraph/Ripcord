@@ -40,6 +40,9 @@ public sealed record DesiredDeployment(
 
     /// Empty when the path names no drive, which is then never reported missing.
     public string SnapshotVolume => WindowsPath.RootOf(SnapshotPath);
+
+    /// Where the binary is, and so `ripcord.yaml`: services run with no `--config`.
+    public string InstallFolder => WindowsPath.FolderOf(BinaryPath);
 }
 
 /// What is on the host already. Filled in by the Windows adapter, which looks and reports;
@@ -81,7 +84,15 @@ public sealed record ObservedDeployment(
     IReadOnlyList<string>? KeyFilesGranted = null,
 
     /// Those of `StaleFolderCandidates` giving the service account an entry of its own.
-    IReadOnlyList<string>? FoldersGranted = null)
+    IReadOnlyList<string>? FoldersGranted = null,
+
+    /// Whether the service account can read `ripcord.yaml`, inherited entries included: it
+    /// reads it at every start, and nothing else guarantees it once the snapshot moved.
+    bool ConfigurationReadableByService = false,
+
+    /// Whether the account has an entry of its own on the install folder: only that one is
+    /// Ripcord's to take back, whatever else lets it read there.
+    bool InstallFolderGrantedToService = false)
 {
     public static ObservedDeployment Nothing { get; } =
         new(false, null, false, null, null, false);
@@ -114,6 +125,10 @@ public enum DeploymentAction
     RemoveEventSource,
     GrantKeyAccess,
     RevokeKeyAccess,
+
+    /// Read on the files of the install folder, `ripcord.yaml` among them, and not below it.
+    GrantConfigurationAccess,
+    RevokeConfigurationAccess,
 
     /// Leaves the service installed. Until it starts again, the other host cannot read this one.
     StopService,
@@ -270,6 +285,14 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
                 $"Allow inbound TCP {desired.Port} from {desired.PeerAddress} only",
                 $"it currently allows port {observed.FirewallPort} "
                 + $"from {observed.FirewallRemoteAddress}"));
+        }
+
+        if (!observed.ConfigurationReadableByService)
+        {
+            steps.Add(new DeploymentStep(
+                DeploymentAction.GrantConfigurationAccess,
+                $"Grant {ServiceAccount} read access to the files in '{desired.InstallFolder}'",
+                "it reads ripcord.yaml there at every start; nothing below it, nothing written"));
         }
 
         if (!observed.SnapshotReadableByService)
@@ -429,6 +452,14 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
                 DeploymentAction.RevokeSnapshotAccess,
                 $"Revoke {ServiceAccount}'s access to the snapshot folder",
                 "the service account no longer needs it"));
+        }
+
+        if (observed.InstallFolderGrantedToService)
+        {
+            steps.Add(new DeploymentStep(
+                DeploymentAction.RevokeConfigurationAccess,
+                $"Revoke {ServiceAccount}'s access to the install folder",
+                "the service account no longer needs to read ripcord.yaml"));
         }
 
         if (observed.FirewallRuleInstalled)

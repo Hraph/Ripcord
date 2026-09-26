@@ -361,6 +361,10 @@ public static class DeploymentRenderer
                 + $"from {observed.FirewallRemoteAddress}"
             : "    firewall   no rule");
 
+        output.AppendLine(observed.ConfigurationReadableByService
+            ? $"    config     readable by {RipcordService.Listener.Account}"
+            : $"    config     NOT readable by {RipcordService.Listener.Account}");
+
         // Named and explained: an operator granting access to a file has to know what it is.
         AppendWrapped(output, "    snapshot   ", "               ", desired.SnapshotPath);
         output.AppendLine("               written by 'ripcord status', served to the peer");

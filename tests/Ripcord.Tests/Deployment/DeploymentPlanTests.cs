@@ -67,10 +67,30 @@ public class DeploymentPlanTests
 
         Assert.Equal(
             [DeploymentAction.CreateService, DeploymentAction.CreateFirewallRule,
+             DeploymentAction.GrantConfigurationAccess,
              DeploymentAction.GrantSnapshotAccess, DeploymentAction.GrantLogsAccess,
              DeploymentAction.RegisterEventSource, DeploymentAction.StartService],
             plan.Steps.Select(step => step.Action));
         Assert.True(plan.ChangesAnything);
+    }
+
+    /// The listener reads ripcord.yaml at every start; the grant is read-only, on the files of
+    /// the install folder, and taken back on removal only where it is Ripcord's own entry.
+    [Fact]
+    public void Reading_the_configuration_is_granted_and_taken_back()
+    {
+        DeploymentStep grant = Assert.Single(
+            DeploymentPlan.For(Desired, Matching() with { ConfigurationReadableByService = false }).Steps);
+
+        Assert.Equal(DeploymentAction.GrantConfigurationAccess, grant.Action);
+        Assert.Contains(@"D:\Ripcord", grant.Description, StringComparison.Ordinal);
+
+        Assert.DoesNotContain(
+            DeploymentPlan.ToRemove(ObservedDeployment.Nothing with { ConfigurationReadableByService = true }).Steps,
+            step => step.Action == DeploymentAction.RevokeConfigurationAccess);
+        Assert.Contains(
+            DeploymentPlan.ToRemove(ObservedDeployment.Nothing with { InstallFolderGrantedToService = true }).Steps,
+            step => step.Action == DeploymentAction.RevokeConfigurationAccess);
     }
 
     /// Re-running a deployment that is already correct must do nothing at all. An installer
@@ -360,7 +380,8 @@ public class DeploymentPlanTests
         SnapshotReadableByService: true,
         ServiceRunning: true,
         LogsWritableByService: true,
-        EventSourceRegistered: true);
+        EventSourceRegistered: true,
+        ConfigurationReadableByService: true);
 
     /// The field failure: the service account could write nowhere, so the listener died
     /// before it answered Windows. The grant is on the logs folder and only there — never on
