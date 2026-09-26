@@ -98,4 +98,39 @@ public class AccessControlTests
     public void Another_account_holding_modify_gives_this_one_nothing() =>
         Assert.False(AccessControl.GrantsModify(
             "logs BUILTIN\\Administrators:(OI)(CI)(M)\n", Account));
+
+    /// Only an entry of its own counts as granted by a deployment: an inherited one goes with
+    /// its parent, and a deny is no grant at all.
+    [Theory]
+    [InlineData("C:\\Old NT SERVICE\\ripcord:(OI)(CI)(R)\n", true)]
+    [InlineData("C:\\Old\\logs NT SERVICE\\ripcord:(I)(OI)(CI)(R)\n", false)]
+    [InlineData("C:\\Old NT SERVICE\\ripcord:(DENY)(R)\n", false)]
+    [InlineData("C:\\Old BUILTIN\\Users:(RX)\n", false)]
+    public void An_explicit_entry_is_told_from_an_inherited_one(string output, bool expected) =>
+        Assert.Equal(expected, AccessControl.GrantsExplicitly(output, Account));
+
+    /// `icacls <folder>\\*` over the machine keys: several blocks, CRLF, a file the console
+    /// could not open, and the summary line in the host's language.
+    [Fact]
+    public void The_key_files_granting_the_account_are_named()
+    {
+        const string Output =
+            "C:\\ProgramData\\Microsoft\\Crypto\\Keys\\aaa_guid NT AUTHORITY\\SYSTEM:(F)\r\n"
+            + "                                          NT SERVICE\\ripcord:(R)\r\n"
+            + "\r\n"
+            + "C:\\ProgramData\\Microsoft\\Crypto\\Keys\\bbb_guid NT AUTHORITY\\SYSTEM:(F)\r\n"
+            + "                                          BUILTIN\\Administrators:(F)\r\n"
+            + "\r\n"
+            + "C:\\ProgramData\\Microsoft\\Crypto\\Keys\\ccc_guid: Acces refuse.\r\n"
+            + "C:\\ProgramData\\Microsoft\\Crypto\\Keys\\ddd_guid NT SERVICE\\ripcord:(R)\r\n"
+            + "\r\n"
+            + "2 fichiers traites correctement ; echec du traitement de 1 fichiers\r\n";
+
+        Assert.Equal(
+            [
+                "C:\\ProgramData\\Microsoft\\Crypto\\Keys\\aaa_guid",
+                "C:\\ProgramData\\Microsoft\\Crypto\\Keys\\ddd_guid",
+            ],
+            AccessControl.FilesGrantingExplicitly(Output, Account));
+    }
 }

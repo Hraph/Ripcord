@@ -9,6 +9,15 @@ half-updated pair depends on.
 
 A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binary.
 
+## Unreleased
+
+### Fixed
+
+- **`ripcord service install` takes back access nothing uses any more.** The service account
+  kept read access to the private key of every certificate replaced by `pair` or a renewal,
+  and to the old install folder after the binary moved. Install now revokes them, last, after
+  everything the listener needs; with the configured key not found it touches no key.
+
 ## 0.7.0 — 2026-09-26
 
 ### Changed

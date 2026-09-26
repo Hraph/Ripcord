@@ -72,7 +72,16 @@ public sealed record ObservedDeployment(
 
     /// Whether the service account can read the certificate's private key. Null when there is
     /// no such key to look at: no thumbprint, no certificate, or no key file found.
-    bool? KeyReadableByService = null)
+    bool? KeyReadableByService = null,
+
+    /// The configured certificate's key file, when found.
+    string? KeyFile = null,
+
+    /// Every machine key file giving the service account an entry of its own.
+    IReadOnlyList<string>? KeyFilesGranted = null,
+
+    /// Those of `StaleFolderCandidates` giving the service account an entry of its own.
+    IReadOnlyList<string>? FoldersGranted = null)
 {
     public static ObservedDeployment Nothing { get; } =
         new(false, null, false, null, null, false);
@@ -108,12 +117,26 @@ public enum DeploymentAction
 
     /// Leaves the service installed. Until it starts again, the other host cannot read this one.
     StopService,
+
+    /// Access the service account keeps to something the configuration no longer uses: the key
+    /// of a certificate since replaced, a folder since moved. The path is the step's `Target`.
+    RevokeStaleKeyAccess,
+    RevokeStaleFolderAccess,
 }
 
 /// One change, and why it is needed. The reason is what `--dry-run` prints, so it is written
 /// for the operator rather than for the log.
 public sealed record DeploymentStep(
-    DeploymentAction Action, string Description, string Reason);
+    DeploymentAction Action,
+    string Description,
+    string Reason,
+
+    /// What a stale revoke acts on; the other steps act on the configuration's own paths.
+    string? Target = null,
+
+    /// Whether the revoke reaches into the folder's contents. Never for a folder that holds the
+    /// logs or the snapshot still in use: `/t` would strip their grants too.
+    bool Recursive = false);
 
 /// The difference between what is on the host and what should be. Deployment and removal are
 /// the same list read in two directions, so an uninstaller cannot drift from its installer.
@@ -300,8 +323,65 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
                 DeploymentAction.StartService, $"Start the '{ServiceName}' service", start));
         }
 
+        // Last: the listener runs on what it needs before anything it no longer needs is taken.
+        steps.AddRange(Stale(desired, observed));
+
         return new DeploymentPlan(steps);
     }
+
+    /// Folders an earlier deployment granted and this one does not use: the old binary's folder
+    /// and its `logs`, once the service moved. Never the current install folder, which the
+    /// service may need to read `ripcord.yaml` (V55).
+    public static IReadOnlyList<string> StaleFolderCandidates(
+        DesiredDeployment desired, string? serviceBinaryPath)
+    {
+        ArgumentNullException.ThrowIfNull(desired);
+
+        List<string> candidates = [];
+
+        if (serviceBinaryPath is { Length: > 0 } running && !SamePath(running, desired.BinaryPath))
+        {
+            string old = WindowsPath.FolderOf(running);
+            candidates.Add(old);
+            candidates.Add(WindowsPath.Join(old, "logs"));
+        }
+
+        return [.. candidates
+            .Where(folder => folder.Length > 0
+                && !SamePath(folder, WindowsPath.FolderOf(desired.BinaryPath))
+                && !SamePath(folder, desired.SnapshotFolder)
+                && !SamePath(folder, desired.LogsFolder))
+            .Distinct(StringComparer.OrdinalIgnoreCase)];
+    }
+
+    private static IEnumerable<DeploymentStep> Stale(DesiredDeployment desired, ObservedDeployment observed)
+    {
+        // Without the current key found, which one is current cannot be told: none is taken.
+        foreach (string key in observed.KeyFile is null ? [] : observed.KeyFilesGranted ?? [])
+        {
+            if (!SamePath(key, observed.KeyFile))
+            {
+                yield return new DeploymentStep(
+                    DeploymentAction.RevokeStaleKeyAccess,
+                    $"Remove {ServiceAccount}'s access to the private key file '{key}'",
+                    "no configured certificate uses it any more",
+                    key);
+            }
+        }
+
+        foreach (string folder in observed.FoldersGranted ?? [])
+        {
+            yield return new DeploymentStep(
+                DeploymentAction.RevokeStaleFolderAccess,
+                $"Remove {ServiceAccount}'s access to '{folder}'",
+                "the configuration no longer uses it",
+                folder,
+                !Holds(folder, desired.LogsFolder) && !Holds(folder, desired.SnapshotFolder));
+        }
+    }
+
+    private static bool Holds(string folder, string path) =>
+        path.StartsWith(folder.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase);
 
     /// The same steps in reverse: the port closes before the service goes, so the port is
     /// never open onto nothing here either. The snapshot file stays — it holds no secret, and

@@ -49,8 +49,27 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             SnapshotWrittenAt(desired),
             KeyFile(desired) is { } key
                 ? AccessControl.GrantsRead(Run("icacls", $"\"{key}\"").Output, DeploymentPlan.ServiceAccount)
-                : null);
+                : null,
+            KeyFile(desired),
+            [.. KeyFolders.SelectMany(folder => AccessControl.FilesGrantingExplicitly(
+                Run("icacls", $"\"{folder}\\*\"").Output, DeploymentPlan.ServiceAccount))],
+            [.. DeploymentPlan.StaleFolderCandidates(desired, service.BinaryPath)
+                .Where(folder => Directory.Exists(folder)
+                    && AccessControl.GrantsExplicitly(
+                        Run("icacls", $"\"{folder}\"").Output, DeploymentPlan.ServiceAccount))]);
     }
+
+    /// Where machine keys live: CNG, then legacy CSP. Listed with a wildcard, one `icacls` each;
+    /// entries it cannot read (SYSTEM-only keys) fail on their own and are not ours anyway.
+    private static readonly string[] KeyFolders =
+    [
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "Microsoft", "Crypto", "Keys"),
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "Microsoft", "Crypto", "RSA", "MachineKeys"),
+    ];
 
     /// The file holding the certificate's private key: a CNG key under `Crypto\Keys`, a
     /// legacy CSP one under `Crypto\RSA\MachineKeys`. Null when any link is missing.
@@ -216,6 +235,12 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         {
             DeploymentAction.GrantKeyAccess or DeploymentAction.RevokeKeyAccess =>
                 KeyCommands(change.Action, desired),
+            DeploymentAction.RevokeStaleKeyAccess or DeploymentAction.RevokeStaleFolderAccess =>
+            [
+                ("icacls",
+                    $"\"{change.Target}\" /remove \"{DeploymentPlan.ServiceAccount}\""
+                    + (change.Recursive ? " /t" : "")),
+            ],
             _ => CommandsFor(change.Action, desired),
         })
         {

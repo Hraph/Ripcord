@@ -262,6 +262,66 @@ public class DeploymentPlanTests
         Assert.Equal(DeploymentAction.StartService, plan.Steps[^1].Action);
     }
 
+    private const string CurrentKey = @"C:\ProgramData\Microsoft\Crypto\Keys\current_key";
+
+    private const string OldKey = @"C:\ProgramData\Microsoft\Crypto\Keys\old_key";
+
+    /// After `ripcord pair` or a renewal the old key stays readable by the service account;
+    /// the next install takes that back, last, after everything the listener needs.
+    [Fact]
+    public void A_key_no_configured_certificate_uses_is_revoked_last()
+    {
+        DeploymentPlan plan = DeploymentPlan.For(
+            Desired,
+            Matching() with
+            {
+                ServiceRunning = false,
+                KeyFile = CurrentKey,
+                KeyFilesGranted = [CurrentKey.ToUpperInvariant(), OldKey],
+            });
+
+        DeploymentStep revoke = plan.Steps[^1];
+        Assert.Equal(DeploymentAction.RevokeStaleKeyAccess, revoke.Action);
+        Assert.Equal(OldKey, revoke.Target);
+        Assert.False(revoke.Recursive);
+        Assert.Equal(DeploymentAction.StartService, plan.Steps[^2].Action);
+        Assert.Single(plan.Steps, step => step.Action == DeploymentAction.RevokeStaleKeyAccess);
+    }
+
+    /// Which key is current cannot be told without it: none is taken.
+    [Fact]
+    public void With_the_current_key_not_found_no_key_is_revoked() =>
+        Assert.Empty(DeploymentPlan.For(
+            Desired, Matching() with { KeyFile = null, KeyFilesGranted = [OldKey] }).Steps);
+
+    /// The service moved: the old folder and its logs lose their grants. Recursively only where
+    /// nothing in use lies below.
+    [Fact]
+    public void The_old_install_folder_is_a_candidate_once_the_service_moved()
+    {
+        Assert.Equal(
+            [@"C:\Old", @"C:\Old\logs"],
+            DeploymentPlan.StaleFolderCandidates(Desired, @"C:\Old\ripcord.exe"));
+        Assert.Empty(DeploymentPlan.StaleFolderCandidates(Desired, Desired.BinaryPath));
+        Assert.Empty(DeploymentPlan.StaleFolderCandidates(
+            Desired with { LogsFolder = @"C:\Old\logs", SnapshotPath = @"C:\Old\state.json" },
+            @"C:\Old\ripcord.exe"));
+    }
+
+    [Fact]
+    public void A_stale_folder_holding_what_is_in_use_is_not_revoked_recursively()
+    {
+        DesiredDeployment desired = Desired with { LogsFolder = @"C:\Old\keep\logs" };
+
+        IReadOnlyList<DeploymentStep> revokes = [.. DeploymentPlan.For(
+                desired, Matching() with { FoldersGranted = [@"C:\Old", @"C:\Other"] })
+            .Steps.Where(step => step.Action == DeploymentAction.RevokeStaleFolderAccess)];
+
+        Assert.Equal(2, revokes.Count);
+        Assert.False(revokes.Single(step => step.Target == @"C:\Old").Recursive);
+        Assert.True(revokes.Single(step => step.Target == @"C:\Other").Recursive);
+    }
+
     private static ObservedDeployment Matching() => new(
         ServiceInstalled: true,
         ServiceBinaryPath: @"D:\Ripcord\ripcord.exe",

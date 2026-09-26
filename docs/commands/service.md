@@ -139,6 +139,15 @@ The key grant is read, on the key file only. Without it the handshake fails on t
 key, and the listener logs the refusal as *this host could not use its own private key* rather
 than blaming the caller.
 
+**Access nothing uses any more is taken back**, as the last steps: every machine key file the
+service account can read other than the configured certificate's — the ones left by `pair` or a
+renewal, however many — and, once the service moved, the old install folder and its `logs`.
+Only entries of the account's own are touched, never inherited ones, and never recursively
+into a folder that still holds the logs or the snapshot in use. With the configured
+certificate's key not found, no key is touched: which one is current cannot be told. A snapshot
+folder left behind by an older `snapshot_path` elsewhere is not looked for; `ripcord service
+remove` run before moving it is what takes that one back.
+
 The logs folder is the only place the service account may write. Modify rather than write,
 because pruning an old log deletes it; on that folder only, never on the install folder or the
 binary. The event source is where the listener reports a start it cannot log to its file: a

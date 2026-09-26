@@ -29,6 +29,47 @@ public static class AccessControl
     public static bool GrantsModify(string? icaclsOutput, string account) =>
         Grants(icaclsOutput, account, ModifyRights);
 
+    /// An entry of its own for this account, not one inherited from a parent: only those were
+    /// granted by a deployment, and only those can be taken back where they stand.
+    public static bool GrantsExplicitly(string? icaclsOutput, string account)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+
+        return (icaclsOutput ?? "").Split('\n').Any(line =>
+            Entry(line, account) is { } rights
+            && !rights.Contains(Deny, StringComparison.OrdinalIgnoreCase)
+            && !rights.Contains("(I)", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// `icacls "<folder>\*"` lists every file, each block opening with its path at column 0.
+    /// The files that give this account an entry of its own. Machine key paths hold no space,
+    /// so the path is the text before the first space.
+    public static IReadOnlyList<string> FilesGrantingExplicitly(string? icaclsOutput, string account)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+
+        List<string> files = [];
+        string? current = null;
+
+        foreach (string raw in (icaclsOutput ?? "").Split('\n'))
+        {
+            string line = raw.TrimEnd('\r');
+
+            if (line.Length > 0 && !char.IsWhiteSpace(line[0]) && line.Contains('\\'))
+            {
+                int space = line.IndexOf(' ', StringComparison.Ordinal);
+                current = space < 0 ? line : line[..space];
+            }
+
+            if (current is not null && !files.Contains(current) && GrantsExplicitly(line, account))
+            {
+                files.Add(current);
+            }
+        }
+
+        return files;
+    }
+
     private static bool Grants(string? icaclsOutput, string account, string[] wanted)
     {
         ArgumentNullException.ThrowIfNull(account);
