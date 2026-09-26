@@ -37,23 +37,12 @@ public sealed class ListenerDeployment(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        ConfigurationRead read = configStore.Read(request.ConfigurationPath);
+        DeploymentOutcome configured = this.Configured(request);
 
-        if (read.Errors.Count > 0)
+        if (configured.Desired is not { } desired)
         {
-            return Invalid(read.Errors);
+            return configured;
         }
-
-        ConfigurationValidation validation =
-            ConfigurationValidator.Validate(
-                read.Document, request.MachineName, request.ConfigurationPath);
-
-        if (validation.Configuration is not { } configuration)
-        {
-            return Invalid(validation.Errors);
-        }
-
-        DesiredDeployment desired = DesiredDeploymentFactory.From(configuration, request.BinaryPath);
 
         try
         {
@@ -74,6 +63,33 @@ public sealed class ListenerDeployment(
             return new DeploymentOutcome(
                 ExitCode.LocalAccessFailure, null, desired, [], exception.Message);
         }
+    }
+
+    /// What the configuration wants, and nothing observed: for a restart, start or stop, which
+    /// need the two services' states and not a reading of every grant on the host.
+    public DeploymentOutcome Configured(DeploymentRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        ConfigurationRead read = configStore.Read(request.ConfigurationPath);
+
+        if (read.Errors.Count > 0)
+        {
+            return Invalid(read.Errors);
+        }
+
+        ConfigurationValidation validation =
+            ConfigurationValidator.Validate(
+                read.Document, request.MachineName, request.ConfigurationPath);
+
+        return validation.Configuration is { } configuration
+            ? new DeploymentOutcome(
+                ExitCode.Success,
+                null,
+                DesiredDeploymentFactory.From(configuration, request.BinaryPath),
+                [],
+                null)
+            : Invalid(validation.Errors);
     }
 
     private ObservedDeployment Outdated(

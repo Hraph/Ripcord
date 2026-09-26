@@ -649,6 +649,9 @@ public class RipcordCliTests
 
         CliRun run = await Run(["service", "restart"], deploymentExecutor: executor);
 
+        // The two services' states only: no grant, group or namespace is read to restart.
+        Assert.Equal(0, executor.Observations);
+
         Assert.Equal(ExitCode.Success, run.Code);
         Assert.Equal([DeploymentAction.RestartService, DeploymentAction.RestartService], executor.Applied);
 
@@ -1457,8 +1460,13 @@ public class RipcordCliTests
 
         public IReadOnlyList<DeploymentAction> Applied => this.applied;
 
-        public ObservedDeployment Observe(DesiredDeployment desired, ObservedService service) =>
-            observed ?? Deployment.DeploymentPlanTests.FreshHost;
+        public int Observations { get; private set; }
+
+        public ObservedDeployment Observe(DesiredDeployment desired, ObservedService service)
+        {
+            this.Observations++;
+            return observed ?? Deployment.DeploymentPlanTests.FreshHost;
+        }
 
         /// Agrees with `Observe` unless a test says otherwise.
         public ObservedService ObserveService(RipcordService which) =>

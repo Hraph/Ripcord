@@ -1145,17 +1145,19 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         }
 
         ListenerDeployment deployment = new(ports.ConfigStore, ports.DeploymentExecutor);
+
+        // The two services' states and nothing else: a restart must not wait on every grant
+        // on the host being read, each with its own timeout.
         ObservedService service = ServiceReading.Read(ports.DeploymentExecutor, RipcordService.Listener);
+        ObservedService publisher = ServiceReading.Read(ports.DeploymentExecutor, RipcordService.Publisher);
 
-        DeploymentOutcome outcome = deployment.Plan(
-            new DeploymentRequest(
-                options.ConfigurationPath ?? environment.DefaultConfigurationPath,
-                environment.MachineName,
-                environment.BinaryPath,
-                Remove: false),
-            service);
+        DeploymentOutcome outcome = deployment.Configured(new DeploymentRequest(
+            options.ConfigurationPath ?? environment.DefaultConfigurationPath,
+            environment.MachineName,
+            environment.BinaryPath,
+            Remove: false));
 
-        if (outcome.Observed is not { } observed || outcome.Desired is not { } desired)
+        if (outcome.Desired is not { } desired)
         {
             this.WriteDeploymentFailure(error, outcome);
             return outcome.Code;
@@ -1171,7 +1173,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         string word = change.ToString().ToLowerInvariant();
 
-        if (!observed.ServiceInstalled)
+        if (!service.Installed)
         {
             error.WriteLine(
                 $"ripcord: there is no listener service on this host to {word}. "
@@ -1181,8 +1183,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         }
 
         // Both services: the publisher also reads ripcord.yaml only when it starts.
-        ServiceStateChange decided = ServiceStateChange.ForBoth(
-            change, service, observed.Publisher.Service);
+        ServiceStateChange decided = ServiceStateChange.ForBoth(change, service, publisher);
 
         if (decided.Unreadable is { } unreadable)
         {
@@ -1203,7 +1204,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         }
 
         output.Write(DeploymentRenderer.Render(
-            plan, desired, removing: false, observed,
+            plan, desired, removing: false, observed: null,
             heading: $"RIPCORD SERVICES {word.ToUpperInvariant()}", palette: this.Ink));
 
         if (options.DryRun)

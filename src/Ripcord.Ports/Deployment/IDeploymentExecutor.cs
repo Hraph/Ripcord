@@ -6,7 +6,8 @@ namespace Ripcord.Ports.Deployment;
 /// decides what needs doing — that is DeploymentPlan, which runs anywhere.
 public interface IDeploymentExecutor
 {
-    /// Around a service already read, so one report never holds two readings of it.
+    /// Around the listener as the caller already read it, so the plan and the report agree on
+    /// its state. The publisher and every grant are read here.
     ObservedDeployment Observe(DesiredDeployment desired, ObservedService service);
 
     /// One service alone, which needs no configuration: `ripcord service` still shows it when
