@@ -63,7 +63,8 @@ public sealed class UpdateCliTests
         Assert.Equal(
             [UpdateAction.DiscardPrevious, UpdateAction.SetAside, UpdateAction.Install],
             swap.Moves);
-        Assert.DoesNotContain("\r", run.Output, StringComparison.Ordinal);
+        // A redraw, not the \r of a Windows line ending.
+        Assert.DoesNotMatch(@"\r(?!\n)", run.Output);
     }
 
     /// On a console one line shows the step running, the download's percentage with it, and
