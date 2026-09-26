@@ -384,7 +384,9 @@ public class RipcordCliTests
         Assert.Equal(ExitCode.Success, run.Code);
         Assert.Equal(
             [DeploymentAction.CreateService, DeploymentAction.ConfigureRecovery,
+             DeploymentAction.DescribeService,
              DeploymentAction.CreateService, DeploymentAction.ConfigureRecovery,
+             DeploymentAction.DescribeService,
              DeploymentAction.CreateFirewallRule, DeploymentAction.GrantConfigurationAccess,
              DeploymentAction.GrantSnapshotAccess, DeploymentAction.GrantLogsAccess,
              DeploymentAction.RegisterEventSource, DeploymentAction.GrantConfigurationAccess,
@@ -468,7 +470,7 @@ public class RipcordCliTests
     [Fact]
     public async Task Service_install_whose_start_fails_points_to_ripcord_service()
     {
-        FakeDeploymentExecutor executor = new(failOnStep: 14);
+        FakeDeploymentExecutor executor = new(failOnStep: 16);
 
         CliRun run = await Run(
             ["service", "install"], deploymentExecutor: executor, typed: "y");
@@ -1148,7 +1150,8 @@ public class RipcordCliTests
         EventSourceRegistered: true,
         KeyReadableByService: true,
         ConfigurationReadableByService: true,
-        ListenerRecovers: true)
+        ListenerRecovers: true,
+        ListenerDescribed: true)
     {
         Publisher = Deployment.DeploymentPlanTests.PublisherInPlace(BinaryPath, NamespaceGrant.Granted),
     };

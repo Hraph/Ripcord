@@ -29,7 +29,11 @@ public sealed record ObservedService(
     string? Unreadable = null,
 
     /// The running process. Windows reports 0 for a service with none, read as null.
-    int? ProcessId = null)
+    int? ProcessId = null,
+
+    /// As services.msc shows them; null when unread.
+    string? DisplayName = null,
+    string? Description = null)
 {
     public static ObservedService Absent { get; } =
         new(false, null, ServiceRunState.Stopped, null, null, null);
@@ -39,6 +43,15 @@ public sealed record ObservedService(
     public const string AccessDenied = "access is denied";
 
     public string? BinaryPath => BinaryIn(this.CommandLine);
+
+    /// Named and described as `service` says. Unread is not: the cost is one redundant step.
+    public bool IsDescribedAs(RipcordService service)
+    {
+        ArgumentNullException.ThrowIfNull(service);
+
+        return string.Equals(this.DisplayName, service.DisplayName, StringComparison.Ordinal)
+            && string.Equals(this.Description, service.Description, StringComparison.Ordinal);
+    }
 
     public bool IsDisabled =>
         string.Equals(this.StartMode, "Disabled", StringComparison.OrdinalIgnoreCase);

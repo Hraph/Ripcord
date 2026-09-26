@@ -66,6 +66,7 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
                 RipcordService.Listener.Account),
             AccessControl.GrantsExplicitly(installFolder, RipcordService.Listener.Account),
             ServiceRecovery.Restarts(FailureActions(RipcordService.Listener)),
+            service.IsDescribedAs(RipcordService.Listener),
             InstallFolderGrantBroad: AccessControl.GrantsExplicitlyBelow(
                 installFolder, RipcordService.Listener.Account))
         {
@@ -195,7 +196,8 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
                 .QueryInstances(
                     @"root\cimv2",
                     "WQL",
-                    "SELECT State, StartMode, ExitCode, ServiceSpecificExitCode, PathName, ProcessId "
+                    "SELECT State, StartMode, ExitCode, ServiceSpecificExitCode, PathName, ProcessId, "
+                    + "DisplayName, Description "
                     + $"FROM Win32_Service WHERE Name = '{which.Name}'",
                     options)
                 .FirstOrDefault();
@@ -216,7 +218,9 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
                     Text(service, "StartMode"),
                     Code(service, "ExitCode"),
                     Code(service, "ServiceSpecificExitCode"),
-                    ProcessId: Code(service, "ProcessId") is int id and > 0 ? id : null);
+                    ProcessId: Code(service, "ProcessId") is int id and > 0 ? id : null,
+                    DisplayName: Text(service, "DisplayName"),
+                    Description: Text(service, "Description"));
             }
         }
         catch (CimException exception)
@@ -375,6 +379,12 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             DeploymentAction.StartService => [("sc.exe", $"start {name}")],
 
             DeploymentAction.ConfigureRecovery => [("sc.exe", ServiceRecovery.Arguments(service))],
+
+            DeploymentAction.DescribeService =>
+            [
+                ("sc.exe", $"config {name} DisplayName= \"{service.DisplayName}\""),
+                ("sc.exe", $"description {name} \"{service.Description}\""),
+            ],
 
             DeploymentAction.RestartService =>
             [

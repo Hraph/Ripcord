@@ -67,6 +67,7 @@ public class DeploymentPlanTests
 
         Assert.Equal(
             [DeploymentAction.CreateService, DeploymentAction.ConfigureRecovery,
+             DeploymentAction.DescribeService,
              DeploymentAction.CreateFirewallRule,
              DeploymentAction.GrantConfigurationAccess,
              DeploymentAction.GrantSnapshotAccess, DeploymentAction.GrantLogsAccess,
@@ -87,6 +88,45 @@ public class DeploymentPlanTests
         Assert.Equal(RipcordService.Listener, step.Service);
         Assert.Contains("actions= restart/60000", step.Description, StringComparison.Ordinal);
         Assert.DoesNotContain("failureflag", step.Description, StringComparison.Ordinal);
+    }
+
+    /// A host installed before services carried a description gets one on the next install.
+    [Fact]
+    public void A_service_without_its_description_gets_it_and_one_with_it_does_not()
+    {
+        DeploymentPlan plan = DeploymentPlan.For(
+            Desired,
+            Matching() with
+            {
+                ListenerDescribed = false,
+                Publisher = Matching().Publisher with
+                {
+                    Service = Matching().Publisher.Service with { Description = null },
+                },
+            });
+
+        Assert.Equal(
+            [RipcordService.Listener, RipcordService.Publisher],
+            plan.Steps.Select(step => step.Service));
+        Assert.All(plan.Steps, step => Assert.Equal(DeploymentAction.DescribeService, step.Action));
+        Assert.Contains("\"Ripcord listener\"", plan.Steps[0].Description, StringComparison.Ordinal);
+        Assert.False(DeploymentPlan.For(Desired, Matching()).ChangesAnything);
+    }
+
+    [Fact]
+    public void A_service_is_described_only_by_the_exact_name_and_text()
+    {
+        RipcordService listener = RipcordService.Listener;
+        ObservedService described = ObservedService.Absent with
+        {
+            DisplayName = listener.DisplayName,
+            Description = listener.Description,
+        };
+
+        Assert.True(described.IsDescribedAs(listener));
+        Assert.False(described.IsDescribedAs(RipcordService.Publisher));
+        Assert.False(ObservedService.Absent.IsDescribedAs(listener));
+        Assert.False((described with { Description = "" }).IsDescribedAs(listener));
     }
 
     /// An upgraded host: 0.7.0's broad read is narrowed to the configuration grant, after the
@@ -457,7 +497,8 @@ public class DeploymentPlanTests
         LogsWritableByService: true,
         EventSourceRegistered: true,
         ConfigurationReadableByService: true,
-        ListenerRecovers: true)
+        ListenerRecovers: true,
+        ListenerDescribed: true)
     {
         Publisher = PublisherInPlace(@"D:\Ripcord\ripcord.exe"),
     };
@@ -468,7 +509,15 @@ public class DeploymentPlanTests
     /// A publisher that needs nothing: running this binary, granted everything, in the group.
     internal static ObservedPublisher PublisherInPlace(string binaryPath, NamespaceGrant encryption = NamespaceGrant.Missing) =>
         new(
-            new ObservedService(true, $"\"{binaryPath}\" publish", ServiceRunState.Running, "Auto", 0, 0),
+            new ObservedService(
+                true,
+                $"\"{binaryPath}\" publish",
+                ServiceRunState.Running,
+                "Auto",
+                0,
+                0,
+                DisplayName: RipcordService.Publisher.DisplayName,
+                Description: RipcordService.Publisher.Description),
             ConfigurationReadable: true,
             SnapshotWritable: true,
             LogsWritable: true,

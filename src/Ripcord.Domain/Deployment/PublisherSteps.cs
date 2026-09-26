@@ -72,6 +72,11 @@ public static class PublisherSteps
         {
             yield return Recovery(Publisher);
         }
+
+        if (!observed.Service.IsDescribedAs(Publisher))
+        {
+            yield return Description(Publisher);
+        }
     }
 
     /// Shared with the listener's plan, so both services recover the same way.
@@ -82,6 +87,14 @@ public static class PublisherSteps
             $"Restart '{service.Name}' a minute after a crash (sc.exe {ServiceRecovery.Arguments(service)})",
             "a service that died stays dead until somebody notices; one that stops itself on "
                 + "purpose is left alone");
+
+    /// Shared with the listener's plan, like `Recovery`.
+    public static DeploymentStep Description(RipcordService service) =>
+        new(
+            service,
+            DeploymentAction.DescribeService,
+            $"Name '{service.Name}' \"{service.DisplayName}\" in services.msc and describe it",
+            "whoever finds it there on the day should see what it does and what stopping it costs");
 
     public static IEnumerable<DeploymentStep> Grants(DesiredDeployment desired, ObservedPublisher observed)
     {

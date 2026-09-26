@@ -169,6 +169,10 @@ a service that stops itself with an exit code — a configuration it refuses —
 rather than refusing the same file again every minute. Deleting a service takes its recovery
 with it.
 
+**services.msc names and describes both**, as *Ripcord listener* and *Ripcord publisher*, each
+with one line on what it does and what stopping it costs. A host installed before this gets
+them on its next `service install`.
+
 **Access nothing uses any more is taken back**, as the last steps: every machine key file the
 service account can read other than the configured certificate's — the ones left by `pair` or a
 renewal, however many — and, once a service moved, what either account was granted in the old install folder, its `state`, its `logs` and `logs\publish`.

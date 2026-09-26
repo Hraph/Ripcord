@@ -27,7 +27,8 @@ public class PublisherStepsTests
         LogsWritableByService: true,
         EventSourceRegistered: true,
         ConfigurationReadableByService: true,
-        ListenerRecovers: true)
+        ListenerRecovers: true,
+        ListenerDescribed: true)
     {
         Publisher = ObservedPublisher.Absent("Hyper-V Administrators"),
     };
@@ -44,6 +45,7 @@ public class PublisherStepsTests
 
         Assert.Equal(
             [DeploymentAction.CreateService, DeploymentAction.ConfigureRecovery,
+             DeploymentAction.DescribeService,
              DeploymentAction.GrantConfigurationAccess,
              DeploymentAction.GrantSnapshotWriteAccess, DeploymentAction.GrantLogsAccess,
              DeploymentAction.AddToHyperVAdministrators, DeploymentAction.GrantEncryptionNamespaceAccess,

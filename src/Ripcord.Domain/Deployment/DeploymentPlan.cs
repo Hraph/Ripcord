@@ -97,6 +97,9 @@ public sealed record ObservedDeployment(
     /// Whether Windows restarts the listener after a crash (`ServiceRecovery`).
     bool ListenerRecovers = false,
 
+    /// Whether services.msc names and describes the listener as `RipcordService` does.
+    bool ListenerDescribed = false,
+
     /// The running listener recorded another build than the binary on disk: `ripcord update`
     /// replaced the file, not the process.
     bool ListenerOutdated = false,
@@ -167,6 +170,9 @@ public enum DeploymentAction
 
     /// Windows restarts the service after a crash. Deleting the service takes it with it.
     ConfigureRecovery,
+
+    /// The display name and description services.msc shows.
+    DescribeService,
 
     /// Replaces the listener's broad read on the install folder with the configuration grant.
     NarrowConfigurationAccess,
@@ -274,6 +280,11 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
         if (!observed.ListenerRecovers)
         {
             steps.Add(PublisherSteps.Recovery(RipcordService.Listener));
+        }
+
+        if (!observed.ListenerDescribed)
+        {
+            steps.Add(PublisherSteps.Description(RipcordService.Listener));
         }
 
         // Created before any grant: its account only exists once the service does.

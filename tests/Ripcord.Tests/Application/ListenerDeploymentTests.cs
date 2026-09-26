@@ -19,7 +19,15 @@ public class ListenerDeploymentTests
         true, $"\"{Binary}\" serve", ServiceRunState.Running, "Auto", 0, 0, ProcessId: 4812);
 
     private static readonly ObservedService Publishing = new(
-        true, $"\"{Binary}\" publish", ServiceRunState.Running, "Auto", 0, 0, ProcessId: 4900);
+        true,
+        $"\"{Binary}\" publish",
+        ServiceRunState.Running,
+        "Auto",
+        0,
+        0,
+        ProcessId: 4900,
+        DisplayName: RipcordService.Publisher.DisplayName,
+        Description: RipcordService.Publisher.Description);
 
     [Theory]
     [InlineData("0.7.0+old0000", true)]
@@ -75,7 +83,8 @@ public class ListenerDeploymentTests
                 EventSourceRegistered: true,
                 KeyReadableByService: true,
                 ConfigurationReadableByService: true,
-                ListenerRecovers: true)
+                ListenerRecovers: true,
+                ListenerDescribed: true)
             {
                 Publisher = Deployment.DeploymentPlanTests.PublisherInPlace(Binary, NamespaceGrant.Granted)
                     with { Service = Publishing },
