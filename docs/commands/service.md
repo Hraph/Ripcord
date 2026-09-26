@@ -161,8 +161,10 @@ The key grant is read, on the key file only. Without it the handshake fails on t
 key, and the listener logs the refusal as *this host could not use its own private key* rather
 than blaming the caller.
 
-**Both services restart a minute after a crash**, three times a day at most
-(`sc.exe failure … actions= restart/60000/…`), set right after each is created. Only a crash:
+**Both services restart a minute after a crash** (`sc.exe failure … reset= 86400
+actions= restart/60000/…`), set right after each is created. Windows repeats the last action
+for every crash after the third, so a crash loop is retried each minute until a day passes
+without one. Only a crash:
 a service that stops itself with an exit code — a configuration it refuses — stays stopped,
 rather than refusing the same file again every minute. Deleting a service takes its recovery
 with it.

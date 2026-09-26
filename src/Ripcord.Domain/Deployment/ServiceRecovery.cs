@@ -1,6 +1,7 @@
 namespace Ripcord.Domain.Deployment;
 
-/// Windows restarts a Ripcord service whose process died, a minute later, three times a day.
+/// Windows restarts a Ripcord service whose process died, a minute later. The last action
+/// repeats past the third crash; the count resets after a day without one.
 ///
 /// Only on a crash: `failureflag` stays off, so a service that stops itself with an exit code —
 /// a configuration it refuses — is not started again every minute to refuse it again.
