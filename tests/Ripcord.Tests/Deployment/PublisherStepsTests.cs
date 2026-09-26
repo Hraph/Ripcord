@@ -161,7 +161,7 @@ public class PublisherStepsTests
              DeploymentAction.RemoveService],
             Actions(plan));
         Assert.Equal(RipcordService.Publisher, plan.Steps[0].Service);
-        Assert.True(plan.Steps.TakeWhile(step => step.Service == RipcordService.Publisher).Count() == 7);
+        Assert.Equal(7, plan.Steps.TakeWhile(step => step.Service == RipcordService.Publisher).Count());
     }
 
     /// Membership that could not be read is tried: once the service is deleted, a member left

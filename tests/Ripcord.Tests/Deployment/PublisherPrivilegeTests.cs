@@ -83,6 +83,19 @@ public class PublisherPrivilegeTests
         Assert.Equal(Namespace, NamespaceAcl.WithoutGrant(Namespace, Sid).Sddl);
     }
 
+    /// A protected, auto-inherited DACL keeps its flags through the edit and back: dropping
+    /// `PAI` would let the parent's entries flow into a system namespace.
+    [Fact]
+    public void The_dacl_flags_survive_the_grant_and_its_removal()
+    {
+        const string Protected = "O:BAG:SYD:PAI(A;CI;CCDCLCSWRPWPRCWD;;;BA)(A;CIID;CCDCRP;;;NS)";
+
+        string granted = NamespaceAcl.WithGrant(Protected, Sid).Sddl!;
+
+        Assert.StartsWith("O:BAG:SYD:PAI(", granted, StringComparison.Ordinal);
+        Assert.Equal(Protected, NamespaceAcl.WithoutGrant(granted, Sid).Sddl);
+    }
+
     [Theory]
     [InlineData("O:BAG:SYD:(D;;CCDC;;;S-1-5-80-1-2-3-4-5)(A;;CCDC;;;BA)", "denies")]
     [InlineData("O:BAG:SYD:(A;;CCDC;;;BA)S:(AU;SA;CC;;;WD)", "not one Ripcord edits")]
