@@ -30,7 +30,7 @@ RIPCORD LISTENER
     version    0.7.0+def5678
     firewall   inbound TCP 7443 from 192.0.2.11
     snapshot   C:\Program Files\Ripcord\state\state.json
-               written by 'ripcord status', served to the peer
+               written by ripcord-publish, served to the peer
                written 40s ago
                readable by NT SERVICE\ripcord
     key        readable by NT SERVICE\ripcord
@@ -79,7 +79,7 @@ running two versions.
 | `last exit` | only when it is not running: the code Windows recorded, and what it means. |
 | `firewall`, `snapshot`, `logs` | what the configuration needs, and whether the host has it. Left out when `ripcord.yaml` does not load. |
 | `key` | whether the service account can read the private key of `listener.local_certificate_thumbprint`, or that no key was found for it in `LocalMachine\My`. Machine keys are readable by SYSTEM and Administrators only. |
-| `snapshot`, third line | how long ago `state.json` was written, `STALE` past `peer.offline_after_sec`, or `NOT written yet`. When missing or stale, the report ends by naming `ripcord status`: until it runs, the peer shows this host offline or stale. |
+| `snapshot`, third line | how long ago `state.json` was written, `STALE` past `peer.offline_after_sec`, or `NOT written yet`. When missing or stale, the report ends with why and the one command that fixes it, read from the publishing service: `ripcord service install` when it is absent, `ripcord service start` when it is stopped, `ripcord publish` when it runs and still fails — publishing once by hand prints the reason, and so does its log. |
 | `THIS HOST'S CERTIFICATE` | each certificate in `LocalMachine\My` with a private key, whose first CN is this host's name — what the other host checks, whatever O, OU or DC follow — and not expired, latest expiry first, marked `in ripcord.yaml` when it is the configured one, or `None of these is the one in ripcord.yaml` after a renewal. The other host must also trust its issuer. Shown even when `ripcord.yaml` does not load. Under it, the one line to run on the other host — `ripcord pair <this host>:<thumbprint>` — which writes both thumbprints there: see [`pair`](pair.md). `NONE` when no certificate qualifies. |
 | `PUBLISHER` | the publishing service: its state, command, last exit and version like the listener's, then `hyper-v` (membership), `bitlocker` (its ACE, or why BitLocker is carried from an administrator's read), `snapshot` (modify), `logs` (its own, and whether the listener is kept out), and the last 10 lines of `logs\publish\publish-YYYY-MM-DD.log`. |
 | `log` | the day's `logs\listener-YYYY-MM-DD.log` (UTC date) beside the service's binary, or yesterday's when today has none, and its last 20 lines. |

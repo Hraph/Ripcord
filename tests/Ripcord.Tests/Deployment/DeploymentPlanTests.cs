@@ -492,7 +492,7 @@ public class DeploymentPlanTests
             .Single(step => step.Action == DeploymentAction.GrantSnapshotAccess);
 
         Assert.Contains("state.json", grant.Reason, StringComparison.Ordinal);
-        Assert.Contains("'ripcord status' writes", grant.Reason, StringComparison.Ordinal);
+        Assert.Contains("the publishing service writes", grant.Reason, StringComparison.Ordinal);
         Assert.Contains("serves to the peer", grant.Reason, StringComparison.Ordinal);
     }
 }

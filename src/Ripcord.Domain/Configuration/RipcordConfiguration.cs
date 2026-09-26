@@ -116,7 +116,7 @@ public sealed record ListenerSettings(
 
     /// What the file is, in the words the operator reads it in.
     public const string SnapshotMeaning =
-        "the snapshot 'ripcord status' writes and the listener serves to the peer";
+        "the snapshot the publishing service writes and the listener serves to the peer";
 
     public static ListenerSettings Disabled() =>
         new(false, DefaultPort, null, null, DefaultSnapshotFileName);

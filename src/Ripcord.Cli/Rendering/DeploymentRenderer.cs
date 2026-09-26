@@ -129,10 +129,12 @@ public static class DeploymentRenderer
                 : "  It matches the configuration.");
         }
 
-        if (report.Snapshot is SnapshotAge.Missing or SnapshotAge.Stale)
+        if (SnapshotFreshness.Remedy(report.Snapshot, report.Publisher?.Service) is { } remedy)
         {
-            output.AppendLine("  The peer is served no current snapshot until this runs:");
-            output.AppendLine("    ripcord status");
+            AppendWrapped(
+                output, "  ", "  ", $"The peer is served no current snapshot: {remedy.Why}.");
+            output.AppendLine("  Then run:");
+            output.AppendLine($"    {remedy.Next}");
         }
 
         return Layout.Rendered(output, palette);
@@ -427,7 +429,7 @@ public static class DeploymentRenderer
 
         // Named and explained: an operator granting access to a file has to know what it is.
         AppendWrapped(output, "    snapshot   ", "               ", desired.SnapshotPath);
-        output.AppendLine("               written by 'ripcord status', served to the peer");
+        output.AppendLine("               written by ripcord-publish, served to the peer");
 
         switch (report?.Snapshot)
         {

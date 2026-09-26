@@ -926,7 +926,7 @@ public class RipcordCliTests
 
         Assert.Contains(@"state\state.json", run.Output, StringComparison.Ordinal);
         Assert.Contains(
-            "written by 'ripcord status', served to the peer", run.Output, StringComparison.Ordinal);
+            "written by ripcord-publish, served to the peer", run.Output, StringComparison.Ordinal);
         Assert.Contains(@"readable by NT SERVICE\ripcord", run.Output, StringComparison.Ordinal);
     }
 
@@ -1068,13 +1068,13 @@ public class RipcordCliTests
     }
 
     [Fact]
-    public async Task Service_says_when_the_snapshot_was_never_written_and_names_status()
+    public async Task Service_says_when_the_snapshot_was_never_written_and_names_the_fix()
     {
         CliRun run = await Run(["service"], deploymentExecutor: new FakeDeploymentExecutor(Deployed()));
 
         Assert.Contains("               NOT written yet\n", run.Output, StringComparison.Ordinal);
         Assert.EndsWith(
-            "  The peer is served no current snapshot until this runs:\n    ripcord status\n",
+            "  Then run:\n    ripcord publish\n",
             run.Output.ReplaceLineEndings("\n"),
             StringComparison.Ordinal);
     }
