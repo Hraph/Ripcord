@@ -305,11 +305,15 @@ public static class DeploymentRenderer
                 null => "    hyper-v    membership could not be read",
             });
 
-            AppendWrapped(output, "    bitlocker  ", "               ", observed.Encryption switch
+            bool needed = deployment.Desired?.CheckBitLocker != false;
+
+            AppendWrapped(output, "    bitlocker  ", "               ", (observed.Encryption, needed) switch
             {
-                NamespaceGrant.Granted => "readable by it",
-                NamespaceGrant.Missing => "NOT readable by it: carried from an administrator's read",
-                NamespaceGrant.Unmodifiable => "its access list is not one Ripcord edits",
+                (NamespaceGrant.Granted, true) => "readable by it",
+                (NamespaceGrant.Granted, false) => "readable by it, and not needed: install takes it back",
+                (_, false) => "not needed: storage.check_bitlocker_autounlock is off",
+                (NamespaceGrant.Missing, _) => "NOT readable by it: ripcord service install grants it",
+                (NamespaceGrant.Unmodifiable, _) => "its access list is not one Ripcord edits",
                 _ => observed.EncryptionNote ?? "could not be read",
             });
 

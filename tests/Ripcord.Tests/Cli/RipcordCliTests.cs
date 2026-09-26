@@ -1072,6 +1072,30 @@ public class RipcordCliTests
         Assert.Contains("1 step(s) would change it", run.Output, StringComparison.Ordinal);
     }
 
+    /// With the BitLocker check off, the publisher needs no access to that namespace: the row
+    /// says so rather than reporting a missing grant or a carry-forward that may not exist.
+    [Theory]
+    [InlineData(false, NamespaceGrant.Missing, "bitlocker  not needed: storage.check_bitlocker_autounlock is off")]
+    [InlineData(false, NamespaceGrant.Granted, "bitlocker  readable by it, and not needed: install takes it back")]
+    [InlineData(true, NamespaceGrant.Granted, "bitlocker  readable by it")]
+    public async Task Service_says_whether_the_publisher_needs_bitlocker(
+        bool check, NamespaceGrant grant, string row)
+    {
+        ConfigurationDocument document = Tests.Configuration.ValidDocument.Create();
+        document.Storage!.CheckBitlockerAutounlock = check;
+        ObservedDeployment observed = Deployed() with
+        {
+            Publisher = Deployed().Publisher with { Encryption = grant },
+        };
+
+        CliRun run = await Run(
+            ["service"],
+            configStore: new MemoryConfigStore(ConfigurationRead.Succeeded(document)),
+            deploymentExecutor: new FakeDeploymentExecutor(observed));
+
+        Assert.Contains(row, run.Output, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Service_says_when_the_snapshot_was_never_written_and_names_the_fix()
     {
