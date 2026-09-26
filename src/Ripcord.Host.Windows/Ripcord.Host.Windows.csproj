@@ -5,6 +5,8 @@
     <OutputType>Exe</OutputType>
     <AssemblyName>ripcord</AssemblyName>
     <RootNamespace>Ripcord.Host.Windows</RootNamespace>
+    <!-- The exe's FileDescription: what Task Manager and the file's Details tab show. -->
+    <AssemblyTitle>Ripcord - Hyper-V Replica disaster recovery</AssemblyTitle>
   </PropertyGroup>
 
   <ItemGroup>

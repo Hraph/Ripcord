@@ -20,6 +20,9 @@
   <PropertyGroup>
     <Product>Ripcord</Product>
     <Authors>Ripcord contributors</Authors>
+    <Description>Disaster recovery for a Hyper-V Replica host pair</Description>
+    <!-- Kept in step with LICENSE. -->
+    <Copyright>Copyright (c) 2026 Ripcord contributors</Copyright>
     <RepositoryUrl>https://github.com/Hraph/RipCord</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <!-- Not a version anybody maintains. The released version is worked out from the tags and
