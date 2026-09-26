@@ -1,6 +1,5 @@
 using Ripcord.Adapters.Fake;
 using Ripcord.Cli;
-using Ripcord.Cli.Rendering;
 using Ripcord.Domain;
 using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Updates;
@@ -63,45 +62,29 @@ public sealed class UpdateCliTests
         Assert.Equal(
             [UpdateAction.DiscardPrevious, UpdateAction.SetAside, UpdateAction.Install],
             swap.Moves);
-        Assert.Matches(
-            @"  1/5  download the release and its signature\.\.\.\n       \d+% 100%\n  2/5  ",
-            run.Output.ReplaceLineEndings("\n"));
-        Assert.Contains("5/5  put the new binary where the running one was...", run.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("\r", run.Output, StringComparison.Ordinal);
+    }
+
+    /// On a console one line shows the step running, the download's percentage with it, and
+    /// is erased before the result.
+    [Fact]
+    public async Task A_live_console_shows_each_step_on_one_line()
+    {
+        CliRun run = await Run(["update"], typed: "y", live: true);
+
+        Assert.Equal(ExitCode.Success, run.Code);
+        Assert.Contains("\r  download the release and its signature... 100%", run.Output, StringComparison.Ordinal);
+        Assert.Contains("\r  put the new binary where the running one was...", run.Output, StringComparison.Ordinal);
+        Assert.Matches(@"\r +\r\r?\n  0\.2\.0 is installed", run.Output);
     }
 
     [Fact]
-    public async Task A_download_cut_off_part_way_ends_its_line_before_the_failure()
+    public async Task A_download_cut_off_part_way_is_erased_before_the_failure()
     {
-        CliRun run = await Run(["update"], source: Source.CutOff(), typed: "y");
+        CliRun run = await Run(["update"], source: Source.CutOff(), typed: "y", live: true);
 
         Assert.Equal(ExitCode.LocalAccessFailure, run.Code);
-        Assert.Matches(@"\n       \d+%\n\n  FAILED: ", run.Output.ReplaceLineEndings("\n"));
-    }
-
-    /// Every step line fits the 1024x768 console.
-    [Fact]
-    public void Every_step_line_fits_the_console()
-    {
-        UpdatePlan plan = UpdatePlan.For(Subjects.Available());
-
-        Assert.All(plan.Steps, step =>
-            Assert.InRange(UpdateRenderer.RenderStarting(step, plan.Steps.Count).Length, 1, 75));
-    }
-
-    /// The step still running is the last line before the failure, and nothing follows it.
-    [Fact]
-    public async Task A_failed_step_is_the_last_one_shown_before_the_failure()
-    {
-        CliRun run = await Run(["update"], swap: new Swap { FailOn = UpdateAction.Install }, typed: "y");
-
-        string output = run.Output.ReplaceLineEndings("\n");
-
-        Assert.Equal(ExitCode.Refused, run.Code);
-        Assert.Contains(
-            "  5/5  put the new binary where the running one was...\n\n  FAILED: ",
-            output,
-            StringComparison.Ordinal);
-        Assert.DoesNotContain("done:", output, StringComparison.Ordinal);
+        Assert.Matches(@"\r +\r\r?\n  FAILED: ", run.Output);
     }
 
     /// The listener still runs the binary the last update set aside, which Windows will not
@@ -251,6 +234,7 @@ public sealed class UpdateCliTests
         IUpdateNoticeStore? notices = null,
         string? typed = null,
         string? signingKey = "carried",
+        bool live = false,
         CancellationToken cancellationToken = default)
     {
         StringWriter output = new();
@@ -285,7 +269,8 @@ public sealed class UpdateCliTests
                 new StringReader(typed ?? ""),
                 "tester",
                 new BuildIdentity("0.1.0", "abc123def456"),
-                signingKey is null ? null : Keys.Pinned));
+                signingKey is null ? null : Keys.Pinned,
+                LiveConsole: live));
 
         ExitCode code = await cli.RunAsync(args, output, error, cancellationToken);
 

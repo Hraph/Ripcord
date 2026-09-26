@@ -191,7 +191,8 @@ internal static class Program
                 ReleaseSigningKey,
                 palette,
                 errorPalette,
-                asService));
+                asService,
+                !asService && !Console.IsOutputRedirected));
 
         // Started by the service control manager rather than by a person. `sc start` waits for
         // a handshake — ServiceBase.Run — and a console loop never sends one, so the manager

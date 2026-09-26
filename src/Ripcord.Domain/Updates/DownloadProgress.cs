@@ -5,14 +5,11 @@ namespace Ripcord.Domain.Updates;
 /// How much of a download has arrived. `Total` is what the server announced, when it did.
 public readonly record struct DownloadedBytes(long Received, long? Total);
 
-/// Decides when a download has moved far enough to be worth a mark on the console: every tenth
-/// of the announced size, or every twenty megabytes when no size was announced — few enough that
-/// a release at the size cap still fits one console line.
+/// Decides when a download has moved far enough to redraw: every percent of the announced
+/// size, or every megabyte when no size was announced — not on every chunk of a few kilobytes.
 public sealed class DownloadMarks
 {
     private const long Megabyte = 1024 * 1024;
-
-    private const long UnsizedStep = 20 * Megabyte;
 
     private long reached;
 
@@ -21,25 +18,25 @@ public sealed class DownloadMarks
     {
         if (bytes.Total is > 0 and long total)
         {
-            long tenths = Math.Min(bytes.Received * 10 / total, 10);
+            long percent = Math.Min(bytes.Received * 100 / total, 100);
 
-            if (tenths <= this.reached)
+            if (percent <= this.reached)
             {
                 return null;
             }
 
-            this.reached = tenths;
-            return string.Create(CultureInfo.InvariantCulture, $"{tenths * 10}%");
+            this.reached = percent;
+            return string.Create(CultureInfo.InvariantCulture, $"{percent}%");
         }
 
-        long steps = bytes.Received / UnsizedStep;
+        long megabytes = bytes.Received / Megabyte;
 
-        if (steps <= this.reached)
+        if (megabytes <= this.reached)
         {
             return null;
         }
 
-        this.reached = steps;
-        return string.Create(CultureInfo.InvariantCulture, $"{steps * UnsizedStep / Megabyte} MB");
+        this.reached = megabytes;
+        return string.Create(CultureInfo.InvariantCulture, $"{megabytes} MB");
     }
 }

@@ -59,7 +59,9 @@ public sealed record CliEnvironment(
     /// on a live console leaves one a console and the other a file.
     Palette? ErrorPalette = null,
     /// Started by the service control manager: `publish` then loops instead of running once.
-    bool RunsAsService = false);
+    bool RunsAsService = false,
+    /// Output is a console a line can be redrawn on, not a file a `\r` would litter.
+    bool LiveConsole = false);
 
 /// Every port the command surface reaches the machine through. Grouped rather than listed one
 /// by one, because each milestone adds another and a composition root nobody can read is a
@@ -2290,20 +2292,9 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             return ExitCode.Refused;
         }
 
-        output.WriteLine();
-
         DownloadMarks marks = new();
-        bool marking = false;
-
-        // The marks share one line under the download step; whatever is written next ends it.
-        void EndMarks()
-        {
-            if (marking)
-            {
-                output.WriteLine();
-                marking = false;
-            }
-        }
+        ProgressLine line = new(output, environment.LiveConsole);
+        string running = "";
 
         UpdateInstallation installation = new(
             ports.ReleaseSource,
@@ -2311,20 +2302,20 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             environment.ReleaseSigningKey,
             step =>
             {
-                EndMarks();
-                output.WriteLine(UpdateRenderer.RenderStarting(step, plan.Steps.Count));
+                running = $"  {step.Description}...";
+                line.Show(running);
             },
             bytes =>
             {
                 if (marks.Next(bytes) is { } mark)
                 {
-                    output.Write(UpdateRenderer.RenderMark(mark, first: !marking));
-                    marking = true;
+                    line.Show($"{running} {mark}");
                 }
             });
 
         UpdateResult result;
 
+        // Erased once done: the result below says what happened, the line only what is happening.
         try
         {
             result = await installation
@@ -2333,7 +2324,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         }
         finally
         {
-            EndMarks();
+            line.Clear();
         }
 
         output.Write(UpdateRenderer.RenderResult(result, outcome.Version!, this.Ink));

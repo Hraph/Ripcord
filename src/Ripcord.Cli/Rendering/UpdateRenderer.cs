@@ -57,19 +57,6 @@ public static class UpdateRenderer
         return Layout.Rendered(output, palette);
     }
 
-    /// Written as the step starts, so the last line on screen is the one still running.
-    public static string RenderStarting(UpdateStep step, int total)
-    {
-        ArgumentNullException.ThrowIfNull(step);
-
-        return $"  {step.Number}/{total}  {step.Description}...";
-    }
-
-    /// Indented under the step's description; later marks follow on the same line.
-    public static string RenderMark(string mark, bool first) =>
-        first ? $"       {mark}" : $" {mark}";
-
-    /// The steps were written as they started; this is only how it ended.
     public static string RenderResult(
         UpdateResult result, string version, Palette? palette = null)
     {

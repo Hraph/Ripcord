@@ -7,10 +7,9 @@ public sealed class DownloadMarksTests
     private const long Megabyte = 1024 * 1024;
 
     [Fact]
-    public void A_sized_download_is_marked_every_tenth()
+    public void A_sized_download_is_marked_every_percent()
     {
         DownloadMarks marks = new();
-
         List<string> seen = [];
 
         for (long received = 0; received <= 1000; received += 5)
@@ -21,7 +20,7 @@ public sealed class DownloadMarksTests
             }
         }
 
-        Assert.Equal(["10%", "20%", "30%", "40%", "50%", "60%", "70%", "80%", "90%", "100%"], seen);
+        Assert.Equal(Enumerable.Range(1, 100).Select(percent => $"{percent}%"), seen);
     }
 
     [Fact]
@@ -30,7 +29,7 @@ public sealed class DownloadMarksTests
         DownloadMarks marks = new();
 
         Assert.Equal("50%", marks.Next(new DownloadedBytes(50, 100)));
-        Assert.Null(marks.Next(new DownloadedBytes(55, 100)));
+        Assert.Null(marks.Next(new DownloadedBytes(50, 100)));
     }
 
     /// A server that sends more than it announced must not print 150%.
@@ -41,36 +40,18 @@ public sealed class DownloadMarksTests
     }
 
     [Fact]
-    public void An_unsized_download_is_marked_every_twenty_megabytes()
+    public void An_unsized_download_is_marked_every_megabyte()
     {
         DownloadMarks marks = new();
 
-        Assert.Null(marks.Next(new DownloadedBytes(19 * Megabyte, null)));
-        Assert.Equal("20 MB", marks.Next(new DownloadedBytes(20 * Megabyte, null)));
-        Assert.Equal("40 MB", marks.Next(new DownloadedBytes(55 * Megabyte, null)));
+        Assert.Null(marks.Next(new DownloadedBytes(Megabyte - 1, null)));
+        Assert.Equal("1 MB", marks.Next(new DownloadedBytes(Megabyte, null)));
+        Assert.Equal("3 MB", marks.Next(new DownloadedBytes(3 * Megabyte + 5, null)));
     }
 
     [Fact]
     public void A_size_of_zero_is_treated_as_no_size()
     {
-        Assert.Equal("20 MB", new DownloadMarks().Next(new DownloadedBytes(20 * Megabyte, 0)));
-    }
-
-    /// A release at the size cap, announced with no size, still fits one console line.
-    [Fact]
-    public void Unsized_marks_up_to_the_size_cap_fit_the_console()
-    {
-        DownloadMarks marks = new();
-        string line = "       ";
-
-        for (long received = 0; received <= 160 * Megabyte; received += Megabyte)
-        {
-            if (marks.Next(new DownloadedBytes(received, null)) is { } mark)
-            {
-                line += " " + mark;
-            }
-        }
-
-        Assert.InRange(line.Length, 1, 75);
+        Assert.Equal("2 MB", new DownloadMarks().Next(new DownloadedBytes(2 * Megabyte, 0)));
     }
 }
