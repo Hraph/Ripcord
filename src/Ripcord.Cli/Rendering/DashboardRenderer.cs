@@ -145,7 +145,9 @@ public static class DashboardRenderer
             return;
         }
 
-        AppendVmTable(html, host.Vms, now);
+        // A snapshot's lag is as of when it was taken: measured to now, it would grow with the
+        // snapshot's age and show a healthy replication falling behind.
+        AppendVmTable(html, host.Vms, host.CapturedAt ?? now);
         html.AppendLine("</section>");
     }
 

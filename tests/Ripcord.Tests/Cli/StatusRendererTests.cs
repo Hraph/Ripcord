@@ -437,6 +437,27 @@ public class StatusRendererTests
         Assert.Contains(lines, line => line.TrimEnd().EndsWith("LocalMachine\\My.", StringComparison.Ordinal));
     }
 
+    /// The field report: a snapshot 7 minutes old showed 7m19s of lag on a replication 17 s
+    /// behind. The peer's lag is measured when its snapshot was taken.
+    [Fact]
+    public void The_peers_lag_is_as_of_its_snapshot_not_as_of_now()
+    {
+        DateTimeOffset captured = Now.AddMinutes(-7);
+        VmReplicationState vm = new(
+            "VM-PEER-01", ReplicationRole.Primary, ReplicationState.Replicating,
+            ReplicationHealth.Normal, captured.AddSeconds(-17), 0);
+        PairView view = DegradedPair() with
+        {
+            Peer = new HostState("HV-PRIMARY-01", [vm], HostReachability.Reachable()),
+            PeerCapturedAt = captured,
+        };
+
+        string row = RowFor(Render(view), "VM-PEER-01");
+
+        Assert.Contains("17s", row, StringComparison.Ordinal);
+        Assert.DoesNotContain("7m", row, StringComparison.Ordinal);
+    }
+
     private static string Render(PairView view) =>
         StatusRenderer.Render(view, TimeSpan.FromSeconds(120), Now);
 

@@ -196,7 +196,8 @@ public static class StatusRenderer
                 vm.Role.ToString(),
                 StateLabel(vm.State),
                 vm.Health.ToString(),
-                Duration(vm.LagAt(now)),
+                // As of the snapshot, not of now: otherwise the age is counted as lag.
+                Duration(vm.LagAt(capturedAt ?? now)),
                 Bytes(vm.PendingBytes),
                 vm.Health));
         }
