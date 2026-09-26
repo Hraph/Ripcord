@@ -47,6 +47,10 @@ public static class PublisherSteps
         "this host has no Hyper-V Administrators group (S-1-5-32-578): the publishing service "
         + "could not read Hyper-V. Is the Hyper-V role installed?";
 
+    public static string MembershipUnreadable(string group) =>
+        $"whether {Publisher.Account} is in '{group}' could not be read: run "
+        + $"net localgroup \"{group}\" as an administrator to see why";
+
     public static IEnumerable<DeploymentStep> Create(DesiredDeployment desired, ObservedPublisher observed)
     {
         ArgumentNullException.ThrowIfNull(desired);
@@ -155,7 +159,7 @@ public static class PublisherSteps
                 $"Start the '{Publisher.Name}' service",
                 "a publisher that is not running leaves the peer a stale snapshot");
         }
-        else if (observed.InHyperVAdministrators != true)
+        else if (observed.InHyperVAdministrators == false)
         {
             yield return Step(
                 DeploymentAction.RestartService,

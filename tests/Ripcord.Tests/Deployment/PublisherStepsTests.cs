@@ -116,6 +116,23 @@ public class PublisherStepsTests
             ListenerInPlace with { Publisher = DeploymentPlanTests.PublisherInPlace(Binary, NamespaceGrant.Unmodifiable) })));
     }
 
+    /// Unreadable membership is neither answer: the plan stops and says how to look, instead of
+    /// adding it and restarting a running publisher on every run.
+    [Fact]
+    public void An_unreadable_membership_blocks_install_and_changes_nothing()
+    {
+        DeploymentPlan plan = DeploymentPlan.For(
+            Desired,
+            ListenerInPlace with
+            {
+                Publisher = DeploymentPlanTests.PublisherInPlace(Binary, NamespaceGrant.Granted) with { InHyperVAdministrators = null },
+            });
+
+        Assert.True(plan.IsBlocked);
+        Assert.Empty(plan.Steps);
+        Assert.Contains("net localgroup", plan.BlockedBy, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void A_host_with_no_hyper_v_administrators_group_is_refused_before_anything()
     {

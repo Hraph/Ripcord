@@ -219,9 +219,16 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
 
         ObservedPublisher publisher = observed.Publisher;
 
-        if (publisher.HyperVAdministrators is null)
+        if (publisher.HyperVAdministrators is not { } group)
         {
             return new DeploymentPlan([], PublisherSteps.NoHyperVAdministrators);
+        }
+
+        // Never guessed either way: "not a member" would add it and restart it on every run, and
+        // "a member" would leave a publisher that cannot read Hyper-V called correct.
+        if (publisher.Service.Installed && publisher.InHyperVAdministrators is null)
+        {
+            return new DeploymentPlan([], PublisherSteps.MembershipUnreadable(group));
         }
 
         List<DeploymentStep> steps = [];
