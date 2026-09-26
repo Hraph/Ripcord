@@ -9,7 +9,7 @@ half-updated pair depends on.
 
 A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binary.
 
-## Unreleased
+## 0.9.0 — 2026-09-26
 
 ### Changed
 
@@ -17,6 +17,9 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
   with the download's percentage (megabytes when the server gives no size), erased once the
   result is printed. Redirected to a file, nothing is drawn. The closing `done:` list is gone,
   and a failed step's description no longer appears twice in the failure message.
+- **services.msc names and describes both services**, as *Ripcord listener* and *Ripcord
+  publisher*, each with one line on what it does and what stopping it costs. A host installed
+  before this gets them on its next `service install`.
 
 ## 0.8.0 — 2026-09-26
 
