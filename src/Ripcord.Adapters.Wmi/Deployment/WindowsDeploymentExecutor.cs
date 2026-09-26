@@ -252,7 +252,7 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
 
         // icacls cannot grant on a path that does not exist, and a host being deployed for
         // the first time may have no snapshot folder until the first `ripcord status` writes one.
-        if (change.Action == DeploymentAction.GrantSnapshotAccess)
+        if (change.Action is DeploymentAction.GrantSnapshotAccess or DeploymentAction.GrantSnapshotWriteAccess)
         {
             Directory.CreateDirectory(desired.SnapshotFolder);
         }
@@ -260,11 +260,6 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         if (change.Action == DeploymentAction.GrantLogsAccess)
         {
             Directory.CreateDirectory(LogsOf(change, desired));
-        }
-
-        if (change.Action == DeploymentAction.GrantSnapshotWriteAccess)
-        {
-            Directory.CreateDirectory(desired.SnapshotFolder);
         }
 
         if (change.Action is DeploymentAction.GrantEncryptionNamespaceAccess

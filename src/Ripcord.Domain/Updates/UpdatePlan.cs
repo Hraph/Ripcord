@@ -83,7 +83,7 @@ public sealed record UpdatePlan(
     /// The command first, so no console width splits it.
     public const string PreviousStillRunning =
         "run 'ripcord service restart' first, then this again. The binary the last update "
-        + "set aside (ripcord.exe.old) is still running - the listener service, not "
+        + "set aside (ripcord.exe.old) is still running - a Ripcord service not "
         + "restarted since that update - and Windows will not replace a running binary";
 
     private static IReadOnlyList<UpdateStep> Sequence() =>

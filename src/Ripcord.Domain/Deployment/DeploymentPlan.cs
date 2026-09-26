@@ -2,14 +2,15 @@ using Ripcord.Domain.Configuration;
 
 namespace Ripcord.Domain.Deployment;
 
-/// What the listener needs on this host, taken from the configuration.
+/// What both services need on this host, taken from the configuration.
 public sealed record DesiredDeployment(
     string BinaryPath,
     string SnapshotPath,
     int Port,
     string PeerAddress,
 
-    /// The only folder the service account may write to: the listener's log goes there.
+    /// The listener's log folder, and the only one its account may write to. The publisher's is
+    /// `PublisherLogsFolder`, below it and closed to the listener.
     string LogsFolder,
 
     /// `listener.enabled`. Off, there is nothing to install, but a service installed earlier
@@ -32,8 +33,8 @@ public sealed record DesiredDeployment(
     /// An inheritable entry on the folder covers whatever lands in it, including the file
     /// that does not exist yet on a host being deployed for the first time.
     ///
-    /// Never empty for a deployment that exists: the validator refuses an enabled listener
-    /// whose snapshot path names no folder, and a disabled one is never deployed at all.
+    /// Never empty for a deployment that exists: the snapshot is always `state\state.json`
+    /// beside `ripcord.yaml`.
     ///
     /// It used to fall back to the snapshot path itself, which read as harmless and was not —
     /// the executor creates this folder, so a bare `state.json` had a *directory* created
@@ -192,9 +193,7 @@ public sealed record DeploymentStep(
 /// then holds no step, so nothing is half-applied.
 public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string? BlockedBy = null)
 {
-    private static readonly string ServiceName = RipcordService.Listener.Name;
 
-    private static readonly string ServiceAccount = RipcordService.Listener.Account;
 
     public const string FirewallRuleName = "Ripcord listener";
 
@@ -245,7 +244,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
             steps.Add(new DeploymentStep(
                 RipcordService.Listener,
                 DeploymentAction.CreateService,
-                $"Create the '{ServiceName}' service running '{desired.BinaryPath} serve' "
+                $"Create the '{ServiceName}' service running '{desired.BinaryPath} {Listener.Verb}' "
                 + $"as {ServiceAccount}",
                 "no service is installed on this host"));
 
@@ -257,7 +256,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
             update = new DeploymentStep(
                 RipcordService.Listener,
                 DeploymentAction.UpdateService,
-                $"Point the '{ServiceName}' service at '{desired.BinaryPath} serve'",
+                $"Point the '{ServiceName}' service at '{desired.BinaryPath} {Listener.Verb}'",
                 $"it currently runs '{observed.ServiceBinaryPath}'");
         }
         else if (!observed.ServiceRunning)
@@ -314,7 +313,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
                 RipcordService.Listener,
                 DeploymentAction.GrantSnapshotAccess,
                 $"Grant {ServiceAccount} read access to '{desired.SnapshotFolder}'",
-                $"that folder holds {SnapshotFileName(desired)}, "
+                $"that folder holds {ListenerSettings.DefaultSnapshotFileName}, "
                 + ListenerSettings.SnapshotMeaning));
         }
 
@@ -559,14 +558,13 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
         "the listener is disabled in ripcord.yaml (listener.enabled: false). Set it to true "
         + "to install the listener, or run 'ripcord service remove' to take it off this host.";
 
-    private static string SnapshotFileName(DesiredDeployment desired)
-    {
-        string folder = desired.SnapshotFolder;
-        return folder.Length == 0 ? desired.SnapshotPath : desired.SnapshotPath[folder.Length..]
-            .TrimStart('\\', '/');
-    }
+    private static RipcordService Listener => RipcordService.Listener;
+
+    private static string ServiceName => Listener.Name;
+
+    private static string ServiceAccount => Listener.Account;
 
     /// Windows paths and addresses are case-insensitive; a difference in case is not a change.
-    private static bool SamePath(string? left, string? right) =>
+    internal static bool SamePath(string? left, string? right) =>
         string.Equals(left?.Trim(), right?.Trim(), StringComparison.OrdinalIgnoreCase);
 }

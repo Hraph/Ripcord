@@ -80,7 +80,7 @@ the local-only view rather than failing. Needs both certificate thumbprints; the
 thumbprint on both ends is refused, because it would authenticate a host to itself, and so are
 the samples' two placeholders, by name, unless `enabled: false`. `ripcord service` shows the
 thumbprint to use.
-The snapshot `ripcord status` writes and the listener serves to the peer is always
+The snapshot the publishing service writes and the listener serves to the peer is always
 `state\state.json` beside `ripcord.yaml`: not configurable, so nothing that writes it is ever
 granted anything beside `ripcord.exe`. A `snapshot_path` line is ignored, with a note.
 

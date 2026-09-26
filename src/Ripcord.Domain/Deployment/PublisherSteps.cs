@@ -148,7 +148,7 @@ public static class PublisherSteps
 
         ObservedService service = observed.Service;
 
-        if (service.Installed && !SamePath(service.BinaryPath, desired.BinaryPath))
+        if (service.Installed && !DeploymentPlan.SamePath(service.BinaryPath, desired.BinaryPath))
         {
             yield return Step(
                 DeploymentAction.UpdateService,
@@ -250,7 +250,4 @@ public static class PublisherSteps
     private static DeploymentStep Step(
         DeploymentAction action, string description, string reason, string? target = null) =>
         new(Publisher, action, description, reason, target);
-
-    private static bool SamePath(string? left, string? right) =>
-        string.Equals(left?.Trim(), right?.Trim(), StringComparison.OrdinalIgnoreCase);
 }
