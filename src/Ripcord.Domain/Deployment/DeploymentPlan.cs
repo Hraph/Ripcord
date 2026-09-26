@@ -97,7 +97,11 @@ public sealed record ObservedDeployment(
     ObservedPublisher? Publisher = null,
 
     /// Whether Windows restarts the listener after a crash (`ServiceRecovery`).
-    bool ListenerRecovers = false)
+    bool ListenerRecovers = false,
+
+    /// The running listener recorded another build than the binary on disk: `ripcord update`
+    /// replaced the file, not the process.
+    bool ListenerOutdated = false)
 {
     public static ObservedDeployment Nothing { get; } =
         new(false, null, false, null, null, false);
@@ -222,6 +226,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
 
         // Set when the service will need starting, and acted on last — see below.
         string? start = null;
+        string? restart = null;
         DeploymentStep? update = null;
 
         // Order matters: the service exists before the port is opened, so the port is never
@@ -250,6 +255,10 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
             // stopped. Re-running the command is then what starts it, which is what an
             // operator expects of a command that reconciles.
             start = "it is installed and not running";
+        }
+        else if (observed.ListenerOutdated)
+        {
+            restart = OutdatedBuild;
         }
 
         if (!observed.ListenerRecovers)
@@ -338,6 +347,12 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
                 DeploymentAction.StartService, $"Start the '{ServiceName}' service", start));
         }
 
+        if (restart is not null)
+        {
+            steps.Add(new DeploymentStep(
+                DeploymentAction.RestartService, $"Restart the '{ServiceName}' service", restart));
+        }
+
         // After the listener: a publisher that fails to start still leaves something served.
         steps.AddRange(PublisherSteps.Starts(desired, publisher));
 
@@ -346,6 +361,9 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
 
         return new DeploymentPlan(steps);
     }
+
+    /// After `ripcord update`: the file on disk is new, the process is not until it restarts.
+    public const string OutdatedBuild = "it still runs the build from before the binary was replaced";
 
     /// Folders an earlier deployment granted and this one does not use: the old binary's folder
     /// and its `logs`, once the service moved. Never the current install folder, which the

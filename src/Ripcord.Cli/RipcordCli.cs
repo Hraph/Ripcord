@@ -1240,7 +1240,10 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         options = options with { Remove = removing };
 
-        ListenerDeployment deployment = new(ports.ConfigStore, ports.DeploymentExecutor);
+        ListenerDeployment deployment = new(
+            ports.ConfigStore,
+            ports.DeploymentExecutor,
+            new DeploymentBuild(ports.LogReader, BuildInfo.VersionWithCommit));
 
         DeploymentOutcome outcome = deployment.Plan(new DeploymentRequest(
             options.ConfigurationPath ?? environment.DefaultConfigurationPath,

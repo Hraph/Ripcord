@@ -25,7 +25,10 @@ public sealed record ObservedPublisher(
     string? EncryptionNote,
 
     /// Whether Windows restarts it after a crash (`ServiceRecovery`).
-    bool Recovers = false)
+    bool Recovers = false,
+
+    /// Running another build than the binary on disk, as its process record says.
+    bool Outdated = false)
 {
     public static ObservedPublisher Nothing { get; } = new(
         ObservedService.Absent, false, false, false, false, false, "Hyper-V Administrators", false, NamespaceGrant.Missing, null);
@@ -156,6 +159,13 @@ public static class PublisherSteps
                 DeploymentAction.RestartService,
                 $"Restart the '{Publisher.Name}' service",
                 "it was just added to the group, which it sees only from its next start");
+        }
+        else if (observed.Outdated)
+        {
+            yield return Step(
+                DeploymentAction.RestartService,
+                $"Restart the '{Publisher.Name}' service",
+                DeploymentPlan.OutdatedBuild);
         }
     }
 

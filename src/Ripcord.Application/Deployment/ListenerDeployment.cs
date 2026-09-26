@@ -3,6 +3,7 @@ using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Deployment;
 using Ripcord.Ports.Configuration;
 using Ripcord.Ports.Deployment;
+using Ripcord.Ports.Diagnostics;
 
 namespace Ripcord.Application.Deployment;
 
@@ -22,9 +23,14 @@ public sealed record DeploymentOutcome(
     /// running" should not have to read a plan backwards to find out.
     ObservedDeployment? Observed = null);
 
+/// What tells a running service's build from the binary on disk: its process record, and
+/// this command's own build. Without it, an outdated service is not looked for.
+public sealed record DeploymentBuild(IDiagnosticLogReader LogReader, string ThisBuild);
+
 /// Works out what deploying the listener on this host would change. Deciding is separate from
 /// doing on purpose: `--dry-run` runs exactly this and stops.
-public sealed class ListenerDeployment(IConfigStore configStore, IDeploymentExecutor executor)
+public sealed class ListenerDeployment(
+    IConfigStore configStore, IDeploymentExecutor executor, DeploymentBuild? build = null)
 {
     /// `service` is the reading the caller already made, if it made one.
     public DeploymentOutcome Plan(DeploymentRequest request, ObservedService? service = null)
@@ -51,8 +57,9 @@ public sealed class ListenerDeployment(IConfigStore configStore, IDeploymentExec
 
         try
         {
-            ObservedDeployment observed =
-                executor.Observe(desired, service ?? executor.ObserveService(RipcordService.Listener));
+            ObservedService listener = service ?? executor.ObserveService(RipcordService.Listener);
+            ObservedDeployment observed = this.Outdated(
+                executor.Observe(desired, listener), listener, desired, request.BinaryPath);
 
             return new DeploymentOutcome(
                 ExitCode.Success,
@@ -67,6 +74,31 @@ public sealed class ListenerDeployment(IConfigStore configStore, IDeploymentExec
             return new DeploymentOutcome(
                 ExitCode.LocalAccessFailure, null, desired, [], exception.Message);
         }
+    }
+
+    private ObservedDeployment Outdated(
+        ObservedDeployment observed, ObservedService listener, DesiredDeployment desired, string binaryPath)
+    {
+        if (build is null)
+        {
+            return observed;
+        }
+
+        ObservedPublisher publisher = observed.PublisherOrNothing;
+
+        return observed with
+        {
+            ListenerOutdated = Judge(listener, desired.LogsFolder, RipcordService.Listener),
+            Publisher = publisher with
+            {
+                Outdated = Judge(publisher.Service, desired.PublisherLogsFolder, RipcordService.Publisher),
+            },
+        };
+
+        bool Judge(ObservedService running, string logsFolder, RipcordService which) =>
+            ServiceProcessReading.Judge(
+                build.LogReader, running, logsFolder, build.ThisBuild, binaryPath, which)
+            is { Outdated: true };
     }
 
     /// Applied in order, stopping at the first failure: a half-applied plan is reported as
