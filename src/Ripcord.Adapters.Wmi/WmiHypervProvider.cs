@@ -221,17 +221,31 @@ public sealed class WmiHypervProvider(
 
         Dictionary<string, string> switches = ReadSwitches(session, options);
 
+        // One per host: read once for every VM, and only when one needs it. A failure is kept
+        // and rethrown to each VM, where it degrades that VM's pending volume alone.
+        Lazy<CimInstance> service = new(() => ReplicationService(session, options));
+
         List<VmReplicationState> vms = [];
 
-        foreach (CimInstance instance in session.QueryInstances(
-            Namespace, "WQL", ComputerSystemQuery, options))
+        try
         {
-            using (instance)
+            foreach (CimInstance instance in session.QueryInstances(
+                Namespace, "WQL", ComputerSystemQuery, options))
             {
-                if (CimTranslation.IsVirtualMachine(CimValues.Instant(instance, "InstallDate")))
+                using (instance)
                 {
-                    vms.Add(this.ReadVm(session, instance, switches, options));
+                    if (CimTranslation.IsVirtualMachine(CimValues.Instant(instance, "InstallDate")))
+                    {
+                        vms.Add(this.ReadVm(session, instance, switches, service, options));
+                    }
                 }
+            }
+        }
+        finally
+        {
+            if (service.IsValueCreated)
+            {
+                service.Value.Dispose();
             }
         }
 
@@ -250,6 +264,7 @@ public sealed class WmiHypervProvider(
         CimSession session,
         CimInstance vm,
         IReadOnlyDictionary<string, string> switches,
+        Lazy<CimInstance> service,
         CimOperationOptions options)
     {
         using CimInstance? relationship = ReadRelationship(session, vm, options);
@@ -260,7 +275,7 @@ public sealed class WmiHypervProvider(
             CimReplicationValues.State(CimValues.Number(relationship, "ReplicationState")),
             CimReplicationValues.Health(CimValues.Number(relationship, "ReplicationHealth")),
             CimTranslation.Instant(CimValues.Instant(relationship, "LastReplicationTime")),
-            this.ReadPendingBytes(session, vm, relationship, options),
+            this.ReadPendingBytes(session, vm, relationship, service, options),
             WmiVmInventory.Read(session, vm, relationship, switches, options),
 
             // EnabledState is on the computer system, not the relationship: it describes the
@@ -313,6 +328,7 @@ public sealed class WmiHypervProvider(
         CimSession session,
         CimInstance vm,
         CimInstance? relationship,
+        Lazy<CimInstance> service,
         CimOperationOptions options)
     {
         if (relationship is null)
@@ -334,10 +350,8 @@ public sealed class WmiHypervProvider(
                     CimFlags.In),
             ];
 
-            using CimInstance service = ReplicationService(session, options);
-
             using CimMethodResult result = session.InvokeMethod(
-                Namespace, service, "GetReplicationStatisticsEx", parameters, options);
+                Namespace, service.Value, "GetReplicationStatisticsEx", parameters, options);
 
             uint returned =
                 Convert.ToUInt32(result.ReturnValue.Value, CultureInfo.InvariantCulture);
