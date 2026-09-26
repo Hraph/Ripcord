@@ -965,7 +965,7 @@ public class RipcordCliTests
             binaryPath: ProgramFilesBinary);
 
         // On a console the typed answer ends the prompt's line; here nothing does.
-        string output = run.Output.Replace("[n] >   ", "\n", StringComparison.Ordinal);
+        string output = run.Output.ReplaceLineEndings("\n").Replace("[n] >   ", "\n", StringComparison.Ordinal);
 
         Assert.Contains("done: Create the 'ripcord' service", output, StringComparison.Ordinal);
         Assert.All(output.Split('\n'), line => Assert.True(line.Length <= 75, line));
