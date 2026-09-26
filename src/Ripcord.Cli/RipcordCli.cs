@@ -225,6 +225,10 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
                 return await this.ServeAsync(args[1..], error, cancellationToken)
                     .ConfigureAwait(false);
 
+            case "publish":
+                return await this.PublishAsync(args[1..], output, error, cancellationToken)
+                    .ConfigureAwait(false);
+
             case "dashboard":
                 return await this.DashboardAsync(args[1..], output, error, cancellationToken)
                     .ConfigureAwait(false);
@@ -739,6 +743,55 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             .ConfigureAwait(false);
 
         return ExitCode.Success;
+    }
+
+    /// This host's snapshot, published once: what the publishing service does every fifteen
+    /// seconds, runnable by hand to see why it does not. Writes Ripcord's own file only.
+    private async Task<ExitCode> PublishAsync(
+        string[] args, TextWriter output, TextWriter error, CancellationToken cancellationToken)
+    {
+        if (!this.TryReadConfigurationPath(args, out string path, out string? optionError))
+        {
+            error.WriteLine($"ripcord: {optionError}");
+            return ExitCode.InvalidConfiguration;
+        }
+
+        ConfigurationValidation validation = ConfigurationGate.Open(
+            ports.ConfigStore, path, environment.MachineName);
+
+        if (validation.Configuration is not { } configuration)
+        {
+            this.WriteFailure(error, new StatusOutcome(
+                ExitCode.InvalidConfiguration, null, validation.Errors, null, []));
+            return ExitCode.InvalidConfiguration;
+        }
+
+        Publication publication = await this.Pair()
+            .PublishAsync(configuration, cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (string note in publication.Notes)
+        {
+            error.WriteLine($"ripcord: {note}");
+        }
+
+        switch (publication.Kind)
+        {
+            case PublicationKind.Published:
+                output.WriteLine(
+                    $"Published at {publication.At.UtcDateTime:HH:mm:ss} UTC to");
+                output.WriteLine($"  {publication.Path}");
+                return ExitCode.Success;
+            case PublicationKind.ListenerDisabled:
+                error.WriteLine("ripcord: the listener is disabled on this node, nothing to publish.");
+                return ExitCode.Success;
+            default:
+                this.Refuse(error, publication.Kind == PublicationKind.NotRead
+                    ? "ripcord: this host could not be read, nothing was published."
+                    : "ripcord: the snapshot could not be written.");
+                WriteWrapped(error, publication.Reason ?? "no reason given");
+                return ExitCode.LocalAccessFailure;
+        }
     }
 
     /// Mutating, so it obeys both rules at once: `--dry-run` shows the plan and stops, and
@@ -2293,6 +2346,7 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         writer.WriteLine("                                     themselves — run it first when a");
         writer.WriteLine("                                     failed-over host comes back");
         writer.WriteLine("  ripcord serve [--config <path>]    run the read-only pair listener");
+        writer.WriteLine("  ripcord publish [--config <path>]  publish this host's snapshot once");
         writer.WriteLine("  ripcord dashboard [--config <path>]");
         writer.WriteLine("                                     serve the read-only page on");
         writer.WriteLine("                                     127.0.0.1 (off unless the");
