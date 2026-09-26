@@ -115,6 +115,26 @@ public class SnapshotWireFormatTests
         Assert.Equal("vSwitch-PROD", read.State.Vms[0].Facts!.Adapters[0].SwitchName);
     }
 
+    /// A BitLocker state carried from an earlier read keeps its date across the wire, and a
+    /// reader that predates the field sees the volume as before.
+    [Fact]
+    public void A_carried_bitlocker_date_survives_the_round_trip()
+    {
+        DateTimeOffset read = Now.AddHours(-3);
+        HostSnapshot original = new(
+            Now,
+            new HostState(
+                "HV-PRIMARY-01",
+                [],
+                HostReachability.Reachable(),
+                new HostFacts(12288, [new HostVolume("D:", 1, 2, true, true, read)], null)));
+
+        HostSnapshot? back = SnapshotWireFormat.Read(SnapshotWireFormat.Write(original));
+
+        Assert.Equal(read, back!.State.Facts!.Volume("D:")!.BitLockerReadAt);
+        Assert.Contains("\"schema_version\":2", SnapshotWireFormat.Write(original), StringComparison.Ordinal);
+    }
+
     /// A host still on the milestone 1b binary publishes schema 1. Its state is read, its
     /// facts are absent, and `check` reports the rules that needed them as unevaluable —
     /// refusing the payload outright would blind the pair view during a rolling update.

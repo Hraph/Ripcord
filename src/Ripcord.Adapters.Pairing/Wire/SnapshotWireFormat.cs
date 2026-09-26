@@ -339,6 +339,9 @@ internal sealed record VolumePayload
 
     public bool? IsAutoUnlockEnabled { get; init; }
 
+    /// Optional, so an older reader ignores it and the wire version stays where it is (D54).
+    public DateTimeOffset? BitLockerReadAt { get; init; }
+
     public static VolumePayload From(HostVolume volume) => new()
     {
         Name = volume.Name,
@@ -346,6 +349,7 @@ internal sealed record VolumePayload
         TotalBytes = volume.TotalBytes,
         IsBitLockerProtected = volume.IsBitLockerProtected,
         IsAutoUnlockEnabled = volume.IsAutoUnlockEnabled,
+        BitLockerReadAt = volume.BitLockerReadAt,
     };
 
     public HostVolume ToVolume() =>
@@ -354,7 +358,8 @@ internal sealed record VolumePayload
             this.FreeBytes,
             this.TotalBytes,
             this.IsBitLockerProtected,
-            this.IsAutoUnlockEnabled);
+            this.IsAutoUnlockEnabled,
+            this.BitLockerReadAt);
 }
 
 internal sealed record CertificatePayload

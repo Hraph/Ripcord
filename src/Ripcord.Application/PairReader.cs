@@ -107,25 +107,63 @@ public sealed class PairReader(
         }
     }
 
+    /// This host alone, published: what the publishing service does every fifteen seconds and
+    /// `ripcord publish` does once. Never the peer — nothing here is about the other host.
+    public async Task<Publication> PublishAsync(
+        RipcordConfiguration configuration, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        string path = configuration.Listener.SnapshotPath;
+
+        if (!configuration.Listener.Enabled)
+        {
+            return new Publication(PublicationKind.ListenerDisabled, path, clock.UtcNow, null, []);
+        }
+
+        LocalRead local = await localState
+            .ReadAsync(configuration, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (local.State is not { } state)
+        {
+            return new Publication(
+                PublicationKind.NotRead, path, clock.UtcNow, local.FailureMessage, local.Notes);
+        }
+
+        return this.Publish(state, configuration) is { } failure
+            ? new Publication(PublicationKind.NotWritten, path, clock.UtcNow, failure, local.Notes)
+            : new Publication(PublicationKind.Published, path, clock.UtcNow, null, local.Notes);
+    }
+
     /// A snapshot this host cannot publish is not a reason to fail the command: both callers
     /// are reads, and the peer simply keeps seeing the previous snapshot until this is fixed.
     /// It is the one write in an otherwise read-only command, and it touches nothing but
-    /// Ripcord's own file.
-    private void Publish(HostState local, RipcordConfiguration configuration)
+    /// Ripcord's own file. Null when published, the reason otherwise.
+    private string? Publish(HostState local, RipcordConfiguration configuration)
     {
         if (!configuration.Listener.Enabled)
         {
-            return;
+            return null;
         }
 
         try
         {
+            string path = configuration.Listener.SnapshotPath;
+
+            // What this read could not see, taken from the last snapshot, dated: the publishing
+            // service may not be allowed to read BitLocker where an administrator was.
+            HostState published = snapshotStore.Read(path) is { State.Facts: { } before } previous
+                && local.Facts is { } facts
+                    ? local with { Facts = facts.WithBitLockerFrom(before, previous.CapturedAt) }
+                    : local;
+
             // The snapshot names the binary that wrote it. The peer needs that before it will
             // move production: a sequence spanning two hosts executed half by each version is
             // the error class that cannot be recovered from at 3 a.m.
-            snapshotStore.Write(
-                configuration.Listener.SnapshotPath,
-                new HostSnapshot(clock.UtcNow, local, localBuild));
+            snapshotStore.Write(path, new HostSnapshot(clock.UtcNow, published, localBuild));
+
+            return null;
         }
         catch (Exception exception) when (
             exception is IOException or UnauthorizedAccessException or ArgumentException)
@@ -135,6 +173,8 @@ public sealed class PairReader(
             // why the other one has been calling it stale for a week.
             diagnostics.Write(DiagnosticEntry.Of(
                 "snapshot", "this host could not publish its snapshot", exception.ToString()));
+
+            return exception.Message;
         }
     }
 

@@ -27,6 +27,17 @@ public sealed record HostFacts(
     private static string DriveOf(string name) =>
         name.TrimEnd('\\', '/').ToUpperInvariant();
 
+    /// These facts, with the BitLocker state an earlier snapshot of this host held wherever this
+    /// read could not see it.
+    public HostFacts WithBitLockerFrom(HostFacts? previous, DateTimeOffset previousCapturedAt) =>
+        previous is null
+            ? this
+            : this with
+            {
+                Volumes = [.. this.Volumes.Select(volume =>
+                    volume.WithBitLockerFrom(previous.Volume(volume.Name), previousCapturedAt))],
+            };
+
     public bool Equals(HostFacts? other) =>
         other is not null
         && this.PhysicalRamMb == other.PhysicalRamMb
@@ -45,12 +56,28 @@ public sealed record HostFacts(
 
 /// One volume. `IsBitLockerProtected` and `IsAutoUnlockEnabled` are null when the encryption
 /// namespace could not be read — which is not "unencrypted", and must not read as it.
+/// `BitLockerReadAt` is set when those two were carried from an earlier read rather than read
+/// now: the publishing service may not be allowed to read them, an administrator was.
 public sealed record HostVolume(
     string Name,
     long? FreeBytes,
     long? TotalBytes,
     bool? IsBitLockerProtected,
-    bool? IsAutoUnlockEnabled);
+    bool? IsAutoUnlockEnabled,
+    DateTimeOffset? BitLockerReadAt = null)
+{
+    /// The BitLocker state of `previous` where this read has none, dated from when it was
+    /// read. Nothing is carried onto a volume read now, nor invented where none was ever read.
+    public HostVolume WithBitLockerFrom(HostVolume? previous, DateTimeOffset previousCapturedAt) =>
+        this.IsBitLockerProtected is null && previous?.IsBitLockerProtected is { } isProtected
+            ? this with
+            {
+                IsBitLockerProtected = isProtected,
+                IsAutoUnlockEnabled = previous.IsAutoUnlockEnabled,
+                BitLockerReadAt = previous.BitLockerReadAt ?? previousCapturedAt,
+            }
+            : this;
+}
 
 /// The host's own listener certificate, found by thumbprint (decision D6). The CN is carried
 /// alongside so the consistency check the configuration implies can still be made.

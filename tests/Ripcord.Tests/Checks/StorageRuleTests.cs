@@ -170,6 +170,22 @@ public class StorageRuleTests
         Assert.Contains("recovery key", finding.Implication);
     }
 
+    /// Carried from an administrator's earlier read by the publishing service: the finding
+    /// says when it was true, not that it is true now.
+    [Fact]
+    public void A_carried_bitlocker_state_is_dated_in_the_finding()
+    {
+        Finding finding = Assert.Single(Report(
+            Pairs.Healthy(Now).WithVolume(volume => volume with
+            {
+                IsAutoUnlockEnabled = false,
+                BitLockerReadAt = new DateTimeOffset(2026, 9, 13, 9, 30, 0, TimeSpan.Zero),
+            }))
+            .For(CheckRules.TargetBitlockerWithoutAutounlock));
+
+        Assert.Contains("as read 2026-09-13 09:30 UTC", finding.Observed, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Bitlocker_with_auto_unlock_produces_no_finding()
     {

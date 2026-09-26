@@ -165,7 +165,10 @@ internal static class StorageRules
                 CheckRules.TargetBitlockerWithoutAutounlock,
                 null,
                 $"{volume.Name} on {subject.Target.HostName} is BitLocker-protected "
-                + "without auto-unlock",
+                + "without auto-unlock"
+                + (volume.BitLockerReadAt is { } read
+                    ? $", as read {read.UtcDateTime:yyyy-MM-dd HH:mm} UTC"
+                    : ""),
                 "after a reboot of the target the volume holding the replicas stays locked: "
                 + "nothing starts until a recovery key is typed at the console",
                 $"Enable-BitLockerAutoUnlock -MountPoint {volume.Name} on "
