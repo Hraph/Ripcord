@@ -41,6 +41,21 @@ public static class AccessControl
             && !rights.Contains("(I)", StringComparison.OrdinalIgnoreCase));
     }
 
+    /// An entry of the account's own that reaches below the folder: inherited by subfolders, or
+    /// by the files in them. `(OI)(NP)` stops at the folder's own files; `(OI)(CI)` does not.
+    public static bool GrantsExplicitlyBelow(string? icaclsOutput, string account)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+
+        return (icaclsOutput ?? "").Split('\n').Any(line =>
+            Entry(line, account) is { } rights
+            && !rights.Contains(Deny, StringComparison.OrdinalIgnoreCase)
+            && !rights.Contains("(I)", StringComparison.OrdinalIgnoreCase)
+            && !rights.Contains("(NP)", StringComparison.OrdinalIgnoreCase)
+            && (rights.Contains("(CI)", StringComparison.OrdinalIgnoreCase)
+                || rights.Contains("(OI)", StringComparison.OrdinalIgnoreCase)));
+    }
+
     /// `icacls "<folder>\*"` lists every file, each block opening at column 0 with the path as
     /// `<folder>\<name>`. The files that give this account an entry of its own. Only a block
     /// under `folder` counts, so a path printed in another form is left out rather than taken

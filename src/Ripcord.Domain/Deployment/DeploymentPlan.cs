@@ -101,7 +101,11 @@ public sealed record ObservedDeployment(
 
     /// The running listener recorded another build than the binary on disk: `ripcord update`
     /// replaced the file, not the process.
-    bool ListenerOutdated = false)
+    bool ListenerOutdated = false,
+
+    /// The listener's own entry on the install folder reaches below it: the `(OI)(CI)(R)`
+    /// 0.7.0 set when the snapshot lived there, readable down to `logs` and the audit trail.
+    bool InstallFolderGrantBroad = false)
 {
     public static ObservedDeployment Nothing { get; } =
         new(false, null, false, null, null, false);
@@ -162,6 +166,9 @@ public enum DeploymentAction
 
     /// Windows restarts the service after a crash. Deleting the service takes it with it.
     ConfigureRecovery,
+
+    /// Replaces the listener's broad read on the install folder with the configuration grant.
+    NarrowConfigurationAccess,
 }
 
 /// One change, and why it is needed. The reason is what `--dry-run` prints, so it is written
@@ -392,6 +399,16 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
 
     private static IEnumerable<DeploymentStep> Stale(DesiredDeployment desired, ObservedDeployment observed)
     {
+        // After the restart that moved the listener to `state\`: nothing it serves is left there.
+        if (observed.InstallFolderGrantBroad)
+        {
+            yield return new DeploymentStep(
+                DeploymentAction.NarrowConfigurationAccess,
+                $"Narrow {ServiceAccount}'s access to '{desired.InstallFolder}' to its own files",
+                "it reads ripcord.yaml there; the snapshot moved to state\\, and the rest of the "
+                    + "folder is none of its business");
+        }
+
         // Without the current key found, which one is current cannot be told: none is taken.
         foreach (string key in observed.KeyFile is null ? [] : observed.KeyFilesGranted ?? [])
         {

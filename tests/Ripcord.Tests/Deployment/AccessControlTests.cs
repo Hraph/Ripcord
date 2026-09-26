@@ -164,4 +164,16 @@ public class AccessControlTests
             ["D:\\Program Data\\Keys\\aaa_guid"],
             AccessControl.FilesGrantingExplicitly(Output, "D:\\Program Data\\Keys\\", Account));
     }
+
+    /// 0.7.0's snapshot grant reached every file below the install folder; the configuration
+    /// grant stops at the folder's own files. Only the account's own entries count.
+    [Theory]
+    [InlineData("C:\\Ripcord NT SERVICE\\ripcord:(OI)(CI)(R)\n", true)]
+    [InlineData("C:\\Ripcord NT SERVICE\\ripcord:(CI)(R)\n", true)]
+    [InlineData("C:\\Ripcord NT SERVICE\\ripcord:(OI)(NP)(R)\n", false)]
+    [InlineData("C:\\Ripcord NT SERVICE\\ripcord:(R)\n", false)]
+    [InlineData("C:\\Ripcord NT SERVICE\\ripcord:(I)(OI)(CI)(R)\n", false)]
+    [InlineData("C:\\Ripcord NT SERVICE\\ripcord-publish:(OI)(CI)(R)\n", false)]
+    public void A_grant_reaching_below_the_folder_is_told_apart(string output, bool expected) =>
+        Assert.Equal(expected, AccessControl.GrantsExplicitlyBelow(output, Account));
 }

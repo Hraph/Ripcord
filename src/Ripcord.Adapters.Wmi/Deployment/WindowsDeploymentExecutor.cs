@@ -36,6 +36,7 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         bool ruleInstalled = ruleCode == 0;
 
         string? keyFile = KeyFile(desired);
+        string installFolder = Run("icacls", $"\"{desired.InstallFolder}\"").Output;
 
         // Unreadable is reported as not running: the opposite default would leave a stopped
         // listener alone and call the deployment correct. The cost is one redundant `sc start`,
@@ -63,10 +64,11 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             AccessControl.GrantsRead(
                 Run("icacls", $"\"{WindowsPath.Join(desired.InstallFolder, "ripcord.yaml")}\"").Output,
                 RipcordService.Listener.Account),
-            AccessControl.GrantsExplicitly(
-                Run("icacls", $"\"{desired.InstallFolder}\"").Output, RipcordService.Listener.Account),
+            AccessControl.GrantsExplicitly(installFolder, RipcordService.Listener.Account),
             this.ObservePublisher(desired),
-            ServiceRecovery.Restarts(FailureActions(RipcordService.Listener)));
+            ServiceRecovery.Restarts(FailureActions(RipcordService.Listener)),
+            InstallFolderGrantBroad: AccessControl.GrantsExplicitlyBelow(
+                installFolder, RipcordService.Listener.Account));
     }
 
     /// `/c` because without it icacls stops at the first key it cannot read (SYSTEM-only keys,
@@ -429,6 +431,13 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             // moving a new file into place is covered too; nothing in the folders below it.
             DeploymentAction.GrantConfigurationAccess =>
             [
+                ("icacls", $"\"{desired.InstallFolder}\" /grant \"{account}\":(OI)(NP)(R)"),
+            ],
+
+            // Removed then granted narrower, never `/t`: the explicit grants below it stay.
+            DeploymentAction.NarrowConfigurationAccess =>
+            [
+                ("icacls", $"\"{desired.InstallFolder}\" /remove \"{account}\""),
                 ("icacls", $"\"{desired.InstallFolder}\" /grant \"{account}\":(OI)(NP)(R)"),
             ],
 

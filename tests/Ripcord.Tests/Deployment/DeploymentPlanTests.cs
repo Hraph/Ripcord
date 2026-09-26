@@ -89,6 +89,19 @@ public class DeploymentPlanTests
         Assert.DoesNotContain("failureflag", step.Description, StringComparison.Ordinal);
     }
 
+    /// An upgraded host: 0.7.0's broad read is narrowed to the configuration grant, after the
+    /// restart that moves the listener off the install folder, never before.
+    [Fact]
+    public void The_old_broad_install_folder_read_is_narrowed_last()
+    {
+        DeploymentPlan plan = DeploymentPlan.For(
+            Desired, Matching() with { InstallFolderGrantBroad = true, ListenerOutdated = true });
+
+        Assert.Equal(
+            [DeploymentAction.RestartService, DeploymentAction.NarrowConfigurationAccess],
+            Listener(plan));
+    }
+
     /// The registry's SERVICE_FAILURE_ACTIONS: reset, two pointers, count, pointer, then pairs.
     [Fact]
     public void Recovery_is_read_from_the_registry_blob()
