@@ -54,7 +54,7 @@ public sealed class ServiceInspection(
 
         // Where the service writes, not where this command does: the listener logs beside
         // the binary Windows runs, whatever `--config` this run was given.
-        string logsFolder = LogFolder.Beside(service.BinaryPath ?? request.BinaryPath);
+        string logsFolder = RipcordService.Listener.LogsFolderBeside(service.BinaryPath ?? request.BinaryPath);
 
         LogReading? log = null;
 
@@ -101,8 +101,7 @@ public sealed class ServiceInspection(
     {
         RipcordService publisher = RipcordService.Publisher;
         ObservedService service = ServiceReading.Read(executor, publisher);
-        string logsFolder = LogFolder.For(
-            publisher.Origin, LogFolder.Beside(service.BinaryPath ?? request.BinaryPath));
+        string logsFolder = publisher.LogsFolderBeside(service.BinaryPath ?? request.BinaryPath);
 
         LogReading? log = ServiceLog.Candidates(publisher, logsFolder, now)
             .Select(candidate => logReader.Tail(candidate, ServiceLog.ReadLines))
@@ -124,7 +123,7 @@ public sealed class ServiceInspection(
     /// Only known for the folder the configuration's deployment looked at.
     private static bool? LogsWritable(DeploymentOutcome deployment, string logsFolder) =>
         deployment.Desired is { } desired
-        && string.Equals(desired.LogsFolder, logsFolder, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(desired.ListenerLogsFolder, logsFolder, StringComparison.OrdinalIgnoreCase)
             ? deployment.Observed?.LogsWritableByService
             : null;
 }

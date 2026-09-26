@@ -26,8 +26,8 @@ day and per writer, named by the UTC date, and appended to:
 | File | Written by |
 |---|---|
 | `logs\ripcord-YYYY-MM-DD.log` | every command run by hand or by the scheduler |
-| `logs\listener-YYYY-MM-DD.log` | the listener service: a start line with the version and the configuration it read, what `serve` would have printed on a console, and one line per peer connection served or refused |
-| `logs\publish\publish-YYYY-MM-DD.log` | the publishing service: a start line, every change between published and not, one line an hour, the stop; a failure repeated every 15 s is written once an hour. Its own folder, which the listener cannot write |
+| `logs\listener\listener-YYYY-MM-DD.log` | the listener service: a start line with the version and the configuration it read, what `serve` would have printed on a console, and one line per peer connection served or refused. Its own folder, the only one it may write |
+| `logs\publish\publish-YYYY-MM-DD.log` | the publishing service: a start line, every change between published and not, one line an hour, the stop; a failure repeated every 15 s is written once an hour. Its own folder |
 
 The date is UTC on both hosts, so a moment is in the same file name on each of them.
 
@@ -44,9 +44,9 @@ diagnostics:
 and read as the folder holding it, so `D:\Ripcord\ripcord.log` now means `D:\Ripcord`.
 
 **The listener service ignores `path` and `enabled`.** It runs as `NT SERVICE\ripcord`, which
-may write to `logs\` beside the binary and nowhere else — [`service install`](commands/service.md)
-creates that folder and grants it. A service pointed at a folder it cannot write would have no
-log at all. `max_size_mb` applies to both.
+may write to `logs\listener\` beside the binary and nowhere else —
+[`service install`](commands/service.md) creates that folder and grants it. A service pointed at
+a folder it cannot write would have no log at all. `max_size_mb` applies to both.
 
 [`ripcord service`](commands/service.md) reads the listener's log for you: it shows the day's
 file (or yesterday's), its last 20 lines, and what the last run said about how it ended.

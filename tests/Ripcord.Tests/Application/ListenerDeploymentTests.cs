@@ -36,7 +36,7 @@ public class ListenerDeploymentTests
     {
         Files records = new()
         {
-            [@"C:\Ripcord\logs\listener-process.txt"] = [recorded, "4812"],
+            [@"C:\Ripcord\logs\listener\listener-process.txt"] = [recorded, "4812"],
             [@"C:\Ripcord\logs\publish\publisher-process.txt"] = [recorded, "4900"],
         };
 
@@ -51,6 +51,25 @@ public class ListenerDeploymentTests
         Assert.Equal(
             restarted ? 2 : 0,
             outcome.Plan!.Steps.Count(step => step.Action == DeploymentAction.RestartService));
+    }
+
+    /// A 0.9.0 listener recorded its build in `logs` itself: still read, or the update that
+    /// moves it to `logs\listener` would leave it running and writing where it is losing access.
+    [Fact]
+    public void A_listener_recorded_in_the_old_logs_folder_is_restarted_by_install()
+    {
+        Files records = new()
+        {
+            [@"C:\Ripcord\logs\listener-process.txt"] = ["0.9.0+old0000", "4812"],
+        };
+
+        DeploymentOutcome outcome = new ListenerDeployment(
+                new MemoryConfigStore(Ripcord.Ports.Configuration.ConfigurationRead.Succeeded(ValidDocument.Create())),
+                new Deployed(),
+                new DeploymentBuild(records, New))
+            .Plan(new DeploymentRequest(@"C:\Ripcord\ripcord.yaml", ValidDocument.MachineName, Binary, false));
+
+        Assert.True(outcome.Observed!.ListenerOutdated);
     }
 
     /// Without the build to compare against, nothing is looked for: removal and inspection.

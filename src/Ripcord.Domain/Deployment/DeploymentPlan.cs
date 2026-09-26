@@ -9,8 +9,7 @@ public sealed record DesiredDeployment(
     int Port,
     string PeerAddress,
 
-    /// The listener's log folder, and the only one its account may write to. The publisher's is
-    /// `PublisherLogsFolder`, below it and closed to the listener.
+    /// `logs`, where commands write. Each service writes in its own folder below it.
     string LogsFolder,
 
     /// `listener.enabled`. Off, there is nothing to install, but a service installed earlier
@@ -44,6 +43,10 @@ public sealed record DesiredDeployment(
 
     /// Where the binary is, and so `ripcord.yaml`: services run with no `--config`.
     public string InstallFolder => WindowsPath.FolderOf(BinaryPath);
+
+    /// The only folder the listener's account may write to.
+    public string ListenerLogsFolder =>
+        Diagnostics.LogFolder.For(Diagnostics.DiagnosticOrigin.Listener, LogsFolder);
 
     public string PublisherLogsFolder =>
         Diagnostics.LogFolder.For(Diagnostics.DiagnosticOrigin.Publisher, LogsFolder);
@@ -330,12 +333,15 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
                 + ListenerSettings.SnapshotMeaning));
         }
 
-        if (!observed.LogsWritableByService)
+        // With the 0.9.0 grant on `logs` still there, a `logs\listener` the new build created reads
+        // as writable through inheritance alone, which revoking it takes away: granted explicitly.
+        if (!observed.LogsWritableByService
+            || observed.FoldersGranted?.Any(folder => SamePath(folder, desired.LogsFolder)) == true)
         {
             steps.Add(new DeploymentStep(
                 RipcordService.Listener,
                 DeploymentAction.GrantLogsAccess,
-                $"Create '{desired.LogsFolder}' and grant {ServiceAccount} modify access to it",
+                $"Create '{desired.ListenerLogsFolder}' and grant {ServiceAccount} modify access to it",
                 "the listener writes its log there; it may write nowhere else"));
         }
 
@@ -397,15 +403,16 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
     /// After `ripcord update`: the file on disk is new, the process is not until it restarts.
     public const string OutdatedBuild = "it still runs the build from before the binary was replaced";
 
-    /// Folders an earlier deployment granted and this one does not use: the old binary's folder
-    /// and its `logs`, once the service moved. Never the current install folder, which the
-    /// service may need to read `ripcord.yaml` (V55).
+    /// Folders an earlier deployment granted and this one does not use: `logs` itself, where
+    /// the listener wrote before it had a folder of its own, and the old binary's folder and its
+    /// `logs`, once the service moved. Never the current install folder, which the service may
+    /// need to read `ripcord.yaml` (V55).
     public static IReadOnlyList<string> StaleFolderCandidates(
         DesiredDeployment desired, string? serviceBinaryPath)
     {
         ArgumentNullException.ThrowIfNull(desired);
 
-        List<string> candidates = [];
+        List<string> candidates = [desired.LogsFolder];
 
         if (serviceBinaryPath is { Length: > 0 } running && !SamePath(running, desired.BinaryPath))
         {
@@ -414,6 +421,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
             candidates.Add(old);
             candidates.Add(WindowsPath.Join(old, ListenerSettings.SnapshotFolderName));
             candidates.Add(oldLogs);
+            candidates.Add(Diagnostics.LogFolder.For(Diagnostics.DiagnosticOrigin.Listener, oldLogs));
             candidates.Add(Diagnostics.LogFolder.For(Diagnostics.DiagnosticOrigin.Publisher, oldLogs));
         }
 
@@ -421,7 +429,7 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
             .Where(folder => folder.Length > 0
                 && !SamePath(folder, WindowsPath.FolderOf(desired.BinaryPath))
                 && !SamePath(folder, desired.SnapshotFolder)
-                && !SamePath(folder, desired.LogsFolder)
+                && !SamePath(folder, desired.ListenerLogsFolder)
                 && !SamePath(folder, desired.PublisherLogsFolder))
             .Distinct(StringComparer.OrdinalIgnoreCase)];
     }
@@ -475,7 +483,8 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
             $"Remove {service.Account}'s access to '{folder}'",
             "the configuration no longer uses it",
             folder,
-            !Holds(folder, desired.LogsFolder)
+            !Holds(folder, desired.ListenerLogsFolder)
+                && !Holds(folder, desired.PublisherLogsFolder)
                 && !Holds(folder, desired.SnapshotFolder)
                 && !Holds(folder, WindowsPath.FolderOf(desired.BinaryPath)));
 
@@ -546,6 +555,17 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
                 DeploymentAction.RemoveFirewallRule,
                 $"Remove the '{FirewallRuleName}' firewall rule",
                 $"it currently allows inbound TCP {observed.FirewallPort}"));
+        }
+
+        // Without `/t`: with no configuration read, what lies below them is not known.
+        foreach (string folder in observed.FoldersGranted ?? [])
+        {
+            steps.Add(new DeploymentStep(
+                RipcordService.Listener,
+                DeploymentAction.RevokeStaleFolderAccess,
+                $"Remove {ServiceAccount}'s access to '{folder}'",
+                "the service account no longer needs it",
+                folder));
         }
 
         if (observed.ServiceInstalled)

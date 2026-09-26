@@ -634,7 +634,7 @@ public class RipcordCliTests
 
         Assert.Equal(ExitCode.Success, run.Code);
         Assert.Contains(
-            @"grant NT SERVICE\ripcord modify access", run.Output, StringComparison.Ordinal);
+            @"logs\listener' and grant NT SERVICE\ripcord", run.Output, StringComparison.Ordinal);
         Assert.Contains(
             "Register the 'ripcord' source in the Application event log",
             run.Output,

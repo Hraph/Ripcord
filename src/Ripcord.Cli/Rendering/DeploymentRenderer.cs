@@ -109,7 +109,7 @@ public static class DeploymentRenderer
 
         AppendCertificates(output, report.Certificates, deployment.Desired?.CertificateThumbprint);
         AppendLog(
-            output, report.Log, report.LogsFolder, deployment.Desired?.LogsFolder, ServiceLog.ShownLines);
+            output, report.Log, report.LogsFolder, deployment.Desired?.ListenerLogsFolder, ServiceLog.ShownLines);
         output.AppendLine();
         AppendVerdict(output, service, report.Verdict);
 
@@ -353,7 +353,7 @@ public static class DeploymentRenderer
 
             if (!folderShown)
             {
-                output.AppendLine($"               {logsFolder}");
+                AppendWrapped(output, "               ", "               ", logsFolder);
             }
 
             return;
@@ -363,7 +363,7 @@ public static class DeploymentRenderer
 
         if (!folderShown)
         {
-            output.AppendLine($"               in {logsFolder}");
+            AppendWrapped(output, "               in ", "               ", logsFolder);
         }
 
         if (log.Unreadable is { } reason)
@@ -472,7 +472,7 @@ public static class DeploymentRenderer
         output.AppendLine(observed.LogsWritableByService
             ? $"    logs       writable by {RipcordService.Listener.Account}"
             : $"    logs       NOT writable by {RipcordService.Listener.Account}");
-        output.AppendLine($"               {desired.LogsFolder}");
+        AppendWrapped(output, "               ", "               ", desired.ListenerLogsFolder);
     }
 
     private static void AppendBlocked(StringBuilder output, DeploymentPlan plan)

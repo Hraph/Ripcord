@@ -154,8 +154,9 @@ storage:
 #
 # Defaults, applied when this block is absent: one file a day in `logs` beside the binary,
 # `logs\ripcord-YYYY-MM-DD.log` (UTC date), kept 30 days, 5 MB a day with one `.1` file past
-# that. `path` names a folder. The listener service always writes `logs\listener-YYYY-MM-DD.log`
-# beside the binary, the only folder it may write to, whatever `path` and `enabled` say.
+# that. `path` names a folder. The listener service always writes
+# `logs\listener\listener-YYYY-MM-DD.log` beside the binary, the only folder it may write to,
+# whatever `path` and `enabled` say.
 # diagnostics:
 #   enabled: true
 #   path: D:\Ripcord\logs

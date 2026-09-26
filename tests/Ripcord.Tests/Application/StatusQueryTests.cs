@@ -233,7 +233,7 @@ public class StatusQueryTests
     [Fact]
     public async Task A_running_listener_is_said_with_the_build_its_process_recorded()
     {
-        ProcessRecord logs = new(@"C:\Ripcord\logs\listener-process.txt", ["0.6.0+abc1234", "4242"]);
+        ProcessRecord logs = new(@"C:\Ripcord\logs\listener\listener-process.txt", ["0.6.0+abc1234", "4242"]);
 
         StatusOutcome outcome = await Run(
             executor: new ListenerService(RunningAs(processId: 4242)), logReader: logs);
@@ -246,7 +246,7 @@ public class StatusQueryTests
     public async Task A_listener_on_this_binary_with_another_build_is_outdated()
     {
         ProcessRecord logs = new(
-            @"C:\Program Files\Ripcord\logs\listener-process.txt", ["0.6.0+abc1234", "4242"]);
+            @"C:\Program Files\Ripcord\logs\listener\listener-process.txt", ["0.6.0+abc1234", "4242"]);
         ObservedService service = RunningAs(processId: 4242) with
         {
             CommandLine = "\"C:\\Program Files\\Ripcord\\ripcord.exe\" serve",

@@ -82,9 +82,12 @@ public class RipcordServiceTests
     }
 
     [Fact]
-    public void The_publisher_logs_in_a_folder_of_its_own_below_logs()
+    public void Each_service_logs_in_a_folder_of_its_own_below_logs()
     {
         Assert.Equal(@"C:\R\logs\publish", LogFolder.For(DiagnosticOrigin.Publisher, @"C:\R\logs"));
-        Assert.Equal(@"C:\R\logs", LogFolder.For(DiagnosticOrigin.Listener, @"C:\R\logs"));
+        Assert.Equal(@"C:\R\logs\listener", LogFolder.For(DiagnosticOrigin.Listener, @"C:\R\logs"));
+        Assert.Equal(@"C:\R\logs", LogFolder.For(DiagnosticOrigin.Command, @"C:\R\logs"));
+        Assert.Equal(
+            @"C:\R\logs\listener", RipcordService.Listener.LogsFolderBeside(@"C:\R\ripcord.exe"));
     }
 }

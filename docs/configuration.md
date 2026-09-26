@@ -98,7 +98,7 @@ writes it; `install` is set by hand. See
 **`diagnostics`** — see [the diagnostic log](diagnostics.md). **On** by default, unlike every
 other optional block, and the only section that refuses nothing it is given. `path` names a
 folder (an old value naming a `.log` file is read as its folder); the listener service ignores
-it and always writes to `logs\` beside the binary.
+it and always writes to `logs\listener\` beside the binary.
 
 ## After an edit
 

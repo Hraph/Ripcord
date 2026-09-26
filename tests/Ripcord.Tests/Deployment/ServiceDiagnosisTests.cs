@@ -7,7 +7,7 @@ namespace Ripcord.Tests.Deployment;
 /// Why a stopped listener stopped, from Windows' record and the listener's own log.
 public class ServiceDiagnosisTests
 {
-    private const string LogPath = @"C:\Program Files\Ripcord\logs\listener-2026-09-25.log";
+    private const string LogPath = @"C:\Program Files\Ripcord\logs\listener\listener-2026-09-25.log";
 
     private static readonly ObservedService Stopped = new(
         true,

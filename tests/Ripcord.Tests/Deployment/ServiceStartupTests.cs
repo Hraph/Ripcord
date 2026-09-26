@@ -6,7 +6,7 @@ namespace Ripcord.Tests.Deployment;
 /// has to name the file, the reason and the command that repairs it.
 public class ServiceStartupTests
 {
-    private const string LogPath = @"C:\Program Files\Ripcord\logs\listener-2026-09-25.log";
+    private const string LogPath = @"C:\Program Files\Ripcord\logs\listener\listener-2026-09-25.log";
 
     [Fact]
     public void An_unwritable_log_names_the_file_the_reason_the_account_and_the_fix()

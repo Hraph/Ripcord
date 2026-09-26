@@ -37,9 +37,9 @@ never stops the loop.
 `sc start` waits for the service control manager's handshake. When started by the manager the
 binary answers it and runs the same verb until `Stop-Service`; started by a person it behaves
 like any other command. A verb that returns on its own — the listener disabled in the
-configuration, a file that will not load — **stops** the service rather than leaving it
-reported as running with nothing behind it, reports the code it decided to Windows, and writes
-the reason to `logs\listener-YYYY-MM-DD.log` beside the binary (UTC date, appended, a start line
+configuration, a file that will not load — **stops** the service rather than leaving it reported
+as running with nothing behind it, reports the code it decided to Windows, and writes the reason
+to `logs\listener\listener-YYYY-MM-DD.log` beside the binary (UTC date, appended, a start line
 with the version and the configuration path at each start, kept 30 days). What `serve` prints
 and each connection served or refused go to the same file. A service has no console; without
 that file the reason would go nowhere.

@@ -86,7 +86,7 @@ public sealed class StatusQuery(
                     ServiceProcessReading.Judge(
                         logReader,
                         service,
-                        LogFolder.Beside(service.BinaryPath ?? request.ThisBinary),
+                        RipcordService.Listener.LogsFolderBeside(service.BinaryPath ?? request.ThisBinary),
                         request.ThisBuild,
                         request.ThisBinary,
                         RipcordService.Listener))),

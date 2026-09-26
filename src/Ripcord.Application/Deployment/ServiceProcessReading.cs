@@ -19,10 +19,12 @@ public static class ServiceProcessReading
         ArgumentNullException.ThrowIfNull(logReader);
         ArgumentNullException.ThrowIfNull(service);
 
+        // A record left by an earlier run is rejected by its process id, not here.
         ServiceProcess? recorded =
             service.State == ServiceRunState.Running
-            && logReader.Tail(WindowsPath.Join(logsFolder, recording.ProcessFile), 4) is
-                { Unreadable: null } record
+            && recording.ProcessRecords(logsFolder)
+                .Select(path => logReader.Tail(path, 4))
+                .FirstOrDefault(record => record is { Unreadable: null }) is { } record
                 ? ServiceProcess.Parse(record.Lines)
                 : null;
 

@@ -47,6 +47,22 @@ public sealed record RipcordService(
 
     public string CommandLine(string binaryPath) => $"\"{binaryPath}\" {this.Verb}";
 
+    /// Where the process records its build, newest layout first: up to 0.9.0 the listener
+    /// recorded it in `logs` itself, and a host just updated still runs that build.
+    public IEnumerable<string> ProcessRecords(string logsFolder)
+    {
+        yield return WindowsPath.Join(logsFolder, this.ProcessFile);
+
+        if (this.Origin == DiagnosticOrigin.Listener)
+        {
+            yield return WindowsPath.Join(WindowsPath.FolderOf(logsFolder), this.ProcessFile);
+        }
+    }
+
+    /// Where the service writes when it runs `binaryPath`.
+    public string LogsFolderBeside(string binaryPath) =>
+        LogFolder.For(this.Origin, LogFolder.Beside(binaryPath));
+
     /// The service a verb is run as, when the service manager started it; null for any other.
     public static RipcordService? ForVerb(string? verb) =>
         All.FirstOrDefault(service => string.Equals(service.Verb, verb, StringComparison.Ordinal));

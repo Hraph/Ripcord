@@ -14,12 +14,12 @@ public class ServiceLogTests
     {
         IReadOnlyList<string> candidates = ServiceLog.Candidates(
             RipcordService.Listener,
-            @"C:\Program Files\Ripcord\logs", At.ToOffset(TimeSpan.FromHours(-5)));
+            @"C:\Program Files\Ripcord\logs\listener", At.ToOffset(TimeSpan.FromHours(-5)));
 
         Assert.Equal(
             [
-                @"C:\Program Files\Ripcord\logs\listener-2026-09-25.log",
-                @"C:\Program Files\Ripcord\logs\listener-2026-09-24.log",
+                @"C:\Program Files\Ripcord\logs\listener\listener-2026-09-25.log",
+                @"C:\Program Files\Ripcord\logs\listener\listener-2026-09-24.log",
             ],
             candidates);
     }

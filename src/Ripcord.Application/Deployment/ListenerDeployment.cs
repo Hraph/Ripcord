@@ -104,7 +104,7 @@ public sealed class ListenerDeployment(
 
         return observed with
         {
-            ListenerOutdated = Judge(listener, desired.LogsFolder, RipcordService.Listener),
+            ListenerOutdated = Judge(listener, desired.ListenerLogsFolder, RipcordService.Listener),
             Publisher = publisher with
             {
                 Outdated = Judge(publisher.Service, desired.PublisherLogsFolder, RipcordService.Publisher),

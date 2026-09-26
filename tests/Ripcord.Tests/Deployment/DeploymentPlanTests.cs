@@ -406,14 +406,74 @@ public class DeploymentPlanTests
     public void The_old_install_folder_is_a_candidate_once_the_service_moved()
     {
         Assert.Equal(
-            [@"C:\Old", @"C:\Old\state", @"C:\Old\logs", @"C:\Old\logs\publish"],
+            [@"D:\Ripcord\logs", @"C:\Old", @"C:\Old\state", @"C:\Old\logs",
+             @"C:\Old\logs\listener", @"C:\Old\logs\publish"],
             DeploymentPlan.StaleFolderCandidates(Desired, @"C:\Old\ripcord.exe"));
-        Assert.Empty(DeploymentPlan.StaleFolderCandidates(Desired, Desired.BinaryPath));
         Assert.Equal(
-            [@"C:\Old\state"],
+            [@"D:\Ripcord\logs"], DeploymentPlan.StaleFolderCandidates(Desired, Desired.BinaryPath));
+        Assert.Equal(
+            [@"C:\Old\logs", @"C:\Old\state"],
             DeploymentPlan.StaleFolderCandidates(
                 Desired with { LogsFolder = @"C:\Old\logs", SnapshotPath = @"C:\Old\state.json" },
                 @"C:\Old\ripcord.exe"));
+    }
+
+    /// Up to 0.9.0 the listener wrote in `logs` itself, beside the commands' log. It gets its
+    /// own folder first, is restarted onto the build that writes there, and only then loses
+    /// `logs` — without `/t`, which would strip the grant on its new folder below.
+    [Fact]
+    public void The_listeners_old_grant_on_logs_is_revoked_after_it_moved_to_its_own_folder()
+    {
+        DeploymentPlan plan = DeploymentPlan.For(
+            Desired,
+            Matching() with
+            {
+                LogsWritableByService = false,
+                ListenerOutdated = true,
+                FoldersGranted = [@"D:\Ripcord\logs"],
+            });
+
+        Assert.Equal(
+            [DeploymentAction.GrantLogsAccess, DeploymentAction.RestartService,
+             DeploymentAction.RevokeStaleFolderAccess],
+            plan.Steps.Select(step => step.Action));
+
+        DeploymentStep revoke = plan.Steps[^1];
+        Assert.Equal(RipcordService.Listener, revoke.Service);
+        Assert.Equal(@"D:\Ripcord\logs", revoke.Target);
+        Assert.False(revoke.Recursive);
+    }
+
+    /// Restarted by hand after the update, the new build created `logs\listener` with only what
+    /// it inherits from `logs`: granted explicitly before `logs` is taken back, or it loses both.
+    [Fact]
+    public void A_listener_folder_writable_only_through_the_old_grant_is_granted_explicitly()
+    {
+        DeploymentPlan plan = DeploymentPlan.For(
+            Desired, Matching() with { FoldersGranted = [@"D:\Ripcord\logs"] });
+
+        Assert.Equal(
+            [DeploymentAction.GrantLogsAccess, DeploymentAction.RevokeStaleFolderAccess],
+            plan.Steps.Select(step => step.Action));
+    }
+
+    /// Removed without an install since the update: the 0.9.0 grant on `logs` goes too, while
+    /// the account still resolves, and never recursively.
+    [Fact]
+    public void Removal_takes_back_a_stale_folder_before_the_service_goes()
+    {
+        DeploymentPlan plan = DeploymentPlan.ToRemove(
+            Matching() with { FoldersGranted = [@"D:\Ripcord\logs"] });
+
+        List<DeploymentAction> actions = Listener(plan);
+        DeploymentStep revoke =
+            plan.Steps.Single(step => step.Action == DeploymentAction.RevokeStaleFolderAccess);
+
+        Assert.True(
+            actions.IndexOf(DeploymentAction.RevokeStaleFolderAccess)
+                < actions.IndexOf(DeploymentAction.RemoveService));
+        Assert.Equal(@"D:\Ripcord\logs", revoke.Target);
+        Assert.False(revoke.Recursive);
     }
 
     /// The publisher moved with the binary: its old read, snapshot and log grants go too, under
@@ -539,8 +599,7 @@ public class DeploymentPlanTests
             DeploymentPlan.For(Desired, Matching() with { LogsWritableByService = false }).Steps);
 
         Assert.Equal(DeploymentAction.GrantLogsAccess, step.Action);
-        Assert.Contains(@"'D:\Ripcord\logs'", step.Description, StringComparison.Ordinal);
-        Assert.DoesNotContain(@"'D:\Ripcord'", step.Description, StringComparison.Ordinal);
+        Assert.Contains(@"'D:\Ripcord\logs\listener'", step.Description, StringComparison.Ordinal);
         Assert.Contains("modify", step.Description, StringComparison.Ordinal);
     }
 

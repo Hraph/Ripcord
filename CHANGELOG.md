@@ -9,6 +9,17 @@ half-updated pair depends on.
 
 A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binary.
 
+## Unreleased
+
+### Changed
+
+- **The listener logs in a folder of its own, `logs\listener\`**, like the publisher in
+  `logs\publish\`. It no longer has modify on `logs\`, where commands write, so the process
+  facing the network cannot rewrite or delete their log. On an existing host,
+  `ripcord service install` creates the folder, restarts the listener onto it and then takes
+  back its grant on `logs\`. The `listener-*.log` files already in `logs\` stay there and are
+  pruned after 30 days like the rest.
+
 ## 0.9.0 — 2026-09-26
 
 ### Changed

@@ -56,8 +56,9 @@ configuration it was started with, and the peer sees no difference. `ripcord sta
 the two can disagree until the service is restarted.
 
 The listener service runs as `NT SERVICE\ripcord` and may write to one place only:
-`logs\` beside the binary, which [`ripcord service install`](commands/service.md) creates and
-grants it. Nothing else in the install folder is writable by it, the binary least of all.
+`logs\listener\` beside the binary, which [`ripcord service install`](commands/service.md)
+creates and grants it. Nothing else in the install folder is writable by it, the binary least of
+all.
 
 After `service install`, run `ripcord service`: it says whether the listener is running and,
 when it is not, why — the exit code Windows recorded, the end of the listener's log, and what

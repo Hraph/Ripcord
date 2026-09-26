@@ -61,19 +61,19 @@ public class ServiceInspectionTests
     [Fact]
     public void Logs_folder_is_the_services_and_yesterday_is_read_when_today_is_absent()
     {
-        Logs logs = new(@"C:\Program Files\Ripcord\logs\listener-2026-09-24.log");
+        Logs logs = new(@"C:\Program Files\Ripcord\logs\listener\listener-2026-09-24.log");
 
         ServiceReport report = Inspection(Valid(), new Host(StoppedService), logs)
             .Inspect(Request(), Now, ThisBuild);
 
-        Assert.Equal(@"C:\Program Files\Ripcord\logs", report.LogsFolder);
+        Assert.Equal(@"C:\Program Files\Ripcord\logs\listener", report.LogsFolder);
         Assert.Equal(
             [
-                @"C:\Program Files\Ripcord\logs\listener-2026-09-25.log",
-                @"C:\Program Files\Ripcord\logs\listener-2026-09-24.log",
+                @"C:\Program Files\Ripcord\logs\listener\listener-2026-09-25.log",
+                @"C:\Program Files\Ripcord\logs\listener\listener-2026-09-24.log",
             ],
             logs.Asked.Where(path => path.Contains("listener-", StringComparison.Ordinal)));
-        Assert.Equal(@"C:\Program Files\Ripcord\logs\listener-2026-09-24.log", report.Log?.Path);
+        Assert.Equal(@"C:\Program Files\Ripcord\logs\listener\listener-2026-09-24.log", report.Log?.Path);
     }
 
     /// The configuration's logs access is about this binary's folder: it says nothing about a
@@ -138,7 +138,7 @@ public class ServiceInspectionTests
         };
         Files files = new()
         {
-            [@"C:\Ripcord\logs\listener-process.txt"] = [recorded, "4812"],
+            [@"C:\Ripcord\logs\listener\listener-process.txt"] = [recorded, "4812"],
         };
 
         ServiceReport report = Inspection(Valid(), new Host(running), files)
@@ -162,7 +162,7 @@ public class ServiceInspectionTests
         ObservedService running = StoppedService with { State = ServiceRunState.Running, ProcessId = 4812 };
         Files files = new()
         {
-            [@"C:\Program Files\Ripcord\logs\listener-process.txt"] = ["0.6.0+0ld0000", "4812"],
+            [@"C:\Program Files\Ripcord\logs\listener\listener-process.txt"] = ["0.6.0+0ld0000", "4812"],
         };
 
         ServiceReport report = Inspection(Valid(), new Host(running), files)

@@ -5,9 +5,8 @@ namespace Ripcord.Domain.Diagnostics;
 /// The `logs` folder and the files in it: one per origin and per UTC day, kept for a fixed
 /// number of days.
 ///
-/// It is also the one folder the listener service may write to. The service runs as a virtual
-/// account with no write access anywhere else — least of all beside the binary, in Program
-/// Files — so `service install` grants it this folder and nothing more.
+/// Commands write here. Each service writes in a folder of its own below it, the only one its
+/// virtual account may write to: `service install` grants it that folder and nothing more.
 public static class LogFolder
 {
     public const string Name = "logs";
@@ -25,12 +24,12 @@ public static class LogFolder
     public static string Beside(string binaryPath) =>
         WindowsPath.Join(WindowsPath.FolderOf(binaryPath), Name);
 
-    /// The publishing service writes in a folder of its own below `logs`: the listener, which
-    /// faces the network, can modify `logs` and must not be able to rewrite this one's story.
+    /// A service's own folder below `logs`: the listener, which faces the network, can neither
+    /// rewrite the publisher's story nor the commands' log.
     public static string For(DiagnosticOrigin origin, string logsFolder) =>
-        origin == DiagnosticOrigin.Publisher
-            ? WindowsPath.Join(logsFolder, origin.Prefix())
-            : logsFolder;
+        origin == DiagnosticOrigin.Command
+            ? logsFolder
+            : WindowsPath.Join(logsFolder, origin.Prefix());
 
     public static string Prefix(this DiagnosticOrigin origin) => origin switch
     {

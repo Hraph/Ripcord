@@ -39,7 +39,7 @@ RIPCORD SERVICES
     key        readable by NT SERVICE\ripcord
                0123456789ABCDEF0123456789ABCDEF01234567
     logs       writable by NT SERVICE\ripcord
-               C:\Program Files\Ripcord\logs
+               C:\Program Files\Ripcord\logs\listener
 
   THIS HOST'S CERTIFICATE
     0123456789ABCDEF0123456789ABCDEF01234567  in ripcord.yaml
@@ -97,14 +97,14 @@ running two versions.
 |---|---|
 | `service` | running, `STOPPED`, starting, stopping, `PAUSED`, or `state unknown` when Windows could not be read — never guessed as stopped. Then the start mode. |
 | `command` | what Windows runs. The service always reads `ripcord.yaml` beside that binary. |
-| `version` | only when it is running: the build the **process** runs, as it recorded itself in `logs\listener-process.txt` when it started. After `ripcord update` the binary on disk is the new one while the process is still the old one; when the service runs this `ripcord.exe`, the row then adds `NOT the build of this ripcord.exe` and the report ends with `ripcord service restart`. Not when the service runs another copy: a restart would not change its build. `unknown` when there is no record, or the record's process id is not the one Windows gives for the service — a record left by an earlier run is never believed. |
+| `version` | only when it is running: the build the **process** runs, as it recorded itself in `logs\listener\listener-process.txt` when it started. After `ripcord update` the binary on disk is the new one while the process is still the old one; when the service runs this `ripcord.exe`, the row then adds `NOT the build of this ripcord.exe` and the report ends with `ripcord service restart`. Not when the service runs another copy: a restart would not change its build. `unknown` when there is no record, or the record's process id is not the one Windows gives for the service — a record left by an earlier run is never believed. |
 | `last exit` | only when it is not running: the code Windows recorded, and what it means. |
 | `firewall`, `snapshot`, `logs` | what the configuration needs, and whether the host has it. Left out when `ripcord.yaml` does not load. |
 | `key` | whether the service account can read the private key of `listener.local_certificate_thumbprint`, or that no key was found for it in `LocalMachine\My`. Machine keys are readable by SYSTEM and Administrators only. |
 | `snapshot`, third line | how long ago `state.json` was written, `STALE` past `peer.offline_after_sec`, or `NOT written yet`. When missing or stale, the report ends with why and the one command that fixes it, read from the publishing service: `ripcord service install` when it is absent, `ripcord service start` when it is stopped, `ripcord publish` when it runs and still fails — publishing once by hand prints the reason, and so does its log. |
 | `THIS HOST'S CERTIFICATE` | each certificate in `LocalMachine\My` with a private key, whose first CN is this host's name — what the other host checks, whatever O, OU or DC follow — and not expired, latest expiry first, marked `in ripcord.yaml` when it is the configured one, or `None of these is the one in ripcord.yaml` after a renewal. The other host must also trust its issuer. Shown even when `ripcord.yaml` does not load. Under it, the one line to run on the other host — `ripcord pair <this host>:<thumbprint>` — which writes both thumbprints there: see [`pair`](pair.md). `NONE` when no certificate qualifies. |
 | `PUBLISHER` | the publishing service: its state, command, last exit and version like the listener's, then `hyper-v` (membership), `bitlocker` (its ACE, or why BitLocker is carried from an administrator's read), `snapshot` (modify), `logs` (its own, and whether the listener is kept out), and the last 10 lines of `logs\publish\publish-YYYY-MM-DD.log`. |
-| `log` | the day's `logs\listener-YYYY-MM-DD.log` (UTC date) beside the service's binary, or yesterday's when today has none, and its last 20 lines. |
+| `log` | the day's `logs\listener\listener-YYYY-MM-DD.log` (UTC date) beside the service's binary, or yesterday's when today has none, and its last 20 lines. |
 
 The service is shown even when `ripcord.yaml` does not load — the likeliest reason it stopped.
 The configuration's errors follow, and the exit code is then 2.
@@ -142,15 +142,15 @@ correct host does nothing. A moved binary, a changed port or a changed peer addr
 update rather than a teardown. `remove` is the same list read backwards — and it leaves the
 snapshot file alone, because an uninstaller that deletes data is one people are afraid to run.
 
-Two services: the listener `ripcord` and the publisher `ripcord-publish`. In this order:
-create both (a virtual account exists only once its service does), open the port to the peer
-only, grant the listener read on the files of the install folder, read on `state\`, **modify**
-on `logs\`, read on its certificate's private key, register the `ripcord` event source; grant
-the publisher read on the files of the install folder, **modify on `state\`** and on
-`logs\publish\` — which stops inheriting from `logs\` so the listener cannot write it — add it
-to Hyper-V Administrators and, while `storage.check_bitlocker_autounlock` is on, give it one ACE
-on the BitLocker WMI namespace; **then start the listener, then the publisher** (restarted
-instead when it was just added to the group: membership reaches a process at its next start).
+Two services: the listener `ripcord` and the publisher `ripcord-publish`. In this order: create
+both (a virtual account exists only once its service does), open the port to the peer only,
+grant the listener read on the files of the install folder, read on `state\`, **modify** on
+`logs\listener\`, read on its certificate's private key, register the `ripcord` event source;
+grant the publisher read on the files of the install folder, **modify on `state\`** and on
+`logs\publish\` — which stops inheriting from `logs\` — add it to Hyper-V Administrators and,
+while `storage.check_bitlocker_autounlock` is on, give it one ACE on the BitLocker WMI
+namespace; **then start the listener, then the publisher** (restarted instead when it was just
+added to the group: membership reaches a process at its next start).
 
 `remove` takes the publisher down first, and everything it was granted **while its service
 still exists** — stopped, the ACE, the group, the folders, then deleted — because a virtual
@@ -175,23 +175,26 @@ them on its next `service install`.
 
 **Access nothing uses any more is taken back**, as the last steps: every machine key file the
 service account can read other than the configured certificate's — the ones left by `pair` or a
-renewal, however many — and, once a service moved, what either account was granted in the old install folder, its `state`, its `logs` and `logs\publish`.
-Only entries of the account's own are touched, never inherited ones, and never recursively
-into a folder that still holds the install folder, the logs or the snapshot in use. With the
-configured certificate's key not found, no key is touched: which one is current cannot be told.
-Nor when the machine keys take longer than the command timeout to list. A snapshot
-folder left behind by an older `snapshot_path` elsewhere is not looked for; `ripcord service
-remove` run before moving it is what takes that one back.
+renewal, however many — the listener's modify on `logs\` itself, where it wrote up to 0.9.0 —
+and, once a service moved, what either account was granted in the old install folder, its
+`state`, its `logs`, `logs\listener` and `logs\publish`. Only entries of the account's own are
+touched, never inherited ones, and never recursively into a folder that still holds the install
+folder, the logs or the snapshot in use. With the configured certificate's key not found, no key
+is touched: which one is current cannot be told. Nor when the machine keys take longer than the
+command timeout to list. A snapshot folder left behind by an older `snapshot_path` elsewhere is
+not looked for; `ripcord service remove` run before moving it is what takes that one back.
 
 After `pair` or a renewal, a listener still running reads the old key on every connection: once
 `install` has taken that key back, it serves nothing until `ripcord service restart`. Run the
 restart right after the install.
 
-The logs folder is the only place the service account may write. Modify rather than write,
-because pruning an old log deletes it; on that folder only, never on the install folder or the
-binary. The event source is where the listener reports a start it cannot log to its file: a
-virtual account cannot write to the event log under a source nobody registered. `remove`
-revokes the folder access and removes the source, and leaves the logs where they are.
+`logs\listener\` is the only place the service account may write. Modify rather than write,
+because pruning an old log deletes it; on that folder only, never on `logs\` where the commands
+write, the install folder or the binary. The event source is where the listener reports a start
+it cannot log to its file: a virtual account cannot write to the event log under a source nobody
+registered. `remove` revokes the folder access — and the one on `logs\` a 0.9.0 install left,
+when no install has taken it back since — removes the source, and leaves the logs where they
+are.
 
 The folder, not the file: `ripcord status` rewrites the snapshot by moving a new file over the
 old one, and a move brings the new file's access list with it, so an entry set on the file

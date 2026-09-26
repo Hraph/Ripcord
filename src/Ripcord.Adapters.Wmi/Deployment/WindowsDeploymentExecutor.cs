@@ -49,7 +49,7 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             ruleInstalled ? ValueAfter(ruleOutput, "RemoteIP") : null,
             SnapshotReadable(desired.SnapshotFolder),
             service.State == ServiceRunState.Running,
-            LogsWritable(desired.LogsFolder),
+            LogsWritable(desired.ListenerLogsFolder),
             EventSourceRegistered(),
             SnapshotWrittenAt(desired),
             keyFile is not null
@@ -462,8 +462,8 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
                 ("icacls", $"\"{desired.SnapshotFolder}\" /remove \"{account}\" /t"),
             ],
 
-            // The publisher's folder stops inheriting from `logs`, where the listener may
-            // modify, before the publisher is granted modify on it.
+            // The publisher's folder stops inheriting from `logs`, where the listener could
+            // modify up to 0.9.0, before the publisher is granted modify on it.
             DeploymentAction.GrantLogsAccess when publisher =>
             [
                 ("icacls", $"\"{desired.PublisherLogsFolder}\" /inheritance:d"),
@@ -474,7 +474,7 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             // Modify on this folder only, never on the install folder or the binary beside it.
             DeploymentAction.GrantLogsAccess =>
             [
-                ("icacls", $"\"{desired.LogsFolder}\" /grant \"{account}\":(OI)(CI)(M)"),
+                ("icacls", $"\"{desired.ListenerLogsFolder}\" /grant \"{account}\":(OI)(CI)(M)"),
             ],
 
             DeploymentAction.RevokeLogsAccess =>
@@ -683,7 +683,7 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         Convert.ToInt64(result.ReturnValue?.Value ?? -1, CultureInfo.InvariantCulture);
 
     private static string LogsOf(DeploymentStep change, DesiredDeployment desired) =>
-        change.Service == RipcordService.Publisher ? desired.PublisherLogsFolder : desired.LogsFolder;
+        change.Service == RipcordService.Publisher ? desired.PublisherLogsFolder : desired.ListenerLogsFolder;
 
     /// Read only, on the key file only: the account signs with the key, it never replaces it.
     private static IEnumerable<(string File, string Arguments)> KeyCommands(
