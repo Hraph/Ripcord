@@ -46,7 +46,7 @@ public class DocumentedNamesTests
 
         Assert.All(
             named,
-            name => Assert.Equal(DeploymentPlan.ServiceName, name, ignoreCase: true));
+            name => Assert.Equal(RipcordService.Listener.Name, name, ignoreCase: true));
     }
 
     /// The event log commands the service page shows are the ones `ripcord service` prints,

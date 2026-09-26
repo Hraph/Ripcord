@@ -23,7 +23,7 @@ public class ServiceDiagnosisTests
         DiagnosticEntry.Of(operation, message).Render(At)[0];
 
     private static string Banner() =>
-        ListenerStartup.Banner("0.4.1", @"C:\Program Files\Ripcord\ripcord.yaml").Render(At)[0];
+        ServiceStartup.Banner("0.4.1", @"C:\Program Files\Ripcord\ripcord.yaml").Render(At)[0];
 
     private static string Exit(ExitCode code) => CommandEntries.Exited("serve", code).Render(At)[0];
 

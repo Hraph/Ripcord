@@ -52,5 +52,5 @@ public sealed record ServiceStateChange(DeploymentPlan Plan, string? Unchanged, 
     private static ServiceStateChange Planned(DeploymentPlan plan) => new(plan, null, null);
 
     private static ServiceStateChange Said(string what) =>
-        new(new DeploymentPlan([]), $"The '{DeploymentPlan.ServiceName}' service {what}. Nothing was changed.", null);
+        new(new DeploymentPlan([]), $"The '{RipcordService.Listener.Name}' service {what}. Nothing was changed.", null);
 }

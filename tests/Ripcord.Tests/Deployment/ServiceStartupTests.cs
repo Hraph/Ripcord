@@ -4,18 +4,18 @@ namespace Ripcord.Tests.Deployment;
 
 /// What a failed listener start leaves in the Application event log: the only trace, so it
 /// has to name the file, the reason and the command that repairs it.
-public class ListenerStartupTests
+public class ServiceStartupTests
 {
     private const string LogPath = @"C:\Program Files\Ripcord\logs\listener-2026-09-25.log";
 
     [Fact]
     public void An_unwritable_log_names_the_file_the_reason_the_account_and_the_fix()
     {
-        string text = ListenerStartup.LogUnavailable(LogPath, "Access is denied.");
+        string text = ServiceStartup.LogUnavailable(LogPath, "Access is denied.");
 
         Assert.Contains(LogPath, text, StringComparison.Ordinal);
         Assert.Contains("Access is denied.", text, StringComparison.Ordinal);
-        Assert.Contains(DeploymentPlan.ServiceAccount, text, StringComparison.Ordinal);
+        Assert.Contains(RipcordService.Listener.Account, text, StringComparison.Ordinal);
         Assert.Contains(@"C:\Program Files\Ripcord\logs", text, StringComparison.Ordinal);
         Assert.Contains("ripcord service install", text, StringComparison.Ordinal);
         Assert.Contains("'ripcord service'", text, StringComparison.Ordinal);
@@ -25,7 +25,7 @@ public class ListenerStartupTests
     [Fact]
     public void Every_line_of_it_fits_the_console() =>
         Assert.All(
-            ListenerStartup.LogUnavailable(LogPath, "Access is denied.").Split(Environment.NewLine),
+            ServiceStartup.LogUnavailable(LogPath, "Access is denied.").Split(Environment.NewLine),
             line => Assert.True(line.Length <= 75, line));
 
     [Fact]
@@ -33,7 +33,7 @@ public class ListenerStartupTests
     {
         string banner = string.Join(
             "\n",
-            ListenerStartup.Banner("0.4.0+32aac02", @"C:\Program Files\Ripcord\ripcord.yaml")
+            ServiceStartup.Banner("0.4.0+32aac02", @"C:\Program Files\Ripcord\ripcord.yaml")
                 .Render(new DateTimeOffset(2026, 9, 25, 8, 30, 0, TimeSpan.FromHours(2))));
 
         Assert.Contains("2026-09-25 06:30:00.000Z", banner, StringComparison.Ordinal);

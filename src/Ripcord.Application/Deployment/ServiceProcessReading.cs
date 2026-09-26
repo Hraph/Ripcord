@@ -5,7 +5,7 @@ using Ripcord.Ports.Diagnostics;
 namespace Ripcord.Application.Deployment;
 
 /// The build the running listener recorded, for `ripcord service` and `ripcord status` alike.
-public static class ListenerProcessReading
+public static class ServiceProcessReading
 {
     /// Read only for a running service: a stopped one has no build to report.
     public static RunningBuild? Judge(
@@ -13,16 +13,17 @@ public static class ListenerProcessReading
         ObservedService service,
         string logsFolder,
         string thisBuild,
-        string thisBinary)
+        string thisBinary,
+        RipcordService? recording = null)
     {
         ArgumentNullException.ThrowIfNull(logReader);
         ArgumentNullException.ThrowIfNull(service);
 
-        ListenerProcess? recorded =
+        ServiceProcess? recorded =
             service.State == ServiceRunState.Running
-            && logReader.Tail(WindowsPath.Join(logsFolder, ListenerProcess.FileName), 4) is
+            && logReader.Tail(WindowsPath.Join(logsFolder, (recording ?? RipcordService.Listener).ProcessFile), 4) is
                 { Unreadable: null } record
-                ? ListenerProcess.Parse(record.Lines)
+                ? ServiceProcess.Parse(record.Lines)
                 : null;
 
         return RunningBuild.Judge(service, recorded, thisBuild, thisBinary);

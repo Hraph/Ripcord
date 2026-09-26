@@ -25,8 +25,12 @@ public static class LogFolder
     public static string Beside(string binaryPath) =>
         WindowsPath.Join(WindowsPath.FolderOf(binaryPath), Name);
 
-    public static string Prefix(this DiagnosticOrigin origin) =>
-        origin == DiagnosticOrigin.Listener ? "listener" : "ripcord";
+    public static string Prefix(this DiagnosticOrigin origin) => origin switch
+    {
+        DiagnosticOrigin.Listener => "listener",
+        DiagnosticOrigin.Publisher => "publish",
+        _ => "ripcord",
+    };
 
     /// Named by the UTC day, so both hosts of the pair agree on which file a moment is in.
     public static string FileName(DiagnosticOrigin origin, DateTimeOffset at) =>

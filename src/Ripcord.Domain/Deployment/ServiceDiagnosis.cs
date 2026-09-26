@@ -162,7 +162,7 @@ public static class ServiceDiagnosis
         {
             return new ServiceVerdict(
                 "its start mode is Disabled: Windows will not start it",
-                [$"sc.exe config {DeploymentPlan.ServiceName} start= auto", Restart]);
+                [$"sc.exe config {RipcordService.Listener.Name} start= auto", Restart]);
         }
 
         if (listenerDisabled)
@@ -175,14 +175,14 @@ public static class ServiceDiagnosis
         if (logsWritable == false)
         {
             return new ServiceVerdict(
-                $"{DeploymentPlan.ServiceAccount} cannot write its logs folder, so it stops "
+                $"{RipcordService.Listener.Account} cannot write its logs folder, so it stops "
                     + "as soon as it starts",
                 [InstallDryRun]);
         }
 
-        ListenerLogSummary summary = log is { Unreadable: null }
-            ? ListenerLog.Summarise(log.Lines)
-            : ListenerLogSummary.Empty;
+        ServiceLogSummary summary = log is { Unreadable: null }
+            ? ServiceLog.Summarise(log.Lines)
+            : ServiceLogSummary.Empty;
 
         ServiceExit? windows = service.LastExit;
 
@@ -252,7 +252,7 @@ public static class ServiceDiagnosis
     private const string EarlierRun = "; its log is from an earlier run";
 
     /// A crash is logged, then stopped with exit 3 by the host.
-    private static bool Agrees(ListenerLogSummary summary, ExitCode recorded) =>
+    private static bool Agrees(ServiceLogSummary summary, ExitCode recorded) =>
         summary.Exit == recorded
         || (summary.Crashed && summary.Exit is null && recorded == ExitCode.LocalAccessFailure);
 

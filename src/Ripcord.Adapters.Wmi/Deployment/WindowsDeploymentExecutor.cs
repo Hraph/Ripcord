@@ -50,14 +50,14 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             desired.SnapshotVolume.Length == 0 || Directory.Exists(desired.SnapshotVolume),
             SnapshotWrittenAt(desired),
             keyFile is not null
-                ? AccessControl.GrantsRead(Run("icacls", $"\"{keyFile}\"").Output, DeploymentPlan.ServiceAccount)
+                ? AccessControl.GrantsRead(Run("icacls", $"\"{keyFile}\"").Output, RipcordService.Listener.Account)
                 : null,
             keyFile,
             KeyFilesGranted(),
             [.. DeploymentPlan.StaleFolderCandidates(desired, service.BinaryPath)
                 .Where(folder => Directory.Exists(folder)
                     && AccessControl.GrantsExplicitly(
-                        Run("icacls", $"\"{folder}\"").Output, DeploymentPlan.ServiceAccount))]);
+                        Run("icacls", $"\"{folder}\"").Output, RipcordService.Listener.Account))]);
     }
 
     /// `/c` because without it icacls stops at the first key it cannot read (SYSTEM-only keys,
@@ -68,7 +68,7 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         try
         {
             return [.. KeyFolders.SelectMany(folder => AccessControl.FilesGrantingExplicitly(
-                Run("icacls", $"\"{folder}\\*\" /c").Output, folder, DeploymentPlan.ServiceAccount))];
+                Run("icacls", $"\"{folder}\\*\" /c").Output, folder, RipcordService.Listener.Account))];
         }
         catch (TimeoutException)
         {
@@ -181,7 +181,7 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
                     @"root\cimv2",
                     "WQL",
                     "SELECT State, StartMode, ExitCode, ServiceSpecificExitCode, PathName, ProcessId "
-                    + $"FROM Win32_Service WHERE Name = '{DeploymentPlan.ServiceName}'",
+                    + $"FROM Win32_Service WHERE Name = '{RipcordService.Listener.Name}'",
                     options)
                 .FirstOrDefault();
 
@@ -254,7 +254,7 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             DeploymentAction.RevokeStaleKeyAccess or DeploymentAction.RevokeStaleFolderAccess =>
             [
                 ("icacls",
-                    $"\"{change.Target}\" /remove \"{DeploymentPlan.ServiceAccount}\""
+                    $"\"{change.Target}\" /remove \"{RipcordService.Listener.Account}\""
                     + (change.Recursive ? " /t" : "")),
             ],
             _ => CommandsFor(change.Action, desired),
@@ -334,40 +334,40 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         DeploymentAction.CreateService =>
         [
             ("sc.exe",
-                $"create {DeploymentPlan.ServiceName} "
+                $"create {RipcordService.Listener.Name} "
                 + $"binPath= \"\\\"{desired.BinaryPath}\\\" serve\" start= auto "
-                + $"obj= \"{DeploymentPlan.ServiceAccount}\""),
+                + $"obj= \"{RipcordService.Listener.Account}\""),
         ],
 
         DeploymentAction.StartService =>
         [
-            ("sc.exe", $"start {DeploymentPlan.ServiceName}"),
+            ("sc.exe", $"start {RipcordService.Listener.Name}"),
         ],
 
         DeploymentAction.RestartService =>
         [
-            ("sc.exe", $"stop {DeploymentPlan.ServiceName}"),
-            ("sc.exe", $"start {DeploymentPlan.ServiceName}"),
+            ("sc.exe", $"stop {RipcordService.Listener.Name}"),
+            ("sc.exe", $"start {RipcordService.Listener.Name}"),
         ],
 
         DeploymentAction.UpdateService =>
         [
-            ("sc.exe", $"stop {DeploymentPlan.ServiceName}"),
+            ("sc.exe", $"stop {RipcordService.Listener.Name}"),
             ("sc.exe",
-                $"config {DeploymentPlan.ServiceName} "
+                $"config {RipcordService.Listener.Name} "
                 + $"binPath= \"\\\"{desired.BinaryPath}\\\" serve\""),
-            ("sc.exe", $"start {DeploymentPlan.ServiceName}"),
+            ("sc.exe", $"start {RipcordService.Listener.Name}"),
         ],
 
         DeploymentAction.StopService =>
         [
-            ("sc.exe", $"stop {DeploymentPlan.ServiceName}"),
+            ("sc.exe", $"stop {RipcordService.Listener.Name}"),
         ],
 
         DeploymentAction.RemoveService =>
         [
-            ("sc.exe", $"stop {DeploymentPlan.ServiceName}"),
-            ("sc.exe", $"delete {DeploymentPlan.ServiceName}"),
+            ("sc.exe", $"stop {RipcordService.Listener.Name}"),
+            ("sc.exe", $"delete {RipcordService.Listener.Name}"),
         ],
 
         DeploymentAction.CreateFirewallRule =>
@@ -389,7 +389,7 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
         DeploymentAction.GrantSnapshotAccess =>
         [
             ("icacls",
-                $"\"{desired.SnapshotFolder}\" /grant \"{DeploymentPlan.ServiceAccount}\":(OI)(CI)(R)"),
+                $"\"{desired.SnapshotFolder}\" /grant \"{RipcordService.Listener.Account}\":(OI)(CI)(R)"),
         ],
 
         DeploymentAction.RevokeSnapshotAccess =>
@@ -398,20 +398,20 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
             // snapshot file, and removing it from the folder alone would leave the account
             // still able to read what is in there.
             ("icacls",
-                $"\"{desired.SnapshotFolder}\" /remove \"{DeploymentPlan.ServiceAccount}\" /t"),
+                $"\"{desired.SnapshotFolder}\" /remove \"{RipcordService.Listener.Account}\" /t"),
         ],
 
         // Modify on this folder only, never on the install folder or the binary beside it.
         DeploymentAction.GrantLogsAccess =>
         [
             ("icacls",
-                $"\"{desired.LogsFolder}\" /grant \"{DeploymentPlan.ServiceAccount}\":(OI)(CI)(M)"),
+                $"\"{desired.LogsFolder}\" /grant \"{RipcordService.Listener.Account}\":(OI)(CI)(M)"),
         ],
 
         DeploymentAction.RevokeLogsAccess =>
         [
             ("icacls",
-                $"\"{desired.LogsFolder}\" /remove \"{DeploymentPlan.ServiceAccount}\" /t"),
+                $"\"{desired.LogsFolder}\" /remove \"{RipcordService.Listener.Account}\" /t"),
         ],
 
         // What EventLog.CreateEventSource writes, as a command an operator could type. The
@@ -442,8 +442,8 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
                 + @"in LocalMachine\My");
 
         return action == DeploymentAction.GrantKeyAccess
-            ? [("icacls", $"\"{key}\" /grant \"{DeploymentPlan.ServiceAccount}\":(R)")]
-            : [("icacls", $"\"{key}\" /remove \"{DeploymentPlan.ServiceAccount}\"")];
+            ? [("icacls", $"\"{key}\" /grant \"{RipcordService.Listener.Account}\":(R)")]
+            : [("icacls", $"\"{key}\" /remove \"{RipcordService.Listener.Account}\"")];
     }
 
     private const string EventSourceKey =
@@ -467,13 +467,13 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
     private static bool SnapshotReadable(string snapshotFolder) =>
         Directory.Exists(snapshotFolder)
         && AccessControl.GrantsRead(
-            Run("icacls", $"\"{snapshotFolder}\"").Output, DeploymentPlan.ServiceAccount);
+            Run("icacls", $"\"{snapshotFolder}\"").Output, RipcordService.Listener.Account);
 
     /// Modify, not merely write: pruning an old log deletes it.
     private static bool LogsWritable(string logsFolder) =>
         Directory.Exists(logsFolder)
         && AccessControl.GrantsModify(
-            Run("icacls", $"\"{logsFolder}\"").Output, DeploymentPlan.ServiceAccount);
+            Run("icacls", $"\"{logsFolder}\"").Output, RipcordService.Listener.Account);
 
     private static bool EventSourceRegistered()
     {
@@ -487,7 +487,7 @@ public sealed class WindowsDeploymentExecutor : IDeploymentExecutor
     private static string? ServiceImagePath()
     {
         using Microsoft.Win32.RegistryKey? key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
-            $@"SYSTEM\CurrentControlSet\Services\{DeploymentPlan.ServiceName}");
+            $@"SYSTEM\CurrentControlSet\Services\{RipcordService.Listener.Name}");
 
         return key?.GetValue("ImagePath") as string;
     }

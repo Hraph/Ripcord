@@ -303,7 +303,7 @@ public static class DeploymentRenderer
             return;
         }
 
-        IReadOnlyList<string> shown = [.. log.Lines.TakeLast(ListenerLog.ShownLines)];
+        IReadOnlyList<string> shown = [.. log.Lines.TakeLast(ServiceLog.ShownLines)];
 
         if (shown.Count == 0)
         {
@@ -379,8 +379,8 @@ public static class DeploymentRenderer
                 break;
         }
         output.AppendLine(observed.SnapshotReadableByService
-            ? $"               readable by {DeploymentPlan.ServiceAccount}"
-            : $"               NOT readable by {DeploymentPlan.ServiceAccount}");
+            ? $"               readable by {RipcordService.Listener.Account}"
+            : $"               NOT readable by {RipcordService.Listener.Account}");
 
         // The key the handshake signs with. Machine keys are readable by SYSTEM and
         // Administrators only, so the service account needs its own grant.
@@ -388,8 +388,8 @@ public static class DeploymentRenderer
         {
             output.AppendLine(observed.KeyReadableByService switch
             {
-                true => $"    key        readable by {DeploymentPlan.ServiceAccount}",
-                false => $"    key        NOT readable by {DeploymentPlan.ServiceAccount}",
+                true => $"    key        readable by {RipcordService.Listener.Account}",
+                false => $"    key        NOT readable by {RipcordService.Listener.Account}",
                 null => "    key        NOT found in LocalMachine\\My for certificate",
             });
             output.AppendLine($"               {thumbprint}");
@@ -397,8 +397,8 @@ public static class DeploymentRenderer
 
         // The folder on its own line: an install under Program Files overflows 75 columns.
         output.AppendLine(observed.LogsWritableByService
-            ? $"    logs       writable by {DeploymentPlan.ServiceAccount}"
-            : $"    logs       NOT writable by {DeploymentPlan.ServiceAccount}");
+            ? $"    logs       writable by {RipcordService.Listener.Account}"
+            : $"    logs       NOT writable by {RipcordService.Listener.Account}");
         output.AppendLine($"               {desired.LogsFolder}");
     }
 

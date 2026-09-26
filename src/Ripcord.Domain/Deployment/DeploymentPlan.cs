@@ -144,9 +144,9 @@ public sealed record DeploymentStep(
 /// then holds no step, so nothing is half-applied.
 public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string? BlockedBy = null)
 {
-    public const string ServiceName = "ripcord";
+    private static readonly string ServiceName = RipcordService.Listener.Name;
 
-    public const string ServiceAccount = @"NT SERVICE\ripcord";
+    private static readonly string ServiceAccount = RipcordService.Listener.Account;
 
     public const string FirewallRuleName = "Ripcord listener";
 

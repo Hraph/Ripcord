@@ -83,7 +83,7 @@ public sealed class StatusQuery(
                 ListenerAvailability.Running(
                     configuration.Listener,
                     service,
-                    ListenerProcessReading.Judge(
+                    ServiceProcessReading.Judge(
                         logReader,
                         service,
                         LogFolder.Beside(service.BinaryPath ?? request.ThisBinary),

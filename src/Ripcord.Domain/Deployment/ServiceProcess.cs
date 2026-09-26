@@ -2,20 +2,17 @@ using System.Globalization;
 
 namespace Ripcord.Domain.Deployment;
 
-/// What the listener writes about itself when it starts: its build and its process id.
+/// What a service writes about itself when it starts: its build and its process id.
 ///
 /// The build of the running process, not of the file on disk: after `ripcord update` the two
 /// differ until the service restarts, and the file on disk is the one that would mislead.
-public sealed record ListenerProcess(string Build, int ProcessId)
+public sealed record ServiceProcess(string Build, int ProcessId)
 {
-    /// Beside the listener's logs, the only folder the service account may write to.
-    public const string FileName = "listener-process.txt";
-
     public string Text() =>
         string.Create(CultureInfo.InvariantCulture, $"{this.Build}\n{this.ProcessId}\n");
 
     /// Null for anything but the two lines `Text` writes: a half-written file is not a build.
-    public static ListenerProcess? Parse(IReadOnlyList<string> lines)
+    public static ServiceProcess? Parse(IReadOnlyList<string> lines)
     {
         ArgumentNullException.ThrowIfNull(lines);
 
@@ -24,7 +21,7 @@ public sealed record ListenerProcess(string Build, int ProcessId)
         return content.Length == 2
             && int.TryParse(content[1], NumberStyles.None, CultureInfo.InvariantCulture, out int id)
             && id > 0
-            ? new ListenerProcess(content[0], id)
+            ? new ServiceProcess(content[0], id)
             : null;
     }
 }
@@ -36,7 +33,7 @@ public sealed record RunningBuild(string? Build, string? Unknown, bool Outdated)
     /// gives: a record left by an earlier run names a build that is no longer running.
     /// Outdated only when the service runs this binary: a restart cannot change another copy.
     public static RunningBuild? Judge(
-        ObservedService service, ListenerProcess? recorded, string thisBuild, string thisBinary)
+        ObservedService service, ServiceProcess? recorded, string thisBuild, string thisBinary)
     {
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(thisBinary);

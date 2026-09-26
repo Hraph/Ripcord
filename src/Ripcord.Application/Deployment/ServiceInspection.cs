@@ -51,16 +51,16 @@ public sealed class ServiceInspection(
 
         LogReading? log = null;
 
-        foreach (string candidate in ListenerLog.Candidates(logsFolder, now))
+        foreach (string candidate in ServiceLog.Candidates(logsFolder, now))
         {
-            if (logReader.Tail(candidate, ListenerLog.ReadLines) is { } reading)
+            if (logReader.Tail(candidate, ServiceLog.ReadLines) is { } reading)
             {
                 log = reading;
                 break;
             }
         }
 
-        RunningBuild? build = ListenerProcessReading.Judge(
+        RunningBuild? build = ServiceProcessReading.Judge(
             logReader, service, logsFolder, thisBuild, request.BinaryPath);
 
         HostCertificates certificates = HostCertificateReading.Read(certificateStore, request.MachineName, now);

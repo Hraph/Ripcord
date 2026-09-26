@@ -221,7 +221,7 @@ internal static class Program
             Microsoft.Extensions.Hosting.Host.CreateApplicationBuilder();
 
         builder.Services.AddWindowsService(options =>
-            options.ServiceName = DeploymentPlan.ServiceName);
+            options.ServiceName = RipcordService.Listener.Name);
 
         // Named rather than taken from the assembly: it is the source `service install`
         // registers, and an unregistered one cannot be written to by a virtual account.
@@ -278,12 +278,12 @@ internal static class Program
         {
             // The first line decides whether there is a log at all. Nothing else can say so
             // but the event log: a service has no console.
-            if (setup.Diagnostics.TryWrite(ListenerStartup.Banner(
+            if (setup.Diagnostics.TryWrite(ServiceStartup.Banner(
                     BuildInfo.VersionWithCommit, setup.ConfigurationPath)) is { } reason)
             {
                 Stopped(
                     logger,
-                    ListenerStartup.LogUnavailable(setup.Diagnostics.CurrentFile, reason),
+                    ServiceStartup.LogUnavailable(setup.Diagnostics.CurrentFile, reason),
                     null);
                 this.Stop(ExitCode.LocalAccessFailure, stoppingToken);
                 return;
@@ -320,8 +320,8 @@ internal static class Program
             {
                 File.WriteAllText(
                     Path.Combine(
-                        Path.GetDirectoryName(setup.Diagnostics.CurrentFile)!, ListenerProcess.FileName),
-                    new ListenerProcess(BuildInfo.VersionWithCommit, Environment.ProcessId).Text());
+                        Path.GetDirectoryName(setup.Diagnostics.CurrentFile)!, RipcordService.Listener.ProcessFile),
+                    new ServiceProcess(BuildInfo.VersionWithCommit, Environment.ProcessId).Text());
             }
             // Outside the verb's try: anything escaping here would stop the listener.
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
