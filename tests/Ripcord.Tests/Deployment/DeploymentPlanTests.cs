@@ -90,7 +90,8 @@ public class DeploymentPlanTests
     }
 
     /// An upgraded host: 0.7.0's broad read is narrowed to the configuration grant, after the
-    /// restart that moves the listener off the install folder, never before.
+    /// restart that moves the listener off the install folder, never before. `state\` may read
+    /// as granted only through that grant, so it is granted explicitly first.
     [Fact]
     public void The_old_broad_install_folder_read_is_narrowed_last()
     {
@@ -98,7 +99,11 @@ public class DeploymentPlanTests
             Desired, Matching() with { InstallFolderGrantBroad = true, ListenerOutdated = true });
 
         Assert.Equal(
-            [DeploymentAction.RestartService, DeploymentAction.NarrowConfigurationAccess],
+            [
+                DeploymentAction.GrantSnapshotAccess,
+                DeploymentAction.RestartService,
+                DeploymentAction.NarrowConfigurationAccess,
+            ],
             Listener(plan));
     }
 

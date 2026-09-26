@@ -307,7 +307,9 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
                 "it reads ripcord.yaml there at every start; nothing below it, nothing written"));
         }
 
-        if (!observed.SnapshotReadableByService)
+        // With the 0.7.0 grant still there, a `state\` created since reads as granted through
+        // inheritance alone, which narrowing it takes away: granted explicitly first.
+        if (!observed.SnapshotReadableByService || observed.InstallFolderGrantBroad)
         {
             steps.Add(new DeploymentStep(
                 RipcordService.Listener,
