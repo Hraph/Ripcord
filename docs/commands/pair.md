@@ -29,7 +29,10 @@ because that is the step that establishes the trust.
    `listener.local_certificate_thumbprint` to it and `listener.peer_certificate_thumbprint` to
    the one pasted, and prints the line to carry back.
 3. On the first host, run the line it printed.
-4. `ripcord service restart` on both: the listener reads the file only when it starts.
+4. On both, `ripcord service install`, then `ripcord service restart`. Install grants the
+   service account read access to the new certificate's private key, and takes it back from
+   the old one; restart makes the listener read the file, which it does only when it starts.
+   Restart right after install: between the two, the running listener still uses the old key.
 
 Running it again with the same line changes nothing.
 

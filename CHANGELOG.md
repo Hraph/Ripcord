@@ -13,6 +13,10 @@ A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binar
 
 ### Fixed
 
+- **The peer's lag grew with its snapshot's age.** A snapshot 7 minutes old showed 7m19s of
+  lag on a replication 17 s behind: the lag was measured to now instead of to when the
+  snapshot was taken. `status` and the dashboard now measure it at the snapshot.
+
 - **`ripcord service install` takes back access nothing uses any more.** The service account
   kept read access to the private key of every certificate replaced by `pair` or a renewal,
   and to the old install folder after the binary moved. Install now revokes them, last, after

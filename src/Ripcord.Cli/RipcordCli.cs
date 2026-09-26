@@ -986,7 +986,8 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
 
         output.WriteLine($"  On {peerName}, if it is not done yet:");
         output.WriteLine($"    ripcord pair {ListenerPairing.Key(environment.MachineName, plan.Local!)}");
-        output.WriteLine("  Then on both hosts:");
+        output.WriteLine("  Then on both hosts, one after the other:");
+        output.WriteLine("    ripcord service install");
         output.WriteLine("    ripcord service restart");
 
         return ExitCode.Success;
