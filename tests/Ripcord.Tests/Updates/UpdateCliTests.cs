@@ -1,5 +1,6 @@
 using Ripcord.Adapters.Fake;
 using Ripcord.Cli;
+using Ripcord.Cli.Rendering;
 using Ripcord.Domain;
 using Ripcord.Domain.Configuration;
 using Ripcord.Domain.Updates;
@@ -62,6 +63,45 @@ public sealed class UpdateCliTests
         Assert.Equal(
             [UpdateAction.DiscardPrevious, UpdateAction.SetAside, UpdateAction.Install],
             swap.Moves);
+        Assert.Matches(
+            @"  1/5  download the release and its signature\.\.\.\n       \d+% 100%\n  2/5  ",
+            run.Output.ReplaceLineEndings("\n"));
+        Assert.Contains("5/5  put the new binary where the running one was...", run.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_download_cut_off_part_way_ends_its_line_before_the_failure()
+    {
+        CliRun run = await Run(["update"], source: Source.CutOff(), typed: "y");
+
+        Assert.Equal(ExitCode.LocalAccessFailure, run.Code);
+        Assert.Matches(@"\n       \d+%\n\n  FAILED: ", run.Output.ReplaceLineEndings("\n"));
+    }
+
+    /// Every step line fits the 1024x768 console.
+    [Fact]
+    public void Every_step_line_fits_the_console()
+    {
+        UpdatePlan plan = UpdatePlan.For(Subjects.Available());
+
+        Assert.All(plan.Steps, step =>
+            Assert.InRange(UpdateRenderer.RenderStarting(step, plan.Steps.Count).Length, 1, 75));
+    }
+
+    /// The step still running is the last line before the failure, and nothing follows it.
+    [Fact]
+    public async Task A_failed_step_is_the_last_one_shown_before_the_failure()
+    {
+        CliRun run = await Run(["update"], swap: new Swap { FailOn = UpdateAction.Install }, typed: "y");
+
+        string output = run.Output.ReplaceLineEndings("\n");
+
+        Assert.Equal(ExitCode.Refused, run.Code);
+        Assert.Contains(
+            "  5/5  put the new binary where the running one was...\n\n  FAILED: ",
+            output,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("done:", output, StringComparison.Ordinal);
     }
 
     /// The listener still runs the binary the last update set aside, which Windows will not
@@ -261,11 +301,20 @@ public sealed class UpdateCliTests
 
         public bool PreviousInUse { get; init; }
 
+        public UpdateAction? FailOn { get; init; }
+
         public StagedBinaries Observe(string binaryPath) =>
             new(false, this.PreviousInUse, PreviousInUse: this.PreviousInUse);
 
-        public void Apply(UpdateStep move, StagedRelease release, CancellationToken cancellationToken) =>
+        public void Apply(UpdateStep move, StagedRelease release, CancellationToken cancellationToken)
+        {
+            if (move.Action == this.FailOn)
+            {
+                throw new IOException($"the host refused to {move.Action}");
+            }
+
             this.Moves.Add(move.Action);
+        }
 
         public void Restore(string binaryPath)
         {

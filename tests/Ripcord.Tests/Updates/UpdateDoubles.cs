@@ -31,18 +31,36 @@ internal static class Keys
 }
 
 /// A release feed that hands back bytes, signed or not, or nothing at all.
-internal sealed class Source(FetchedRelease answer) : IReleaseSource
+internal sealed class Source(FetchedRelease answer, bool cutOff = false) : IReleaseSource
 {
     public static readonly byte[] Binary = Encoding.UTF8.GetBytes("a new ripcord.exe");
 
-    public Task<FetchedRelease> FetchAsync(string version, CancellationToken cancellationToken) =>
-        Task.FromResult(answer);
+    /// Reports the payload arriving in two halves, announced size included.
+    public Task<FetchedRelease> FetchAsync(
+        string version, Action<DownloadedBytes>? downloading, CancellationToken cancellationToken)
+    {
+        if (cutOff)
+        {
+            downloading?.Invoke(new DownloadedBytes(Binary.Length / 2, Binary.Length));
+        }
+        else if (answer.Payload is { Length: var length })
+        {
+            downloading?.Invoke(new DownloadedBytes(length / 2, length));
+            downloading?.Invoke(new DownloadedBytes(length, length));
+        }
+
+        return Task.FromResult(answer);
+    }
 
     public static Source Genuine() =>
         new(FetchedRelease.Fetched(Binary, Keys.Sign(Binary)));
 
     public static Source SignedByAStranger() =>
         new(FetchedRelease.Fetched(Binary, Keys.SignAsStranger(Binary)));
+
+    /// Half the binary arrives, then the connection drops.
+    public static Source CutOff() =>
+        new(FetchedRelease.Failed("the connection was reset"), cutOff: true);
 
     public static Source Unreachable() =>
         new(FetchedRelease.Failed("api.github.com could not be reached"));

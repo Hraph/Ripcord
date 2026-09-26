@@ -31,6 +31,88 @@ public sealed class UpdateInstallationTests
             result.Applied.Select(step => step.Action));
     }
 
+    /// A download of minutes is otherwise silence on the console.
+    [Fact]
+    public async Task Each_step_is_announced_before_it_runs()
+    {
+        List<UpdateAction> heard = [];
+        RecordingSwap swap = new();
+
+        await new UpdateInstallation(
+                Source.Genuine(), swap, Keys.Pinned, step => heard.Add(step.Action))
+            .ApplyAsync(UpdatePlan.For(Subjects.Available()), BinaryPath, "0.2.0", CancellationToken.None);
+
+        Assert.Equal(
+            [
+                UpdateAction.Download,
+                UpdateAction.Verify,
+                UpdateAction.DiscardPrevious,
+                UpdateAction.SetAside,
+                UpdateAction.Install,
+            ],
+            heard);
+    }
+
+    [Fact]
+    public async Task A_refused_signature_is_the_last_step_announced()
+    {
+        List<UpdateAction> heard = [];
+
+        await new UpdateInstallation(
+                Source.SignedByAStranger(), new RecordingSwap(), Keys.Pinned, step => heard.Add(step.Action))
+            .ApplyAsync(UpdatePlan.For(Subjects.Available()), BinaryPath, "0.2.0", CancellationToken.None);
+
+        Assert.Equal([UpdateAction.Download, UpdateAction.Verify], heard);
+    }
+
+    [Fact]
+    public async Task A_failed_move_is_the_last_step_announced()
+    {
+        List<UpdateAction> heard = [];
+
+        await new UpdateInstallation(
+                Source.Genuine(),
+                new RecordingSwap(failOn: UpdateAction.SetAside),
+                Keys.Pinned,
+                step => heard.Add(step.Action))
+            .ApplyAsync(UpdatePlan.For(Subjects.Available()), BinaryPath, "0.2.0", CancellationToken.None);
+
+        Assert.Equal(UpdateAction.SetAside, heard[^1]);
+    }
+
+    /// Set aside and not yet replaced, this host has no ripcord.exe. A console that cannot be
+    /// written to must not be what leaves it there.
+    [Fact]
+    public async Task A_progress_report_that_throws_does_not_stop_the_swap()
+    {
+        RecordingSwap swap = new();
+
+        UpdateResult result = await new UpdateInstallation(
+                Source.Genuine(),
+                swap,
+                Keys.Pinned,
+                _ => throw new IOException("the console is gone"),
+                _ => throw new IOException("the console is gone"))
+            .ApplyAsync(UpdatePlan.For(Subjects.Available()), BinaryPath, "0.2.0", CancellationToken.None);
+
+        Assert.Equal(ExitCode.Success, result.Code);
+        Assert.Equal(
+            [UpdateAction.DiscardPrevious, UpdateAction.SetAside, UpdateAction.Install],
+            swap.Moves);
+    }
+
+    [Fact]
+    public async Task Nothing_after_a_failed_download_is_announced()
+    {
+        List<UpdateAction> heard = [];
+
+        await new UpdateInstallation(
+                Source.Unreachable(), new RecordingSwap(), Keys.Pinned, step => heard.Add(step.Action))
+            .ApplyAsync(UpdatePlan.For(Subjects.Available()), BinaryPath, "0.2.0", CancellationToken.None);
+
+        Assert.Equal([UpdateAction.Download], heard);
+    }
+
     /// The whole feature in one test. A release that does not verify never reaches the
     /// filesystem — not staged, not set aside, nothing.
     [Fact]

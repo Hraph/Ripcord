@@ -88,7 +88,8 @@ public sealed class NoOpDashboardServer : IDashboardServer
 /// For the commands that never update but have to be handed something.
 public sealed class NoReleaseSource : IReleaseSource
 {
-    public Task<FetchedRelease> FetchAsync(string version, CancellationToken cancellationToken) =>
+    public Task<FetchedRelease> FetchAsync(
+        string version, Action<DownloadedBytes>? downloading, CancellationToken cancellationToken) =>
         Task.FromResult(FetchedRelease.Failed("no release source is wired"));
 }
 

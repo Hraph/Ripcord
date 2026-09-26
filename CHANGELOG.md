@@ -9,6 +9,15 @@ half-updated pair depends on.
 
 A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binary.
 
+## Unreleased
+
+### Changed
+
+- **`ripcord update` shows its progress.** Each step is printed as it starts (`1/5` to `5/5`),
+  and the download is marked every 10% (every 20 MB when the server gives no size), so the
+  minutes it takes are no longer silent. The closing `done:` list is gone, and a failed step's
+  description is no longer repeated in the failure message.
+
 ## 0.8.0 — 2026-09-26
 
 ### Added

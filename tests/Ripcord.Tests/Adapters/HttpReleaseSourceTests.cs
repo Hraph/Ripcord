@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using Ripcord.Adapters.Update;
+using Ripcord.Domain.Updates;
 using Ripcord.Ports.Updates;
 
 namespace Ripcord.Tests.Adapters;
@@ -26,11 +27,23 @@ public sealed class HttpReleaseSourceTests
     {
         await using Origin origin = await Origin.StartAsync();
 
-        FetchedRelease release = await origin.Source().FetchAsync("0.2.0", default);
+        FetchedRelease release = await origin.Source().FetchAsync("0.2.0", null, default);
 
         Assert.True(release.Arrived);
         Assert.Equal(Binary, release.Payload);
         Assert.Equal(Signature, release.Signature);
+    }
+
+    [Fact]
+    public async Task The_binary_is_reported_as_it_arrives()
+    {
+        await using Origin origin = await Origin.StartAsync();
+        List<DownloadedBytes> heard = [];
+
+        await origin.Source().FetchAsync("0.2.0", heard.Add, default);
+
+        Assert.NotEmpty(heard);
+        Assert.Equal(Binary.Length, heard[^1].Received);
     }
 
     /// A release published without its signature cannot be verified, so it cannot be
@@ -40,7 +53,7 @@ public sealed class HttpReleaseSourceTests
     {
         await using Origin origin = await Origin.StartAsync(publishSignature: false);
 
-        FetchedRelease release = await origin.Source().FetchAsync("0.2.0", default);
+        FetchedRelease release = await origin.Source().FetchAsync("0.2.0", null, default);
 
         Assert.False(release.Arrived);
         // Names the file, not the concept: "signature" sends somebody to read about
@@ -54,7 +67,7 @@ public sealed class HttpReleaseSourceTests
     {
         await using Origin origin = await Origin.StartAsync(publishBinary: false);
 
-        FetchedRelease release = await origin.Source().FetchAsync("0.2.0", default);
+        FetchedRelease release = await origin.Source().FetchAsync("0.2.0", null, default);
 
         Assert.False(release.Arrived);
         Assert.NotNull(release.FailureMessage);
@@ -68,7 +81,7 @@ public sealed class HttpReleaseSourceTests
     {
         await using Origin origin = await Origin.StartAsync();
 
-        FetchedRelease release = await origin.Source(maximumBytes: 4).FetchAsync("0.2.0", default);
+        FetchedRelease release = await origin.Source(maximumBytes: 4).FetchAsync("0.2.0", null, default);
 
         Assert.False(release.Arrived);
     }
@@ -81,7 +94,7 @@ public sealed class HttpReleaseSourceTests
     {
         await using Origin origin = await Origin.StartAsync(chunked: true);
 
-        FetchedRelease release = await origin.Source(maximumBytes: 4).FetchAsync("0.2.0", default);
+        FetchedRelease release = await origin.Source(maximumBytes: 4).FetchAsync("0.2.0", null, default);
 
         Assert.False(release.Arrived);
     }
@@ -93,7 +106,7 @@ public sealed class HttpReleaseSourceTests
     {
         await using Origin origin = await Origin.StartAsync();
 
-        await origin.Source().FetchAsync("../../../etc/passwd", default);
+        await origin.Source().FetchAsync("../../../etc/passwd", null, default);
 
         Assert.All(origin.Requested, path =>
             Assert.DoesNotContain("etc/passwd", path, StringComparison.Ordinal));
@@ -107,7 +120,7 @@ public sealed class HttpReleaseSourceTests
     {
         await using Origin origin = await Origin.StartAsync();
 
-        await origin.Source().FetchAsync("0.2.0", default);
+        await origin.Source().FetchAsync("0.2.0", null, default);
 
         Assert.NotEmpty(origin.Requested);
 
@@ -125,7 +138,7 @@ public sealed class HttpReleaseSourceTests
     {
         await using Origin origin = await Origin.StartAsync(offerAnotherAddress: true);
 
-        FetchedRelease release = await origin.Source().FetchAsync("0.2.0", default);
+        FetchedRelease release = await origin.Source().FetchAsync("0.2.0", null, default);
 
         Assert.True(release.Arrived);
         Assert.All(origin.Requested, path =>
@@ -141,7 +154,7 @@ public sealed class HttpReleaseSourceTests
 
         FetchedRelease release = await origin
             .Source(timeout: TimeSpan.FromMilliseconds(300))
-            .FetchAsync("0.2.0", default);
+            .FetchAsync("0.2.0", null, default);
 
         Assert.False(release.Arrived);
         Assert.NotNull(release.FailureMessage);

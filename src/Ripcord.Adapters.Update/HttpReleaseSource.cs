@@ -43,7 +43,7 @@ public sealed class HttpReleaseSource(
     private ReleaseOrigin Origin => origin ?? ReleaseOrigin.GitHub;
 
     public async Task<FetchedRelease> FetchAsync(
-        string version, CancellationToken cancellationToken)
+        string version, Action<DownloadedBytes>? downloading, CancellationToken cancellationToken)
     {
         try
         {
@@ -73,13 +73,13 @@ public sealed class HttpReleaseSource(
             }
 
             byte[]? payload = await this
-                .DownloadAsync(client, assets, ReleaseAssets.Binary, cancellationToken)
+                .DownloadAsync(client, assets, ReleaseAssets.Binary, downloading, cancellationToken)
                 .ConfigureAwait(false);
 
             byte[]? signature = payload is null
                 ? null
                 : await this
-                    .DownloadAsync(client, assets, ReleaseAssets.Signature, cancellationToken)
+                    .DownloadAsync(client, assets, ReleaseAssets.Signature, null, cancellationToken)
                     .ConfigureAwait(false);
 
             return payload is null || signature is null
@@ -155,6 +155,7 @@ public sealed class HttpReleaseSource(
         HttpClient client,
         IReadOnlyDictionary<string, long> assets,
         string asset,
+        Action<DownloadedBytes>? downloading,
         CancellationToken cancellationToken)
     {
         if (!assets.TryGetValue(asset, out long assetId))
@@ -191,11 +192,17 @@ public sealed class HttpReleaseSource(
             .ReadAsStreamAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        return await ReadCappedAsync(body, maximumBytes, cancellationToken).ConfigureAwait(false);
+        return await ReadCappedAsync(
+                body,
+                maximumBytes,
+                received => downloading?.Invoke(
+                    new DownloadedBytes(received, response.Content.Headers.ContentLength)),
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static async Task<byte[]?> ReadCappedAsync(
-        Stream body, long maximum, CancellationToken cancellationToken)
+        Stream body, long maximum, Action<long> received, CancellationToken cancellationToken)
     {
         using MemoryStream buffer = new();
         byte[] chunk = new byte[81_920];
@@ -215,6 +222,7 @@ public sealed class HttpReleaseSource(
             }
 
             buffer.Write(chunk, 0, read);
+            received(buffer.Length);
         }
     }
 }

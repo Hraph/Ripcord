@@ -5,7 +5,7 @@ using Ripcord.Ports.Updates;
 
 namespace Ripcord.Application.Updates;
 
-/// What the update did, and how far it got. `Applied` is progress; the exit code answers the
+/// What the update did, and how far it got. `Applied` is what completed; the exit code answers the
 /// only question that matters afterwards — is this host where it was, or does somebody have
 /// to go and look.
 public sealed record UpdateResult(
@@ -26,8 +26,15 @@ public sealed record UpdateResult(
 /// The order is the safety property. Fetching and verifying change nothing on the host, so
 /// everything that can refuse has refused before the first irreversible move; and the first
 /// irreversible move, setting the running binary aside, is the one the rollback exists for.
+///
+/// `starting` hears each step before it runs and `downloading` the binary arriving, so a
+/// download that takes minutes is not silence.
 public sealed class UpdateInstallation(
-    IReleaseSource source, IBinarySwap swap, string? pinnedPublicKey)
+    IReleaseSource source,
+    IBinarySwap swap,
+    string? pinnedPublicKey,
+    Action<UpdateStep>? starting = null,
+    Action<DownloadedBytes>? downloading = null)
 {
     /// Long enough for a rename on a busy volume, short enough that a wedged filesystem is
     /// reported rather than waited on for ever.
@@ -47,9 +54,13 @@ public sealed class UpdateInstallation(
         }
 
         List<UpdateStep> applied = [];
+        UpdateStep download = Step(plan, UpdateAction.Download);
+        UpdateStep verify = Step(plan, UpdateAction.Verify);
+
+        this.Announce(download);
 
         FetchedRelease fetched = await source
-            .FetchAsync(version, cancellationToken)
+            .FetchAsync(version, this.Report, cancellationToken)
             .ConfigureAwait(false);
 
         if (!fetched.Arrived)
@@ -57,7 +68,8 @@ public sealed class UpdateInstallation(
             return Untouched(plan, UpdateAction.Download, fetched.FailureMessage!, applied);
         }
 
-        applied.Add(Step(plan, UpdateAction.Download));
+        applied.Add(download);
+        this.Announce(verify);
 
         // Before anything is moved. A release that cannot be shown to be genuine is refused,
         // and refusing is the feature working rather than a degraded mode.
@@ -72,13 +84,13 @@ public sealed class UpdateInstallation(
             return new UpdateResult(
                 ExitCode.Refused,
                 applied,
-                Step(plan, UpdateAction.Verify),
+                verify,
                 $"this release was not installed: {verdict.Explanation}",
                 null,
                 null);
         }
 
-        applied.Add(Step(plan, UpdateAction.Verify));
+        applied.Add(verify);
 
         return await this.SwapAsync(plan, binaryPath, version, fetched.Payload!, applied, cancellationToken)
             .ConfigureAwait(false);
@@ -97,6 +109,8 @@ public sealed class UpdateInstallation(
 
         foreach (UpdateStep move in plan.Steps.Where(OnDisk))
         {
+            this.Announce(move);
+
             try
             {
                 swap.Apply(move, release, cancellationToken);
@@ -129,17 +143,35 @@ public sealed class UpdateInstallation(
                 ExitCode.Refused,
                 applied,
                 failed,
-                $"{failed.Description} failed: {failure.Message}. The running binary was put back.",
+                failure.Message,
                 rollback,
                 null)
             : new UpdateResult(
                 ExitCode.IntermediateState,
                 applied,
                 failed,
-                $"{failed.Description} failed: {failure.Message}",
+                failure.Message,
                 rollback,
                 $"this host has no ripcord.exe: rename ripcord.exe.old back to ripcord.exe "
                 + $"in {Directory(binaryPath)}");
+    }
+
+    /// Progress is shown, never obeyed: a console that cannot be written to must not stop the
+    /// swap between setting the binary aside and putting the new one in place.
+    private void Announce(UpdateStep step) => Quietly(() => starting?.Invoke(step));
+
+    private void Report(DownloadedBytes bytes) => Quietly(() => downloading?.Invoke(bytes));
+
+    private static void Quietly(Action report)
+    {
+        try
+        {
+            report();
+        }
+        catch (Exception)
+        {
+            // Deliberately dropped, cancellation included; see Announce.
+        }
     }
 
     private static UpdateResult Untouched(

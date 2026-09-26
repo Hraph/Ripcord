@@ -8,9 +8,12 @@ namespace Ripcord.Ports.Updates;
 ///
 /// The bytes come back in memory rather than as a path, so nothing is written beside the
 /// running binary until after the signature has been checked.
+///
+/// `downloading` hears the binary arrive, chunk by chunk, in order, one chunk at a time.
 public interface IReleaseSource
 {
-    Task<FetchedRelease> FetchAsync(string version, CancellationToken cancellationToken);
+    Task<FetchedRelease> FetchAsync(
+        string version, Action<DownloadedBytes>? downloading, CancellationToken cancellationToken);
 }
 
 /// Either a release or the reason there is none. A fetch that failed is never an empty

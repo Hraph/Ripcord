@@ -2290,12 +2290,51 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             return ExitCode.Refused;
         }
 
-        UpdateInstallation installation = new(
-            ports.ReleaseSource, ports.BinarySwap, environment.ReleaseSigningKey);
+        output.WriteLine();
 
-        UpdateResult result = await installation
-            .ApplyAsync(plan, environment.BinaryPath, outcome.Version!, cancellationToken)
-            .ConfigureAwait(false);
+        DownloadMarks marks = new();
+        bool marking = false;
+
+        // The marks share one line under the download step; whatever is written next ends it.
+        void EndMarks()
+        {
+            if (marking)
+            {
+                output.WriteLine();
+                marking = false;
+            }
+        }
+
+        UpdateInstallation installation = new(
+            ports.ReleaseSource,
+            ports.BinarySwap,
+            environment.ReleaseSigningKey,
+            step =>
+            {
+                EndMarks();
+                output.WriteLine(UpdateRenderer.RenderStarting(step, plan.Steps.Count));
+            },
+            bytes =>
+            {
+                if (marks.Next(bytes) is { } mark)
+                {
+                    output.Write(UpdateRenderer.RenderMark(mark, first: !marking));
+                    marking = true;
+                }
+            });
+
+        UpdateResult result;
+
+        try
+        {
+            result = await installation
+                .ApplyAsync(plan, environment.BinaryPath, outcome.Version!, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            EndMarks();
+        }
 
         output.Write(UpdateRenderer.RenderResult(result, outcome.Version!, this.Ink));
 
