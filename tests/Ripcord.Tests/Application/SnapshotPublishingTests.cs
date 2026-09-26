@@ -3,6 +3,7 @@ using Ripcord.Application;
 using Ripcord.Domain;
 using Ripcord.Domain.Diagnostics;
 using Ripcord.Domain.Pairing;
+using Ripcord.Ports;
 using Ripcord.Ports.Pairing;
 using Ripcord.Tests.Configuration;
 
@@ -59,9 +60,27 @@ public class SnapshotPublishingTests
         Assert.Contains(log.Written, entry => entry.Message == "publishing failed unexpectedly");
     }
 
+    /// The attempt the loop measured reaches the stop line.
+    [Fact]
+    public async Task The_stop_line_says_the_slowest_attempt()
+    {
+        using CancellationTokenSource stop = new();
+        MovableClock clock = new(Now);
+        StoppingStore store = new(stop, after: 2) { Clock = clock, Takes = TimeSpan.FromSeconds(2.5) };
+        RecordingDiagnosticLog log = new();
+
+        await Publishing(store, log, clock).RunAsync(Configurations.Create(), stop.Token);
+
+        Assert.EndsWith("slowest 2.5 s", log.Written[^1].Message, StringComparison.Ordinal);
+    }
+
     /// Counts successful writes and cancels the loop after the last one it was asked for.
     private sealed class StoppingStore(CancellationTokenSource stop, int after) : ISnapshotStore
     {
+        public MovableClock? Clock { get; init; }
+
+        public TimeSpan Takes { get; init; }
+
         public int Writes { get; private set; }
 
         public Exception? FailFirst { get; set; }
@@ -72,6 +91,11 @@ public class SnapshotPublishingTests
             {
                 this.FailFirst = null;
                 throw failure;
+            }
+
+            if (this.Clock is { } clock)
+            {
+                clock.UtcNow += this.Takes;
             }
 
             if (++this.Writes == after)
@@ -94,7 +118,8 @@ public class SnapshotPublishingTests
         Assert.Equal("the listener is disabled: nothing to publish", Assert.Single(log.Written).Message);
     }
 
-    private static SnapshotPublishing Publishing(ISnapshotStore store, RecordingDiagnosticLog log) =>
+    private static SnapshotPublishing Publishing(
+        ISnapshotStore store, RecordingDiagnosticLog log, IClock? clock = null) =>
         new(
             new PairReader(
                 new LocalStateReader(
@@ -104,10 +129,10 @@ public class SnapshotPublishingTests
                     new SilentDiagnosticLog()),
                 FakePeerChannel.Absent(),
                 store,
-                new FixedClock(Now),
+                clock ?? new FixedClock(Now),
                 new BuildIdentity("0.8.0", "abc123"),
                 new SilentDiagnosticLog()),
-            new FixedClock(Now),
+            clock ?? new FixedClock(Now),
             log,
             TimeSpan.FromMilliseconds(5));
 }

@@ -9,6 +9,14 @@ half-updated pair depends on.
 
 A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binary.
 
+## Unreleased
+
+### Changed
+
+- **The publisher's hourly log line says its slowest attempt**, *slowest 1.2 s*: from the start
+  of the read to the end of the write. Near 15 s, the other host's view starts to age.
+- **Each publication asks Hyper-V for its replication service once**, not once per VM.
+
 ## 0.10.0 — 2026-09-26
 
 ### Changed

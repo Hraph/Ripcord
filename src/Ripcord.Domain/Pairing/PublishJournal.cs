@@ -18,7 +18,11 @@ public sealed record PublishJournal(
     int Published,
     int Failed,
     DateTimeOffset? LastPublished,
-    DateTimeOffset SummaryDue)
+    DateTimeOffset SummaryDue,
+
+    /// The longest attempt since the last summary. Past `RepublishEvery`, the peer's view ages
+    /// by the overrun and can read stale on a host that is fine.
+    TimeSpan Slowest = default)
 {
     public const string Operation = "publish";
 
@@ -27,8 +31,9 @@ public sealed record PublishJournal(
     public static PublishJournal Start { get; } =
         new(false, false, null, "", null, 0, 0, 0, null, DateTimeOffset.MinValue);
 
+    /// `took` is the attempt's own duration, without the wait before the next one.
     public (PublishJournal Next, IReadOnlyList<DiagnosticEntry> Lines) After(
-        Publication publication, DateTimeOffset now)
+        Publication publication, DateTimeOffset now, TimeSpan took = default)
     {
         ArgumentNullException.ThrowIfNull(publication);
 
@@ -71,6 +76,7 @@ public sealed record PublishJournal(
             Failed = this.Failed + (healthy ? 0 : 1),
             LastPublished = healthy ? now : this.LastPublished,
             SummaryDue = this.Started ? this.SummaryDue : now + SummaryEvery,
+            Slowest = took > this.Slowest ? took : this.Slowest,
         };
 
         if (now < next.SummaryDue)
@@ -80,7 +86,9 @@ public sealed record PublishJournal(
 
         lines.Add(Line(next.Summary("in the last hour")));
 
-        return (next with { Published = 0, Failed = 0, SummaryDue = now + SummaryEvery }, lines);
+        return (
+            next with { Published = 0, Failed = 0, SummaryDue = now + SummaryEvery, Slowest = TimeSpan.Zero },
+            lines);
     }
 
     /// The last line of a run: what it did since the last summary, so no hour goes unaccounted.
@@ -88,12 +96,15 @@ public sealed record PublishJournal(
         [Line($"stopping: {this.Summary("since the last summary")}")];
 
     private string Summary(string period) =>
-        this.Healthy
+        (this.Healthy
             ? $"{this.Published} snapshot(s) published {period}"
                 + (this.LastPublished is { } last ? $", the last at {Clock(last)} UTC" : "")
             : $"{this.Failed} attempt(s) failed {period}"
-                + (this.Published > 0 ? $", {this.Published} published" : "")
-                + $": {this.Reason}";
+                + (this.Published > 0 ? $", {this.Published} published" : ""))
+        + (this.Slowest > TimeSpan.Zero
+            ? string.Create(CultureInfo.InvariantCulture, $", slowest {this.Slowest.TotalSeconds:0.0} s")
+            : "")
+        + (this.Healthy ? "" : $": {this.Reason}");
 
     private static DiagnosticEntry Line(string message) => DiagnosticEntry.Of(Operation, message);
 

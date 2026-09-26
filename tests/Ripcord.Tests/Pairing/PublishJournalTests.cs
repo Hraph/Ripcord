@@ -83,6 +83,41 @@ public class PublishJournalTests
         Assert.Equal("241 attempt(s) failed in the last hour: WMI is down", Assert.Single(lines).Message);
     }
 
+    /// The slowest attempt of the hour, then counted afresh: an attempt past 15 s is a peer
+    /// view that ages by the overrun.
+    [Fact]
+    public void The_hour_says_its_slowest_attempt_and_the_next_starts_afresh()
+    {
+        PublishJournal journal = PublishJournal.Start.After(Ok(Start), Start, TimeSpan.FromSeconds(0.4)).Next;
+        IReadOnlyList<DiagnosticEntry> lines = [];
+
+        for (int round = 1; round <= 240; round++)
+        {
+            DateTimeOffset at = Start.AddSeconds(15 * round);
+            TimeSpan took = TimeSpan.FromSeconds(round == 100 ? 2.34 : 0.5);
+            (journal, lines) = journal.After(Ok(at), at, took);
+        }
+
+        Assert.Equal(
+            "241 snapshot(s) published in the last hour, the last at 09:00:00 UTC, slowest 2.3 s",
+            Assert.Single(lines).Message);
+
+        journal = journal.After(Ok(Start.AddSeconds(3615)), Start.AddSeconds(3615), TimeSpan.FromSeconds(0.6)).Next;
+
+        Assert.EndsWith("slowest 0.6 s", Assert.Single(journal.Stopping()).Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_failing_hour_says_its_slowest_attempt_before_the_reason()
+    {
+        PublishJournal journal = PublishJournal.Start.After(Ko(Start, "WMI is down"), Start).Next;
+        journal = journal.After(Ko(Start.AddSeconds(15), "WMI is down"), Start.AddSeconds(15), TimeSpan.FromSeconds(30)).Next;
+
+        Assert.Equal(
+            "stopping: 2 attempt(s) failed since the last summary, slowest 30.0 s: WMI is down",
+            Assert.Single(journal.Stopping()).Message);
+    }
+
     [Fact]
     public void What_the_read_could_not_see_is_said_when_it_changes()
     {

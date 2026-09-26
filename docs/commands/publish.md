@@ -38,8 +38,13 @@ forward **with its date**, rather than published as unknown. The other host's `c
 configuration, the first result, every change between published and not (a failure with its
 full reason, then how long it lasted), a change in what the read could not see, **one line an
 hour** whatever the state — *240 snapshot(s) published in the last hour, the last at 08:59:47
-UTC* — and the stop. A failure that comes back every fifteen seconds is written once an hour,
-with how many times it was held back. `ripcord service` shows its last ten lines.
+UTC, slowest 1.2 s* — and the stop. A failure that comes back every fifteen seconds is written
+once an hour, with how many times it was held back. `ripcord service` shows its last ten lines.
+
+*Slowest* is the longest attempt of the hour, from the start of the read to the end of the
+write, the wait before the next one excluded. Near 15 s, the publisher is falling behind: the
+other host's view ages by the overrun, and past `peer.offline_after_sec` it reads `STALE` on a
+host that is fine.
 
 ## Exit codes
 

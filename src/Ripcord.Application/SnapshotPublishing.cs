@@ -35,14 +35,17 @@ public sealed class SnapshotPublishing(
                     return;
                 }
 
-                (journal, IReadOnlyList<DiagnosticEntry> lines) = journal.After(publication, clock.UtcNow);
+                DateTimeOffset finished = clock.UtcNow;
+
+                (journal, IReadOnlyList<DiagnosticEntry> lines) =
+                    journal.After(publication, finished, finished - started);
 
                 foreach (DiagnosticEntry line in lines)
                 {
                     diagnostics.Write(line);
                 }
 
-                TimeSpan wait = interval - (clock.UtcNow - started);
+                TimeSpan wait = interval - (finished - started);
 
                 await Task.Delay(wait > TimeSpan.Zero ? wait : TimeSpan.Zero, cancellationToken)
                     .ConfigureAwait(false);
