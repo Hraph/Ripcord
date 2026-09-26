@@ -192,51 +192,6 @@ public sealed record DeploymentPlan(IReadOnlyList<DeploymentStep> Steps, string?
 
     public bool IsBlocked => BlockedBy is not null;
 
-    /// Putting an edited configuration into effect, which is not a deployment: nothing about
-    /// the host changes, the listener simply reads the file again.
-    ///
-    /// A service that is not running is started rather than restarted — `sc stop` on a stopped
-    /// service is an error, and an operator asking for the configuration to take effect means
-    /// the same thing either way.
-    public static DeploymentPlan ToRestart(ObservedDeployment observed)
-    {
-        ArgumentNullException.ThrowIfNull(observed);
-
-        if (!observed.ServiceInstalled)
-        {
-            return new DeploymentPlan([]);
-        }
-
-        return new DeploymentPlan(
-        [
-            observed.ServiceRunning
-                ? new DeploymentStep(
-                    DeploymentAction.RestartService,
-                    $"Restart the '{ServiceName}' service",
-                    "the listener reads the configuration once, when it starts")
-                : new DeploymentStep(
-                    DeploymentAction.StartService,
-                    $"Start the '{ServiceName}' service",
-                    "it is installed and not running"),
-        ]);
-    }
-
-    /// Nothing to stop on a host with no service, or one already stopped: the plan is empty.
-    public static DeploymentPlan ToStop(ObservedDeployment observed)
-    {
-        ArgumentNullException.ThrowIfNull(observed);
-
-        return observed is { ServiceInstalled: true, ServiceRunning: true }
-            ? new DeploymentPlan(
-            [
-                new DeploymentStep(
-                    DeploymentAction.StopService,
-                    $"Stop the '{ServiceName}' service",
-                    "the service stays installed; 'ripcord service start' brings it back"),
-            ])
-            : new DeploymentPlan([]);
-    }
-
     /// Re-running a correct deployment yields an empty plan: an installer that reinstalls
     /// every time is one nobody dares run twice. A wrong binary path, port or peer address is
     /// an update rather than a teardown, which is what makes this a migration too.

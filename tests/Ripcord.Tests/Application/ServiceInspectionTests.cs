@@ -72,7 +72,7 @@ public class ServiceInspectionTests
                 @"C:\Program Files\Ripcord\logs\listener-2026-09-25.log",
                 @"C:\Program Files\Ripcord\logs\listener-2026-09-24.log",
             ],
-            logs.Asked);
+            logs.Asked.Where(path => path.Contains("listener-", StringComparison.Ordinal)));
         Assert.Equal(@"C:\Program Files\Ripcord\logs\listener-2026-09-24.log", report.Log?.Path);
     }
 
@@ -272,6 +272,24 @@ public class ServiceInspectionTests
         ICertificateProvider? certificates = null) =>
         new(store, host, logs, certificates ?? new FakeCertificateProvider());
 
+    /// The publisher is shown under the listener, with its own log, whatever else fails.
+    [Fact]
+    public void The_publisher_is_shown_with_its_own_log()
+    {
+        Files files = new()
+        {
+            [@"C:\Program Files\Ripcord\logs\publish\publish-2026-09-25.log"] =
+                ["2026-09-25 00:29:00.000Z publish: not published: WMI is down"],
+        };
+
+        ServiceReport report = Inspection(Valid(), new Host(StoppedService), files).Inspect(Request(), Now, ThisBuild);
+        string[] lines = DeploymentRenderer.RenderState(report, Palette.None).ReplaceLineEndings("\n").Split('\n');
+
+        Assert.Contains("  PUBLISHER", lines);
+        Assert.Contains(lines, line => line.Contains("not published: WMI is down", StringComparison.Ordinal));
+        Assert.All(lines, line => Assert.True(line.Length <= 75, line));
+    }
+
     private sealed class Files : Dictionary<string, string[]>, IDiagnosticLogReader
     {
         public LogReading? Tail(string path, int maxLines) =>
@@ -299,7 +317,7 @@ public class ServiceInspectionTests
 
         public ObservedService ObserveService(RipcordService which)
         {
-            this.Readings++;
+            this.Readings += which == RipcordService.Listener ? 1 : 0;
             return service ?? throw new InvalidOperationException("WMI refused");
         }
 

@@ -109,7 +109,8 @@ public static class ServiceDiagnosis
 
         /// `listener.enabled: false` in the configuration this run read.
         bool listenerDisabled = false,
-        RunningBuild? build = null)
+        RunningBuild? build = null,
+        RipcordService? which = null)
     {
         ArgumentNullException.ThrowIfNull(service);
 
@@ -127,7 +128,8 @@ public static class ServiceDiagnosis
                 new ServiceVerdict("Windows is stopping it: look again in a few seconds", []),
             ServiceRunState.Paused =>
                 new ServiceVerdict("it is paused, which Ripcord never does itself", []),
-            ServiceRunState.Stopped => Stopped(service, logsWritable, log, listenerDisabled),
+            ServiceRunState.Stopped =>
+                Stopped(service, logsWritable, log, listenerDisabled, which ?? RipcordService.Listener),
             _ => Unknown(service.Unreadable),
         };
     }
@@ -156,13 +158,13 @@ public static class ServiceDiagnosis
     /// banner. A start that fails before the banner leaves the file as an earlier run left it,
     /// so the log is believed only where Windows does not contradict it.
     private static ServiceVerdict Stopped(
-        ObservedService service, bool? logsWritable, LogReading? log, bool listenerDisabled)
+        ObservedService service, bool? logsWritable, LogReading? log, bool listenerDisabled, RipcordService which)
     {
         if (service.IsDisabled)
         {
             return new ServiceVerdict(
                 "its start mode is Disabled: Windows will not start it",
-                [$"sc.exe config {RipcordService.Listener.Name} start= auto", Restart]);
+                [$"sc.exe config {which.Name} start= auto", Restart]);
         }
 
         if (listenerDisabled)
@@ -175,7 +177,7 @@ public static class ServiceDiagnosis
         if (logsWritable == false)
         {
             return new ServiceVerdict(
-                $"{RipcordService.Listener.Account} cannot write its logs folder, so it stops "
+                $"{which.Account} cannot write its logs folder, so it stops "
                     + "as soon as it starts",
                 [InstallDryRun]);
         }

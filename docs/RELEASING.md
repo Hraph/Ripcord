@@ -32,12 +32,12 @@ path; the copy by hand is still supported and is what a host with no outbound ac
 1. `ripcord status`, then `ripcord check` — start from a healthy pair. If you do not, you will
    not be able to tell afterwards which problem you caused.
 2. `ripcord update --dry-run` — read the plan and the consequence it prints.
-3. `Stop-Service ripcord`, so the file is not held open.
+3. `Stop-Service ripcord-publish, ripcord`, so the file is not held open by either service.
 4. `ripcord update`, and answer `y`. It downloads, verifies the signature against the
    key compiled into the running binary, and refuses without touching anything if it does not
    verify.
-5. `Start-Service ripcord`, then `ripcord version` — the new binary runs from here, not
-   from the command that installed it.
+5. `Start-Service ripcord, ripcord-publish`, then `ripcord version` — the new binary runs
+   from here, not from the command that installed it.
 6. Move to the other host and repeat.
 
 ### By hand, on each host in turn
@@ -48,11 +48,11 @@ path; the copy by hand is still supported and is what a host with no outbound ac
 3. Verify the checksum of the new binary against the `.sha256` published beside it, and the
    signature against `ripcord.exe.sig` — the commands are under
    [The release signing key](#the-release-signing-key).
-4. Stop the listener service, so the file is not in use:
-   `Stop-Service ripcord`
+4. Stop both services, so the file is not in use:
+   `Stop-Service ripcord-publish, ripcord`
 5. Replace `ripcord.exe`. The configuration lives beside the binary and is not touched —
    updating Ripcord is replacing one file.
-6. `Start-Service ripcord`
+6. `Start-Service ripcord, ripcord-publish`
 7. `ripcord version` — confirm the new version and commit hash. `ripcord service` — its
    `version` row is the build the listener process runs, and must be the same.
 8. Move to the other host and repeat from step 3.

@@ -1180,7 +1180,9 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             return ExitCode.InvalidConfiguration;
         }
 
-        ServiceStateChange decided = ServiceStateChange.For(change, service, observed);
+        // Both services: the publisher also reads ripcord.yaml only when it starts.
+        ServiceStateChange decided = ServiceStateChange.ForBoth(
+            change, service, observed.PublisherOrNothing.Service);
 
         if (decided.Unreadable is { } unreadable)
         {
@@ -1191,14 +1193,18 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         if (decided.Unchanged is { } unchanged)
         {
             output.WriteLine(unchanged);
-            return ExitCode.Success;
         }
 
         DeploymentPlan plan = decided.Plan;
 
+        if (!plan.ChangesAnything)
+        {
+            return ExitCode.Success;
+        }
+
         output.Write(DeploymentRenderer.Render(
             plan, desired, removing: false, observed,
-            heading: $"RIPCORD LISTENER {word.ToUpperInvariant()}", palette: this.Ink));
+            heading: $"RIPCORD SERVICES {word.ToUpperInvariant()}", palette: this.Ink));
 
         if (options.DryRun)
         {
@@ -1210,7 +1216,8 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
             && !this.Agreed(
                 output,
                 error,
-                "The other host cannot read this one until the listener starts again."))
+                "The other host cannot read this one until the listener starts again, and "
+                    + "this host's snapshot is not refreshed until the publisher does."))
         {
             return ExitCode.Refused;
         }
@@ -1273,7 +1280,11 @@ public sealed class RipcordCli(RipcordPorts ports, CliEnvironment environment)
         if (!this.Agreed(
             output,
             error,
-            "This creates a Windows service and opens an inbound port on this host."))
+            options.Remove
+                ? "This deletes both Ripcord services and takes back everything they were "
+                    + "granted: the port, the folders, Hyper-V Administrators, BitLocker."
+                : "This creates the Ripcord services, opens an inbound port on this host "
+                    + $"and adds {RipcordService.Publisher.Account} to Hyper-V Administrators."))
         {
             return ExitCode.Refused;
         }

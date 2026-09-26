@@ -1,3 +1,4 @@
+using Ripcord.Domain.Diagnostics;
 using System.Globalization;
 using System.Text;
 using Ripcord.Application.Deployment;
@@ -107,29 +108,14 @@ public static class DeploymentRenderer
         }
 
         AppendCertificates(output, report.Certificates, deployment.Desired?.CertificateThumbprint);
-        AppendLog(output, report, shownFolder: deployment.Desired?.LogsFolder);
+        AppendLog(
+            output, report.Log, report.LogsFolder, deployment.Desired?.LogsFolder, ServiceLog.ShownLines);
         output.AppendLine();
+        AppendVerdict(output, service, report.Verdict);
 
-        if (service.Installed && report.Verdict.Why is { } why)
+        if (report.Publisher is { } publisher)
         {
-            // Only a stopped service is "not running": an unknown state is never guessed as one.
-            output.AppendLine(service.State == ServiceRunState.Stopped
-                ? "  Why it is not running:"
-                : "  Note:");
-            AppendWrapped(output, "    ", "    ", why);
-
-            // Commands on lines of their own, never wrapped: they are typed from the screen.
-            if (report.Verdict.Next.Count > 0)
-            {
-                output.AppendLine("  Then run:");
-
-                foreach (string next in report.Verdict.Next)
-                {
-                    output.AppendLine($"    {next}");
-                }
-            }
-
-            output.AppendLine();
+            AppendPublisher(output, publisher, deployment);
         }
 
         if (deployment.Plan is { IsBlocked: true } blocked)
@@ -269,14 +255,88 @@ public static class DeploymentRenderer
 
     /// Which file was read, and its last lines. The date is dropped from each line: the file
     /// is one day's, and the columns are better spent on what the line says.
-    private static void AppendLog(StringBuilder output, ServiceReport report, string? shownFolder)
+    /// Why a service is not running, and what to type; nothing when it runs.
+    private static void AppendVerdict(StringBuilder output, ObservedService service, ServiceVerdict verdict)
+    {
+        if (!service.Installed || verdict.Why is not { } why)
+        {
+            return;
+        }
+
+        // Only a stopped service is "not running": an unknown state is never guessed as one.
+        output.AppendLine(service.State == ServiceRunState.Stopped
+            ? "  Why it is not running:"
+            : "  Note:");
+        AppendWrapped(output, "    ", "    ", why);
+
+        // Commands on lines of their own, never wrapped: they are typed from the screen.
+        if (verdict.Next.Count > 0)
+        {
+            output.AppendLine("  Then run:");
+
+            foreach (string next in verdict.Next)
+            {
+                output.AppendLine($"    {next}");
+            }
+        }
+
+        output.AppendLine();
+    }
+
+    /// The service that keeps the snapshot fresh, and what it was granted: fewer log lines than
+    /// the listener's, so both fit a 768-pixel-high console.
+    private static void AppendPublisher(
+        StringBuilder output, PublisherStatus publisher, DeploymentOutcome deployment)
+    {
+        RipcordService service = RipcordService.Publisher;
+
+        output.AppendLine("  PUBLISHER");
+        AppendService(output, publisher.Service);
+        AppendBuild(output, publisher.Build);
+
+        if (deployment.Observed?.Publisher is { } observed && publisher.Service.Installed)
+        {
+            output.AppendLine(observed.InHyperVAdministrators switch
+            {
+                true => $"    hyper-v    member of {observed.HyperVAdministrators}",
+                false => $"    hyper-v    NOT a member of {observed.HyperVAdministrators}",
+                null => "    hyper-v    membership could not be read",
+            });
+
+            AppendWrapped(output, "    bitlocker  ", "               ", observed.Encryption switch
+            {
+                NamespaceGrant.Granted => "readable by it",
+                NamespaceGrant.Missing => "NOT readable by it: carried from an administrator's read",
+                NamespaceGrant.Unmodifiable => "its access list is not one Ripcord edits",
+                _ => observed.EncryptionNote ?? "could not be read",
+            });
+
+            output.AppendLine(observed.SnapshotWritable
+                ? $"    snapshot   writable by {service.Account}"
+                : $"    snapshot   NOT writable by {service.Account}");
+            output.AppendLine(observed.LogsWritable && !observed.ListenerCanWriteItsLogs
+                ? $"    logs       writable by it alone"
+                : observed.LogsWritable
+                    ? "    logs       ALSO writable by the listener"
+                    : $"    logs       NOT writable by {service.Account}");
+            output.AppendLine($"               {publisher.LogsFolder}");
+        }
+
+        AppendLog(output, publisher.Log, publisher.LogsFolder, publisher.LogsFolder, PublisherLogLines);
+        output.AppendLine();
+        AppendVerdict(output, publisher.Service, publisher.Verdict);
+    }
+
+    private const int PublisherLogLines = 10;
+
+    private static void AppendLog(
+        StringBuilder output, LogReading? log, string logsFolder, string? shownFolder, int lines)
     {
         // The file name alone when the logs row above already names its folder: a full path
         // under Program Files does not fit on one line.
-        bool folderShown = string.Equals(
-            shownFolder, report.LogsFolder, StringComparison.OrdinalIgnoreCase);
+        bool folderShown = string.Equals(shownFolder, logsFolder, StringComparison.OrdinalIgnoreCase);
 
-        if (report.Log is not { } log)
+        if (log is null)
         {
             output.AppendLine(folderShown
                 ? "    log        none today or yesterday"
@@ -284,7 +344,7 @@ public static class DeploymentRenderer
 
             if (!folderShown)
             {
-                output.AppendLine($"               {report.LogsFolder}");
+                output.AppendLine($"               {logsFolder}");
             }
 
             return;
@@ -294,7 +354,7 @@ public static class DeploymentRenderer
 
         if (!folderShown)
         {
-            output.AppendLine($"               in {report.LogsFolder}");
+            output.AppendLine($"               in {logsFolder}");
         }
 
         if (log.Unreadable is { } reason)
@@ -303,7 +363,7 @@ public static class DeploymentRenderer
             return;
         }
 
-        IReadOnlyList<string> shown = [.. log.Lines.TakeLast(ServiceLog.ShownLines)];
+        IReadOnlyList<string> shown = [.. log.Lines.TakeLast(lines)];
 
         if (shown.Count == 0)
         {

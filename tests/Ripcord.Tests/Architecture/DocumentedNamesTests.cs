@@ -23,8 +23,9 @@ public class DocumentedNamesTests
 
     public static TheoryData<string> All => new(Documents);
 
-    /// `Stop-Service <name>` and `Start-Service <name>`, wherever the documentation spells one
-    /// out, must name the service the deployment actually creates.
+    /// `Stop-Service <names>` and `Start-Service <names>`, wherever the documentation spells one
+    /// out, must name the services the deployment actually creates — both of them: both run
+    /// `ripcord.exe`, and a procedure that stops one leaves the file held by the other.
     [Theory]
     [MemberData(nameof(All))]
     public void Every_documented_service_command_names_the_service_that_is_installed(string document)
@@ -36,17 +37,16 @@ public class DocumentedNamesTests
             return;
         }
 
-        string[] named =
-        [
-            .. Regex
-                .Matches(File.ReadAllText(path), @"(?:Stop|Start)-Service\s+([A-Za-z0-9._-]+)")
-                .Select(match => match.Groups[1].Value)
-                .Distinct(StringComparer.OrdinalIgnoreCase),
-        ];
+        string[] installed = [.. RipcordService.All.Select(service => service.Name)];
 
-        Assert.All(
-            named,
-            name => Assert.Equal(RipcordService.Listener.Name, name, ignoreCase: true));
+        foreach (Match command in Regex.Matches(
+            File.ReadAllText(path), @"(?:Stop|Start)-Service\s+((?:[A-Za-z0-9._-]+\s*,\s*)*[A-Za-z0-9._-]+)"))
+        {
+            string[] named = [.. command.Groups[1].Value.Split(',').Select(name => name.Trim())];
+
+            Assert.All(named, name => Assert.Contains(name, installed, StringComparer.OrdinalIgnoreCase));
+            Assert.Equal(installed.Order(StringComparer.Ordinal), named.Order(StringComparer.Ordinal));
+        }
     }
 
     /// The event log commands the service page shows are the ones `ripcord service` prints,

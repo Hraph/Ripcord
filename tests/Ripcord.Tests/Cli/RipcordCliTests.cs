@@ -649,11 +649,11 @@ public class RipcordCliTests
         CliRun run = await Run(["service", "restart"], deploymentExecutor: executor);
 
         Assert.Equal(ExitCode.Success, run.Code);
-        Assert.Equal([DeploymentAction.RestartService], executor.Applied);
+        Assert.Equal([DeploymentAction.RestartService, DeploymentAction.RestartService], executor.Applied);
 
         // Under its own heading: a restart printed under "DEPLOYMENT" is the kind of small lie
         // that costs a second of doubt on the one screen that is read under pressure.
-        Assert.Contains("RIPCORD LISTENER RESTART", run.Output, StringComparison.Ordinal);
+        Assert.Contains("RIPCORD SERVICES RESTART", run.Output, StringComparison.Ordinal);
         Assert.DoesNotContain("DEPLOYMENT", run.Output, StringComparison.Ordinal);
     }
 
@@ -662,24 +662,24 @@ public class RipcordCliTests
     [Fact]
     public async Task Service_restart_starts_a_listener_that_was_not_running()
     {
-        FakeDeploymentExecutor executor = new(Deployed() with { ServiceRunning = false });
+        FakeDeploymentExecutor executor = new(BothStopped());
 
         CliRun run = await Run(["service", "restart"], deploymentExecutor: executor);
 
-        Assert.Equal([DeploymentAction.StartService], executor.Applied);
+        Assert.Equal([DeploymentAction.StartService, DeploymentAction.StartService], executor.Applied);
     }
 
     /// `start` is typed by habit. On a stopped listener it starts it, with no confirmation.
     [Fact]
     public async Task Service_start_starts_a_stopped_listener()
     {
-        FakeDeploymentExecutor executor = new(Deployed() with { ServiceRunning = false });
+        FakeDeploymentExecutor executor = new(BothStopped());
 
         CliRun run = await Run(["service", "start"], deploymentExecutor: executor);
 
         Assert.Equal(ExitCode.Success, run.Code);
-        Assert.Equal([DeploymentAction.StartService], executor.Applied);
-        Assert.Contains("RIPCORD LISTENER START", run.Output, StringComparison.Ordinal);
+        Assert.Equal([DeploymentAction.StartService, DeploymentAction.StartService], executor.Applied);
+        Assert.Contains("RIPCORD SERVICES START", run.Output, StringComparison.Ordinal);
     }
 
     /// Unlike `restart`, a running listener is left alone: nothing to start.
@@ -711,8 +711,8 @@ public class RipcordCliTests
             ["service", "stop"], deploymentExecutor: confirmed, typed: "y");
 
         Assert.Equal(ExitCode.Success, run.Code);
-        Assert.Equal([DeploymentAction.StopService], confirmed.Applied);
-        Assert.Contains("RIPCORD LISTENER STOP", run.Output, StringComparison.Ordinal);
+        Assert.Equal([DeploymentAction.StopService, DeploymentAction.StopService], confirmed.Applied);
+        Assert.Contains("RIPCORD SERVICES STOP", run.Output, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -731,7 +731,7 @@ public class RipcordCliTests
     [Fact]
     public async Task Service_stop_on_a_stopped_listener_asks_nothing()
     {
-        FakeDeploymentExecutor executor = new(Deployed() with { ServiceRunning = false });
+        FakeDeploymentExecutor executor = new(BothStopped());
 
         CliRun run = await Run(["service", "stop"], deploymentExecutor: executor);
 
@@ -1105,6 +1105,15 @@ public class RipcordCliTests
         ConfigurationReadableByService: true,
         Publisher: Deployment.DeploymentPlanTests.PublisherInPlace(BinaryPath, NamespaceGrant.Granted));
 
+    private static ObservedDeployment BothStopped() => Deployed() with
+    {
+        ServiceRunning = false,
+        Publisher = Deployed().Publisher! with
+        {
+            Service = Deployed().Publisher!.Service with { State = ServiceRunState.Stopped },
+        },
+    };
+
     private const string DefaultConfigPath = "/opt/ripcord/ripcord.yaml";
 
     private const string BinaryPath = "/opt/ripcord/ripcord";
@@ -1448,7 +1457,9 @@ public class RipcordCliTests
 
         /// Agrees with `Observe` unless a test says otherwise.
         public ObservedService ObserveService(RipcordService which) =>
-            service ?? (observed is { ServiceInstalled: true } deployed
+            which == RipcordService.Publisher
+                ? observed?.PublisherOrNothing.Service ?? ObservedService.Absent
+                : service ?? (observed is { ServiceInstalled: true } deployed
                 ? new ObservedService(
                     true,
                     $"\"{deployed.ServiceBinaryPath}\" serve",
