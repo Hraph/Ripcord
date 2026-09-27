@@ -83,38 +83,55 @@ public class PublishJournalTests
         Assert.Equal("241 attempt(s) failed in the last hour: WMI is down", Assert.Single(lines).Message);
     }
 
-    /// The slowest attempt of the hour, then counted afresh: an attempt past 15 s is a peer
-    /// view that ages by the overrun.
+    /// The hour's attempts as min, mean and max, then counted afresh: one slow cold start and
+    /// a host slow every time read differently.
     [Fact]
-    public void The_hour_says_its_slowest_attempt_and_the_next_starts_afresh()
+    public void The_hour_says_how_long_its_attempts_took_and_the_next_starts_afresh()
     {
-        PublishJournal journal = PublishJournal.Start.After(Ok(Start), Start, TimeSpan.FromSeconds(0.4)).Next;
+        PublishJournal journal = PublishJournal.Start.After(Ok(Start), Start, TimeSpan.FromSeconds(6.2)).Next;
         IReadOnlyList<DiagnosticEntry> lines = [];
 
         for (int round = 1; round <= 240; round++)
         {
             DateTimeOffset at = Start.AddSeconds(15 * round);
-            TimeSpan took = TimeSpan.FromSeconds(round == 100 ? 2.34 : 0.5);
+            TimeSpan took = TimeSpan.FromSeconds(round == 100 ? 0.4 : 1);
             (journal, lines) = journal.After(Ok(at), at, took);
         }
 
         Assert.Equal(
-            "241 snapshot(s) published in the last hour, the last at 09:00:00 UTC, slowest 2.3 s",
+            "241 snapshot(s) published in the last hour, the last at 09:00:00 UTC, "
+                + "took 0.4 s min, 1.0 s mean, 6.2 s max",
             Assert.Single(lines).Message);
 
         journal = journal.After(Ok(Start.AddSeconds(3615)), Start.AddSeconds(3615), TimeSpan.FromSeconds(0.6)).Next;
 
-        Assert.EndsWith("slowest 0.6 s", Assert.Single(journal.Stopping()).Message, StringComparison.Ordinal);
+        Assert.EndsWith(
+            "took 0.6 s min, 0.6 s mean, 0.6 s max", Assert.Single(journal.Stopping()).Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void A_failing_hour_says_its_slowest_attempt_before_the_reason()
+    public void Attempt_times_keep_min_mean_and_max()
+    {
+        AttemptTimes times = default(AttemptTimes)
+            .Add(TimeSpan.FromSeconds(3))
+            .Add(TimeSpan.FromSeconds(1))
+            .Add(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(
+            (3, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(3)),
+            (times.Count, times.Min, times.Mean, times.Max));
+        Assert.Equal(TimeSpan.Zero, default(AttemptTimes).Mean);
+    }
+
+    [Fact]
+    public void A_failing_hour_says_how_long_its_attempts_took_before_the_reason()
     {
         PublishJournal journal = PublishJournal.Start.After(Ko(Start, "WMI is down"), Start).Next;
         journal = journal.After(Ko(Start.AddSeconds(15), "WMI is down"), Start.AddSeconds(15), TimeSpan.FromSeconds(30)).Next;
 
         Assert.Equal(
-            "stopping: 2 attempt(s) failed since the last summary, slowest 30.0 s: WMI is down",
+            "stopping: 2 attempt(s) failed since the last summary, took 30.0 s min, 30.0 s mean, "
+                + "30.0 s max: WMI is down",
             Assert.Single(journal.Stopping()).Message);
     }
 

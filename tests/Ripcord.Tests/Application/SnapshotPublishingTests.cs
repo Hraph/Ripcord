@@ -62,7 +62,7 @@ public class SnapshotPublishingTests
 
     /// The attempt the loop measured reaches the stop line.
     [Fact]
-    public async Task The_stop_line_says_the_slowest_attempt()
+    public async Task The_stop_line_says_how_long_the_attempts_took()
     {
         using CancellationTokenSource stop = new();
         MovableClock clock = new(Now);
@@ -71,7 +71,7 @@ public class SnapshotPublishingTests
 
         await Publishing(store, log, clock).RunAsync(Configurations.Create(), stop.Token);
 
-        Assert.EndsWith("slowest 2.5 s", log.Written[^1].Message, StringComparison.Ordinal);
+        Assert.EndsWith("took 2.5 s min, 2.5 s mean, 2.5 s max", log.Written[^1].Message, StringComparison.Ordinal);
     }
 
     /// Counts successful writes and cancels the loop after the last one it was asked for.

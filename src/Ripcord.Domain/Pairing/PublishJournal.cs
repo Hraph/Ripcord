@@ -20,9 +20,9 @@ public sealed record PublishJournal(
     DateTimeOffset? LastPublished,
     DateTimeOffset SummaryDue,
 
-    /// The longest attempt since the last summary. Past `RepublishEvery`, the peer's view ages
-    /// by the overrun and can read stale on a host that is fine.
-    TimeSpan Slowest = default)
+    /// How long the attempts since the last summary took. One past `RepublishEvery` ages the
+    /// peer's view by the overrun, and can make it read stale on a host that is fine.
+    AttemptTimes Times = default)
 {
     public const string Operation = "publish";
 
@@ -76,7 +76,7 @@ public sealed record PublishJournal(
             Failed = this.Failed + (healthy ? 0 : 1),
             LastPublished = healthy ? now : this.LastPublished,
             SummaryDue = this.Started ? this.SummaryDue : now + SummaryEvery,
-            Slowest = took > this.Slowest ? took : this.Slowest,
+            Times = took > TimeSpan.Zero ? this.Times.Add(took) : this.Times,
         };
 
         if (now < next.SummaryDue)
@@ -87,7 +87,7 @@ public sealed record PublishJournal(
         lines.Add(Line(next.Summary("in the last hour")));
 
         return (
-            next with { Published = 0, Failed = 0, SummaryDue = now + SummaryEvery, Slowest = TimeSpan.Zero },
+            next with { Published = 0, Failed = 0, SummaryDue = now + SummaryEvery, Times = default },
             lines);
     }
 
@@ -101,8 +101,9 @@ public sealed record PublishJournal(
                 + (this.LastPublished is { } last ? $", the last at {Clock(last)} UTC" : "")
             : $"{this.Failed} attempt(s) failed {period}"
                 + (this.Published > 0 ? $", {this.Published} published" : ""))
-        + (this.Slowest > TimeSpan.Zero
-            ? string.Create(CultureInfo.InvariantCulture, $", slowest {this.Slowest.TotalSeconds:0.0} s")
+        + (this.Times.Count > 0
+            ? $", took {Tenths(this.Times.Min)} s min, {Tenths(this.Times.Mean)} s mean, "
+                + $"{Tenths(this.Times.Max)} s max"
             : "")
         + (this.Healthy ? "" : $": {this.Reason}");
 
@@ -111,6 +112,9 @@ public sealed record PublishJournal(
     private static string Clock(DateTimeOffset at) =>
         at.UtcDateTime.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
 
+    private static string Tenths(TimeSpan span) =>
+        span.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture);
+
     private static string Seconds(TimeSpan span) =>
         ((int)span.TotalSeconds).ToString(CultureInfo.InvariantCulture);
 
@@ -118,4 +122,19 @@ public sealed record PublishJournal(
         span.TotalMinutes >= 1
             ? string.Create(CultureInfo.InvariantCulture, $"{(int)span.TotalMinutes} min")
             : string.Create(CultureInfo.InvariantCulture, $"{(int)span.TotalSeconds} s");
+}
+
+/// Durations kept as a count and three figures, not a list: an hour is 240 attempts.
+public readonly record struct AttemptTimes(int Count, TimeSpan Min, TimeSpan Max, TimeSpan Total)
+{
+    public TimeSpan Mean => this.Count > 0 ? this.Total / this.Count : TimeSpan.Zero;
+
+    public AttemptTimes Add(TimeSpan took) =>
+        this.Count == 0
+            ? new(1, took, took, took)
+            : new(
+                this.Count + 1,
+                took < this.Min ? took : this.Min,
+                took > this.Max ? took : this.Max,
+                this.Total + took);
 }
