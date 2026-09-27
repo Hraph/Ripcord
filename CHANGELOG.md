@@ -9,6 +9,14 @@ half-updated pair depends on.
 
 A release is cut by tagging `vMAJOR.MINOR.PATCH`. Nothing else publishes a binary.
 
+## 0.11.1 — 2026-09-27
+
+### Changed
+
+- **The publisher's hourly log line gives min, mean and max**, *took 0.8 s min, 1.1 s mean,
+  6.2 s max*, instead of the slowest attempt alone: one slow cold start and a host slow on every
+  attempt no longer read the same.
+
 ## 0.11.0 — 2026-09-26
 
 ### Changed
